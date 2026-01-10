@@ -186,11 +186,11 @@ export async function GET(request: NextRequest) {
         // Check if reviewer is a Local Guide (Google sometimes includes this in author_url or we can infer from profile)
         isLocalGuide: review.author_url?.includes("maps/contrib") || false,
         time: review.time || null, // For sorting by recency
-      }))
-      // De-duplicate by reviewId
-      .filter((review, index, self) => 
-        index === self.findIndex((r) => r.reviewId === review.reviewId)
-      );
+          }))
+          // De-duplicate by reviewId
+          .filter((review: NormalizedReview, index: number, self: NormalizedReview[]) => 
+            index === self.findIndex((r) => r.reviewId === review.reviewId)
+          );
     
     // Select 5 reviews with rating variety
     const selectedReviews = selectReviewVariety(normalizedReviews);
