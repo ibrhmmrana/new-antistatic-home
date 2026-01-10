@@ -37,6 +37,11 @@ const productSans = localFont({
 export const metadata: Metadata = {
   title: "Antistatic — AI Visibility Grader",
   description: "Get a free AI report on your Google presence, reviews, and website experience",
+  icons: {
+    icon: "/icons/Antistatic-favicon.png",
+    shortcut: "/icons/Antistatic-favicon.png",
+    apple: "/icons/Antistatic-favicon.png",
+  },
 };
 
 export default function RootLayout({
