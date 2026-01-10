@@ -26,7 +26,7 @@ export default function Home() {
       </div>
 
       {/* Sticky footer links - bottom left */}
-      <div className="fixed bottom-4 left-4 z-20 flex flex-col gap-2">
+      <div className="fixed bottom-4 left-4 z-20 flex flex-row gap-2">
         <Link
           href="/privacy"
           className="text-xs text-gray-600 hover:text-gray-900 transition-colors px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-md hover:bg-white/90 shadow-sm"
