@@ -236,9 +236,9 @@ export default function StageCompetitorMap({
       target.location.lng
     );
 
-    // Center map on target
+    // Center map on target with higher zoom (more zoomed in)
     map.panTo(targetLatLng);
-    map.setZoom(15);
+    map.setZoom(16);
 
     // Create custom icon with Google Maps pin inside circle
     const iconSvg = `
