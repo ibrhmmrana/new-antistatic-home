@@ -1,10 +1,10 @@
+import Nav from "@/components/landing/Nav";
+import Image from "next/image";
+
 export const metadata = {
   title: "Terms of Service | Antistatic",
   description: "Terms of Service for Antistatic",
 };
-
-import Nav from "@/components/landing/Nav";
-import Image from "next/image";
 
 export default function TermsOfService() {
   return (

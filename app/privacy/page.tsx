@@ -1,10 +1,10 @@
+import Nav from "@/components/landing/Nav";
+import Image from "next/image";
+
 export const metadata = {
   title: "Privacy Policy | Antistatic",
   description: "Privacy Policy for Antistatic - How we collect, use, and protect your information",
 };
-
-import Nav from "@/components/landing/Nav";
-import Image from "next/image";
 
 export default function PrivacyPolicy() {
   return (

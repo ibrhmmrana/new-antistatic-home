@@ -1,10 +1,10 @@
+import Nav from "@/components/landing/Nav";
+import Image from "next/image";
+
 export const metadata = {
   title: "Data Deletion Instructions | Antistatic",
   description: "How to request deletion of your personal data from Antistatic",
 };
-
-import Nav from "@/components/landing/Nav";
-import Image from "next/image";
 
 export default function DataDeletion() {
   return (
