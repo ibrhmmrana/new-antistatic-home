@@ -443,7 +443,7 @@ export default function StageCompetitorMap({
         competitorInfoWindowsRef.current.push(badgeOverlay as any);
 
         // Extend bounds
-        if (boundsRef.current) {
+        if (boundsRef.current && map) {
           boundsRef.current.extend(competitor.location);
           const isLast = updated.length === data.competitors.length;
           throttledFitBounds(map, boundsRef.current, isLast);
