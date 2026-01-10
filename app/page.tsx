@@ -1,6 +1,7 @@
 import Nav from "@/components/landing/Nav";
 import Hero from "@/components/landing/Hero";
 import Image from "next/image";
+import Link from "next/link";
 
 export default function Home() {
   return (
@@ -22,6 +23,28 @@ export default function Home() {
       <div className="relative z-10">
         <Nav />
         <Hero />
+      </div>
+
+      {/* Sticky footer links - bottom left */}
+      <div className="fixed bottom-4 left-4 z-20 flex flex-col gap-2">
+        <Link
+          href="/privacy"
+          className="text-xs text-gray-600 hover:text-gray-900 transition-colors px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-md hover:bg-white/90 shadow-sm"
+        >
+          Privacy Policy
+        </Link>
+        <Link
+          href="/terms"
+          className="text-xs text-gray-600 hover:text-gray-900 transition-colors px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-md hover:bg-white/90 shadow-sm"
+        >
+          Terms of Service
+        </Link>
+        <Link
+          href="/data-deletion"
+          className="text-xs text-gray-600 hover:text-gray-900 transition-colors px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-md hover:bg-white/90 shadow-sm"
+        >
+          Data Deletion
+        </Link>
       </div>
     </main>
   );
