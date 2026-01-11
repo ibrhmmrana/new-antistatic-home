@@ -390,18 +390,17 @@ async function extractSocialLinksFromWebsite(
 }
 
 /**
- * @deprecated This function navigates to Google Search which triggers CAPTCHAs.
- * Use extractSocialLinksFromWebsite() instead.
- * 
  * Extracts social media profile links and website URL from a Google Business Profile (GBP) knowledge panel.
  * 
  * This function:
- * 1. Launches a headless browser
- * 2. Searches Google for the business
+ * 1. Launches a headless browser with stealth techniques
+ * 2. Navigates directly to Google search results for "[businessName] [address]"
  * 3. Locates the GBP knowledge panel on the right side
- * 4. Expands the panel to reveal the "Profiles" section
- * 5. Extracts all social media links from that section
- * 6. Extracts the business website URL
+ * 4. Extracts all social media links from the "Profiles" section
+ * 5. Extracts the business website URL
+ * 
+ * Uses direct URL navigation (not typing) to reduce CAPTCHA risk, combined with
+ * extensive stealth techniques to mimic real browser behavior.
  * 
  * @param businessName - The name of the business to search for
  * @param address - The full address of the business
@@ -417,34 +416,74 @@ async function extractSocialLinksFromGBP(
     // Configure serverless Chromium for production (Vercel/Lambda)
     const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
     const localExecutablePath = process.env.CHROMIUM_EXECUTABLE_PATH;
-    const executablePath = isServerless
-      ? await chromium.executablePath()
-      : (localExecutablePath || undefined);
+    
+    // For local dev, try to find Chrome executable automatically
+    let executablePath: string | undefined;
+    if (isServerless) {
+      executablePath = await chromium.executablePath();
+    } else if (localExecutablePath) {
+      executablePath = localExecutablePath;
+    } else {
+      // Try common Chrome paths on Windows
+      const possiblePaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+      ];
+      for (const chromePath of possiblePaths) {
+        try {
+          const fs = await import('fs');
+          if (fs.existsSync(chromePath)) {
+            executablePath = chromePath;
+            console.log(`[DEBUG] Found Chrome at: ${chromePath}`);
+            break;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+    
+    const headless = isServerless ? chromium.headless : false;
+    console.log(`[DEBUG] Launching browser - isServerless: ${isServerless}, headless: ${headless}, executablePath: ${executablePath || 'default'}`);
 
-    // Launch a Chromium browser with UNDETECTABLE headless mode
-    // Note: Playwright's headless: true uses the new headless mode by default (more stealthy than old headless)
+    // Launch a Chromium browser
+    // Run headful locally for debugging, headless in serverless
     try {
-      browser = await pwChromium.launch({
-        headless: chromium.headless,
-        args: [
-          // Start with @sparticuz/chromium defaults (serverless-safe). Keep our extras minimal to avoid conflicts.
-          ...chromium.args,
-          '--disable-blink-features=AutomationControlled',
-          // Window size arguments (must match viewport)
-          '--window-size=1920,1080',
-          // Keep existing behavior for some sites; avoid adding redundant sandbox/dev-shm flags (already in chromium.args).
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
-        ],
-        executablePath,
-        timeout: 30000,
-      });
+      if (isServerless) {
+        // Serverless: use @sparticuz/chromium args
+        browser = await pwChromium.launch({
+          headless: chromium.headless,
+          args: [
+            ...chromium.args,
+            '--disable-blink-features=AutomationControlled',
+            '--window-size=1920,1080',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+          ],
+          executablePath,
+          timeout: 30000,
+        });
+      } else {
+        // Local: simple launch with minimal args
+        browser = await pwChromium.launch({
+          headless: true,
+          args: [
+            '--disable-blink-features=AutomationControlled',
+            '--window-size=1920,1080',
+          ],
+          executablePath,
+          timeout: 30000,
+        });
+      }
+      console.log(`[DEBUG] Browser launched successfully`);
     } catch (launchError) {
-      if (!isServerless && !localExecutablePath) {
+      console.error(`[DEBUG] Browser launch failed:`, launchError);
+      if (!isServerless && !executablePath) {
         console.error(
           `[DEBUG] Chromium launch failed in local dev without a configured browser binary. ` +
           `Set CHROMIUM_EXECUTABLE_PATH to a local Chromium/Chrome executable path, ` +
-          `or run this route in Linux/serverless where @sparticuz/chromium can provide the binary.`
+          `or install Chrome at a standard location.`
         );
       }
       throw launchError;
@@ -452,20 +491,20 @@ async function extractSocialLinksFromGBP(
 
     const userAgent = getRandomUserAgent();
     
-    // Create a new context with realistic settings
+    // Create a new context - simpler for local, full settings for serverless
     const context = await browser.newContext({
       viewport: { width: 1920, height: 1080 },
-      userAgent,
+      userAgent: isServerless ? userAgent : undefined, // Use default UA locally
       deviceScaleFactor: 1,
       isMobile: false,
       hasTouch: false,
       javaScriptEnabled: true,
-      permissions: ['geolocation'],
-      // Set locale and timezone to look more realistic
       locale: 'en-US',
-      timezoneId: 'America/New_York',
-      // Bypass CSP for stealth scripts
-      bypassCSP: true,
+      ...(isServerless ? {
+        permissions: ['geolocation'],
+        timezoneId: 'America/New_York',
+        bypassCSP: true,
+      } : {}),
     });
     
     const page = await context.newPage();
@@ -474,23 +513,27 @@ async function extractSocialLinksFromGBP(
     page.setDefaultTimeout(DEFAULT_ACTION_TIMEOUT_MS);
     page.setDefaultNavigationTimeout(DEFAULT_NAV_TIMEOUT_MS);
 
-    // Set comprehensive HTTP headers including Chrome Client Hints (Sec-CH-*)
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'max-age=0',
-      'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
-      'Sec-Ch-Ua-Mobile': '?0',
-      'Sec-Ch-Ua-Platform': '"Windows"',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Sec-Fetch-User': '?1',
-      'Upgrade-Insecure-Requests': '1',
-    });
+    // Only apply stealth techniques in serverless (not needed for local debugging)
+    if (isServerless) {
+      // Set comprehensive HTTP headers including Chrome Client Hints (Sec-CH-*)
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'max-age=0',
+        'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+      });
+    }
     
-    // CRITICAL: Comprehensive stealth script to bypass headless detection
+    // CRITICAL: Comprehensive stealth script to bypass headless detection (serverless only)
+    if (isServerless) {
     await page.addInitScript(() => {
       // Delete webdriver property entirely
       delete (navigator as any).__proto__.webdriver;
@@ -633,23 +676,36 @@ async function extractSocialLinksFromGBP(
         return oldCall.apply(this, args);
       };
     });
+    } // End of isServerless stealth block
 
     // Construct the search query: "BusinessName FullAddress"
     const searchQuery = `${businessName} ${address}`;
     console.log(`[DEBUG] Searching for: ${searchQuery}`);
 
-    // STRATEGY: Navigate directly to Google search results URL
-    // This is less detectable than typing in search box because:
-    // 1. Fewer interactions for Google to analyze
-    // 2. No typing patterns to fingerprint
-    // 3. Mimics clicking a link/bookmark
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}&hl=en&gl=us`;
-    console.log(`[DEBUG] Direct navigation to: ${searchUrl}`);
+    // STRATEGY: Go to Google.com and type in search box (like a real user)
+    console.log(`[DEBUG] Navigating to Google.com...`);
+    await page.goto('https://www.google.com', { waitUntil: 'domcontentloaded', timeout: DEFAULT_NAV_TIMEOUT_MS });
     
-    // Random delay before navigation (looks like user thinking)
-    await randomDelay(500, 1500);
+    // Random delay after page load (like user looking at page)
+    await randomDelay(500, 1000);
     
-    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: DEFAULT_NAV_TIMEOUT_MS });
+    // Find the search box and type the query
+    console.log(`[DEBUG] Typing search query: ${searchQuery}`);
+    const searchBox = page.locator('textarea[name="q"], input[name="q"]').first();
+    await searchBox.waitFor({ state: 'visible', timeout: 10000 });
+    await searchBox.click();
+    await randomDelay(200, 400);
+    
+    // Type the search query with human-like speed
+    await searchBox.fill(searchQuery);
+    await randomDelay(300, 600);
+    
+    // Press Enter to search
+    console.log(`[DEBUG] Pressing Enter to search...`);
+    await searchBox.press('Enter');
+    
+    // Wait for search results to load
+    await page.waitForLoadState('domcontentloaded', { timeout: DEFAULT_NAV_TIMEOUT_MS });
     await throwIfCaptcha(page, "after_search_results_load");
     
     // Human-like behavior after page load
@@ -1135,23 +1191,20 @@ export async function POST(request: NextRequest) {
 
     // Create the scraper execution promise
     const scraperPromise = (async () => {
-      // NEW APPROACH: Extract social links from business website instead of Google Search
-      // This avoids CAPTCHAs that occur when navigating to Google Search
+      // APPROACH: Extract social links from Google Business Profile (GBP)
+      // Navigates directly to Google search results URL to reduce CAPTCHA risk
+      // Uses stealth techniques to mimic real browser behavior
       
-      // Use the website URL provided from Google Places API
-      const websiteUrlToUse = providedWebsiteUrl || null;
-      console.log(`[API] Website URL from Places API: ${websiteUrlToUse || 'none'}`);
-
-      // Extract social links from the business website (if available)
-      let socialLinks: { platform: string; url: string }[] = [];
-      if (websiteUrlToUse) {
-        console.log(`[API] Extracting social links from website: ${websiteUrlToUse}`);
-        const extractedLinks = await extractSocialLinksFromWebsite(websiteUrlToUse);
-        socialLinks = cleanAndDeduplicateSocialLinks(extractedLinks);
-        console.log(`[API] Found ${socialLinks.length} social links from website`);
-      } else {
-        console.log(`[API] No website URL available, skipping social link extraction`);
-      }
+      console.log(`[API] Extracting social links from GBP for: "${businessName}" at "${address}"`);
+      
+      // Extract social links and website URL from Google Business Profile
+      const gbpResult = await extractSocialLinksFromGBP(businessName, address);
+      let socialLinks = cleanAndDeduplicateSocialLinks(gbpResult.socialLinks);
+      console.log(`[API] Found ${socialLinks.length} social links from GBP`);
+      
+      // Use website URL from GBP if found, otherwise fall back to provided URL
+      const websiteUrlToUse = gbpResult.websiteUrl || providedWebsiteUrl || null;
+      console.log(`[API] Website URL: ${websiteUrlToUse || 'none'} (GBP: ${gbpResult.websiteUrl || 'none'}, provided: ${providedWebsiteUrl || 'none'})`);
 
     // Now capture screenshots in parallel after links are extracted
     const screenshotPromises: Promise<{ platform: string; url: string; screenshot: string | null; status: 'success' | 'error' } | { websiteScreenshot: string | null }>[] = [];
