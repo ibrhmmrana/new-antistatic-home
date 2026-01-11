@@ -14,29 +14,6 @@ import chromium from "@sparticuz/chromium";
 // Force Node.js runtime (Playwright is not compatible with Edge runtime)
 export const runtime = "nodejs";
 
-// Increase timeout for Vercel serverless function
-export const maxDuration = 60; // 60 seconds max
-
-// Memory-saving browser args for serverless environment
-const SERVERLESS_BROWSER_ARGS = [
-  '--single-process', // Critical: reduces memory by running in single process
-  '--no-zygote', // Disable zygote process (saves memory)
-  '--disable-gpu',
-  '--disable-dev-shm-usage', // Use /tmp instead of /dev/shm (limited in Lambda)
-  '--disable-setuid-sandbox',
-  '--no-sandbox',
-  '--disable-accelerated-2d-canvas',
-  '--disable-background-networking',
-  '--disable-default-apps',
-  '--disable-extensions',
-  '--disable-sync',
-  '--disable-translate',
-  '--metrics-recording-only',
-  '--mute-audio',
-  '--no-first-run',
-  '--disable-features=site-per-process', // Reduces memory
-];
-
 const DEFAULT_ACTION_TIMEOUT_MS = 15_000;
 const DEFAULT_NAV_TIMEOUT_MS = 30_000;
 
@@ -285,9 +262,7 @@ async function extractSocialLinksFromWebsite(
 
     browser = await pwChromium.launch({
       headless: chromium.headless,
-      args: isServerless 
-        ? [...chromium.args, ...SERVERLESS_BROWSER_ARGS]
-        : [],
+      args: chromium.args,
       executablePath,
       timeout: 30000,
     });
@@ -452,11 +427,14 @@ async function extractSocialLinksFromGBP(
       browser = await pwChromium.launch({
         headless: chromium.headless,
         args: [
-          // Start with @sparticuz/chromium defaults + memory-saving args for serverless
-          ...(isServerless ? [...chromium.args, ...SERVERLESS_BROWSER_ARGS] : []),
+          // Start with @sparticuz/chromium defaults (serverless-safe). Keep our extras minimal to avoid conflicts.
+          ...chromium.args,
           '--disable-blink-features=AutomationControlled',
+          // Window size arguments (must match viewport)
           '--window-size=1920,1080',
+          // Keep existing behavior for some sites; avoid adding redundant sandbox/dev-shm flags (already in chromium.args).
           '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
         ],
         executablePath,
         timeout: 30000,

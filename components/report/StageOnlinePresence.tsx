@@ -270,11 +270,11 @@ export default function StageOnlinePresence({
   const SocialScreenshot = ({ screenshot, platform }: { screenshot: string | null; platform: 'instagram' | 'facebook' }) => (
     <div className="relative">
       <div className="relative rounded-[2.2rem] bg-gradient-to-br from-[#f8fafc] via-[#f1f5f9] to-[#e2e8f0] shadow-xl border border-gray-200/80 px-1 pt-2 pb-0.5">
-        {/* Side buttons - thinner */}
-        <div className="absolute -left-[1px] top-16 h-6 w-[1px] rounded-l-sm bg-gray-300" />
-        <div className="absolute -left-[1px] top-26 h-10 w-[1px] rounded-l-sm bg-gray-300" />
-        <div className="absolute -left-[1px] top-40 h-10 w-[1px] rounded-l-sm bg-gray-300" />
-        <div className="absolute -right-[1px] top-28 h-12 w-[1px] rounded-r-sm bg-gray-300" />
+        {/* Side buttons - positioned inside the border, not protruding */}
+        <div className="absolute left-0 top-16 h-6 w-[1px] bg-gray-300" />
+        <div className="absolute left-0 top-26 h-10 w-[1px] bg-gray-300" />
+        <div className="absolute left-0 top-40 h-10 w-[1px] bg-gray-300" />
+        <div className="absolute right-0 top-28 h-12 w-[1px] bg-gray-300" />
         
         {/* Dynamic Island / Notch */}
         <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-14 h-3 bg-gray-400 rounded-full z-20" />
@@ -362,11 +362,11 @@ export default function StageOnlinePresence({
             />
           </div>
           {/* Instagram - Left */}
-          <div className="absolute left-0 top-[55%] -translate-y-1/2 z-10 w-40 md:w-48 transform -rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
+          <div className="absolute left-0 top-[75%] -translate-y-1/2 z-10 w-52 md:w-64 transform -rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
             <SocialScreenshot screenshot={instagramLink.screenshot} platform="instagram" />
           </div>
           {/* Facebook - Right */}
-          <div className="absolute right-0 top-[55%] -translate-y-1/2 z-10 w-40 md:w-48 transform rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
+          <div className="absolute right-0 top-[75%] -translate-y-1/2 z-10 w-52 md:w-64 transform rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
             <SocialScreenshot screenshot={facebookLink.screenshot} platform="facebook" />
           </div>
         </div>
@@ -383,7 +383,7 @@ export default function StageOnlinePresence({
         <div className="flex items-center justify-center gap-8 md:gap-12" style={{ minHeight: '520px' }}>
           {/* Social on left if Instagram, right if Facebook */}
           {isInstagram && (
-            <div className="w-44 md:w-52 transform -rotate-3 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer flex-shrink-0">
+            <div className="w-56 md:w-72 transform -rotate-3 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer flex-shrink-0">
               <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} />
             </div>
           )}
@@ -397,7 +397,7 @@ export default function StageOnlinePresence({
           </div>
           {/* Facebook on right */}
           {!isInstagram && (
-            <div className="w-44 md:w-52 transform rotate-3 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer flex-shrink-0">
+            <div className="w-56 md:w-72 transform rotate-3 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer flex-shrink-0">
               <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} />
             </div>
           )}
@@ -410,11 +410,11 @@ export default function StageOnlinePresence({
       return (
         <div className="flex items-center justify-center gap-6 md:gap-12" style={{ minHeight: '520px' }}>
           {/* Instagram - Left */}
-          <div className="w-44 md:w-56 transform -rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
+          <div className="w-56 md:w-72 transform -rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
             <SocialScreenshot screenshot={instagramLink.screenshot} platform="instagram" />
           </div>
           {/* Facebook - Right */}
-          <div className="w-44 md:w-56 transform rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
+          <div className="w-56 md:w-72 transform rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
             <SocialScreenshot screenshot={facebookLink.screenshot} platform="facebook" />
           </div>
         </div>
@@ -443,7 +443,7 @@ export default function StageOnlinePresence({
       
       return (
         <div className="flex items-center justify-center" style={{ minHeight: '520px' }}>
-          <div className="w-52 md:w-64 transition-all duration-500 hover:scale-105 cursor-pointer">
+          <div className="w-64 md:w-80 transition-all duration-500 hover:scale-105 cursor-pointer">
             <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} />
           </div>
         </div>

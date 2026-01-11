@@ -13,29 +13,6 @@ import chromium from "@sparticuz/chromium";
 // Force Node.js runtime (Playwright is not compatible with Edge runtime)
 export const runtime = "nodejs";
 
-// Increase memory for Vercel serverless function (Chromium needs more RAM)
-export const maxDuration = 60; // 60 seconds max
-
-// Memory-saving browser args for serverless environment
-const SERVERLESS_BROWSER_ARGS = [
-  '--single-process', // Critical: reduces memory by running in single process
-  '--no-zygote', // Disable zygote process (saves memory)
-  '--disable-gpu',
-  '--disable-dev-shm-usage', // Use /tmp instead of /dev/shm (limited in Lambda)
-  '--disable-setuid-sandbox',
-  '--no-sandbox',
-  '--disable-accelerated-2d-canvas',
-  '--disable-background-networking',
-  '--disable-default-apps',
-  '--disable-extensions',
-  '--disable-sync',
-  '--disable-translate',
-  '--metrics-recording-only',
-  '--mute-audio',
-  '--no-first-run',
-  '--disable-features=site-per-process', // Reduces memory
-];
-
 // Viewport configurations
 const VIEWPORTS = {
   desktop: { width: 1920, height: 1080 },
@@ -75,13 +52,11 @@ async function captureWebsiteScreenshot(
     const executablePath = isServerless
       ? await chromium.executablePath()
       : (localExecutablePath || undefined);
-    
-    // Launch browser with memory-optimized args for serverless
+
+    // Launch browser with minimal args
     browser = await pwChromium.launch({
       headless: chromium.headless,
-      args: isServerless 
-        ? [...chromium.args, ...SERVERLESS_BROWSER_ARGS]
-        : [],
+      args: chromium.args,
       executablePath,
       timeout: TIMEOUT_MS,
     });
@@ -100,14 +75,14 @@ async function captureWebsiteScreenshot(
 
     console.log(`[SCREENSHOT] Navigating to ${normalizedUrl}...`);
 
-    // Use domcontentloaded instead of networkidle (much faster, less resource-intensive)
+    // Simple navigation with networkidle wait
     await page.goto(normalizedUrl, {
-      waitUntil: 'domcontentloaded',
+      waitUntil: 'networkidle',
       timeout: TIMEOUT_MS,
     });
-    
-    // Wait a bit for images and styles to load
-    await page.waitForTimeout(2000);
+
+    // Brief wait for any final rendering
+    await page.waitForTimeout(1000);
 
     console.log(`[SCREENSHOT] Taking viewport screenshot...`);
 
@@ -408,6 +383,368 @@ async function removeFacebookLoginPrompt(page: Page): Promise<void> {
 }
 
 /**
+ * Debug logging for Instagram screenshot diagnostics
+ */
+async function logInstagramPageState(page: Page, label: string): Promise<void> {
+  const state = await page.evaluate(() => {
+    // Count post thumbnail candidates
+    const thumbnailSelectors = [
+      'article img',
+      'img[srcset]',
+      'div[style*="background-image"]',
+      'a[href*="/p/"] img',
+      'div[role="tabpanel"] img',
+    ];
+    
+    let totalThumbnails = 0;
+    let loadedThumbnails = 0;
+    
+    thumbnailSelectors.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(el => {
+        if (el instanceof HTMLImageElement) {
+          totalThumbnails++;
+          if (el.complete && el.naturalWidth > 0) {
+            loadedThumbnails++;
+          }
+        }
+      });
+    });
+    
+    // Check overflow state
+    const htmlOverflow = getComputedStyle(document.documentElement).overflow;
+    const bodyOverflow = getComputedStyle(document.body).overflow;
+    const bodyPosition = getComputedStyle(document.body).position;
+    
+    // Check if main content exists
+    const hasMain = !!document.querySelector('main');
+    const hasArticles = document.querySelectorAll('article').length;
+    
+    return {
+      url: window.location.href,
+      totalThumbnails,
+      loadedThumbnails,
+      htmlOverflow,
+      bodyOverflow,
+      bodyPosition,
+      hasMain,
+      hasArticles,
+      viewportHeight: window.innerHeight,
+      scrollHeight: document.body.scrollHeight,
+    };
+  });
+  
+  console.log(`[INSTAGRAM DEBUG] ${label}:`, JSON.stringify(state, null, 2));
+}
+
+/**
+ * Ensures Instagram post grid is fully rendered before screenshot
+ * Waits for images to load and paint to settle
+ */
+async function ensureInstagramGridRendered(page: Page): Promise<{ success: boolean; thumbnailCount: number; loadedCount: number }> {
+  console.log(`[SCREENSHOT] Ensuring Instagram grid is rendered...`);
+  
+  // Step 1: Wait for main content to be visible
+  try {
+    await page.waitForSelector('main, article, [role="tabpanel"]', { timeout: 5000 });
+    console.log(`[SCREENSHOT] Main content selector found`);
+  } catch (e) {
+    console.log(`[SCREENSHOT] Main content selector not found, continuing anyway`);
+  }
+  
+  // Step 2: Scroll down to trigger lazy loading, then back up
+  console.log(`[SCREENSHOT] Performing scroll warmup to trigger lazy loading...`);
+  await page.evaluate(async () => {
+    const scrollStep = window.innerHeight;
+    const maxScroll = Math.min(document.body.scrollHeight, scrollStep * 3);
+    
+    // Scroll down in steps
+    for (let y = 0; y <= maxScroll; y += scrollStep) {
+      window.scrollTo(0, y);
+      await new Promise(r => setTimeout(r, 200));
+    }
+    
+    // Scroll back to top
+    window.scrollTo(0, 0);
+    await new Promise(r => setTimeout(r, 200));
+  });
+  
+  // Step 3: Wait for thumbnail images to exist (minimum 6, ideally 12)
+  const MIN_THUMBNAILS = 6;
+  const MAX_WAIT_MS = 8000;
+  const POLL_INTERVAL_MS = 500;
+  let elapsed = 0;
+  let thumbnailCount = 0;
+  let loadedCount = 0;
+  
+  while (elapsed < MAX_WAIT_MS) {
+    const counts = await page.evaluate(() => {
+      const images = document.querySelectorAll('article img, a[href*="/p/"] img, div[role="tabpanel"] img');
+      let total = 0;
+      let loaded = 0;
+      
+      images.forEach(img => {
+        if (img instanceof HTMLImageElement) {
+          total++;
+          if (img.complete && img.naturalWidth > 0) {
+            loaded++;
+          }
+        }
+      });
+      
+      return { total, loaded };
+    });
+    
+    thumbnailCount = counts.total;
+    loadedCount = counts.loaded;
+    
+    console.log(`[SCREENSHOT] Thumbnails: ${loadedCount}/${thumbnailCount} loaded (elapsed: ${elapsed}ms)`);
+    
+    if (loadedCount >= MIN_THUMBNAILS) {
+      console.log(`[SCREENSHOT] ✅ Sufficient thumbnails loaded`);
+      break;
+    }
+    
+    await page.waitForTimeout(POLL_INTERVAL_MS);
+    elapsed += POLL_INTERVAL_MS;
+  }
+  
+  // Step 4: Wait for images to decode
+  await page.evaluate(async () => {
+    const images = document.querySelectorAll('article img, a[href*="/p/"] img');
+    const promises: Promise<void>[] = [];
+    
+    images.forEach(img => {
+      if (img instanceof HTMLImageElement && !img.complete) {
+        promises.push(
+          new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            // Timeout fallback
+            setTimeout(resolve, 2000);
+          })
+        );
+      }
+    });
+    
+    await Promise.all(promises);
+  });
+  
+  // Step 5: Paint settle - wait for a few animation frames
+  await page.evaluate(() => {
+    return new Promise<void>(resolve => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setTimeout(resolve, 300);
+          });
+        });
+      });
+    });
+  });
+  
+  console.log(`[SCREENSHOT] Grid render complete: ${loadedCount}/${thumbnailCount} thumbnails loaded`);
+  
+  return {
+    success: loadedCount >= MIN_THUMBNAILS,
+    thumbnailCount,
+    loadedCount,
+  };
+}
+
+/**
+ * Restores scroll ability after overlay removal
+ * Instagram often locks scrolling when showing modals
+ */
+async function restoreInstagramScrollability(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    // Remove scroll locks
+    document.documentElement.style.overflow = 'auto';
+    document.body.style.overflow = 'auto';
+    document.documentElement.style.overflowY = 'auto';
+    document.body.style.overflowY = 'auto';
+    
+    // Remove position:fixed that's sometimes used for scroll lock
+    if (getComputedStyle(document.body).position === 'fixed') {
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.width = '';
+    }
+    
+    // Remove any transform locks
+    document.body.style.transform = '';
+    document.documentElement.style.transform = '';
+  });
+  console.log(`[SCREENSHOT] Scroll locks removed`);
+}
+
+/**
+ * Neutralizes Instagram overlays without breaking page structure
+ * Uses visibility/opacity instead of display:none, and tries close buttons first
+ */
+async function neutralizeInstagramOverlays(page: Page): Promise<void> {
+  console.log(`[SCREENSHOT] Neutralizing Instagram overlays...`);
+  
+  // First, try pressing Escape to close any modal
+  try {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    console.log(`[SCREENSHOT] Pressed Escape to close modals`);
+  } catch (e) {
+    console.log(`[SCREENSHOT] Escape key failed, continuing`);
+  }
+  
+  // Try clicking close buttons if present
+  const closeButtonClicked = await page.evaluate(() => {
+    const closeSelectors = [
+      'button[aria-label="Close"]',
+      'svg[aria-label="Close"]',
+      '[aria-label="Close"] button',
+      'button:has(svg[aria-label="Close"])',
+    ];
+    
+    for (const selector of closeSelectors) {
+      const btn = document.querySelector(selector);
+      if (btn instanceof HTMLElement) {
+        btn.click();
+        return true;
+      }
+    }
+    return false;
+  });
+  
+  if (closeButtonClicked) {
+    await page.waitForTimeout(500);
+    console.log(`[SCREENSHOT] Clicked close button`);
+  }
+  
+  // Neutralize overlays using visibility/opacity instead of display:none
+  const neutralized = await page.evaluate(() => {
+    let count = 0;
+    
+    // Helper to neutralize an element without breaking layout
+    const neutralize = (el: HTMLElement) => {
+      el.style.visibility = 'hidden';
+      el.style.opacity = '0';
+      el.style.pointerEvents = 'none';
+      count++;
+    };
+    
+    // 1. Neutralize "Continue watching" / signup modals
+    const signupModals = document.querySelectorAll('div');
+    signupModals.forEach(el => {
+      const hasClasses = el.classList.contains('x1oiqv2n') && el.classList.contains('x1sgudl8');
+      if (hasClasses) {
+        neutralize(el as HTMLElement);
+      }
+    });
+    
+    // 2. Neutralize login dialogs (role="dialog" with login form)
+    const dialogs = document.querySelectorAll('div[role="dialog"]');
+    dialogs.forEach(dialog => {
+      if (dialog.querySelector('input[name="username"]') || 
+          dialog.querySelector('form#loginForm') ||
+          dialog.textContent?.includes('See more from')) {
+        neutralize(dialog as HTMLElement);
+      }
+    });
+    
+    // 3. Neutralize fixed backdrop overlays
+    const allDivs = document.querySelectorAll('div');
+    allDivs.forEach(el => {
+      const style = getComputedStyle(el);
+      // Fixed overlay with high z-index, not containing main content
+      if (style.position === 'fixed' && 
+          parseInt(style.zIndex || '0') > 100 &&
+          !el.querySelector('main, article, nav')) {
+        // Check if it looks like an overlay (dark background or high opacity backdrop)
+        const bg = style.backgroundColor;
+        if (bg.includes('rgba') && bg.includes('0.') || el.classList.contains('x1uvtmcs')) {
+          neutralize(el as HTMLElement);
+        }
+      }
+    });
+    
+    // 4. Neutralize specific Instagram overlay classes
+    const overlayClasses = [
+      'x1uvtmcs.x4k7w5x.x1h91t0o',
+      'x1ey2m1c.xtijo5x.x1o0tod',
+      'xg6iff7.xippug5',
+    ];
+    
+    overlayClasses.forEach(classStr => {
+      const selector = classStr.split('.').map(c => `.${c}`).join('');
+      document.querySelectorAll(selector).forEach(el => {
+        neutralize(el as HTMLElement);
+      });
+    });
+    
+    return count;
+  });
+  
+  console.log(`[SCREENSHOT] Neutralized ${neutralized} overlay elements`);
+  
+  // Restore scroll ability
+  await restoreInstagramScrollability(page);
+}
+
+/**
+ * Removes Instagram popup overlays when navigating via Google search
+ * This is specifically for the popups that appear when coming from Google
+ * Different from removeInstagramPrompts which handles direct navigation popups
+ */
+async function removeInstagramOverlaysViaGoogle(page: Page): Promise<void> {
+  console.log(`[SCREENSHOT] Removing Instagram overlays (Google navigation)...`);
+  
+  // Log initial state
+  await logInstagramPageState(page, 'Before overlay removal');
+  
+  // Wait for initial content to load
+  console.log(`[SCREENSHOT] Waiting for initial content...`);
+  await page.waitForTimeout(1500);
+  
+  // Use the new neutralization approach
+  await neutralizeInstagramOverlays(page);
+  
+  // Ensure grid is rendered after overlay changes
+  const gridResult = await ensureInstagramGridRendered(page);
+  
+  // Log state after rendering
+  await logInstagramPageState(page, 'After grid render');
+  
+  if (!gridResult.success) {
+    console.log(`[SCREENSHOT] ⚠️ Warning: Only ${gridResult.loadedCount} thumbnails loaded, expected at least 6`);
+  }
+  
+  // Legacy removal for stubborn elements (use remove() only for non-critical overlays)
+  const removedCount = await page.evaluate(() => {
+    let removed = 0;
+    
+    // Only remove backdrop/spinner elements that are definitely not content
+    const safeToRemove = [
+      'div.x1uvtmcs.x4k7w5x.x1h91t0o.xaigb6o', // backdrop
+      'div.xg6iff7.xippug5', // spinner
+    ];
+    
+    safeToRemove.forEach(selector => {
+      document.querySelectorAll(selector).forEach(el => {
+        el.remove();
+        removed++;
+      });
+    });
+    
+    return removed;
+  });
+  
+  console.log(`[SCREENSHOT] Removed ${removedCount} additional overlay elements`);
+  
+  // Wait a moment for DOM to settle
+  await page.waitForTimeout(300);
+}
+
+/**
  * Removes Instagram signup/login prompts and "Open app" link
  * Works for both desktop and mobile viewports
  * Must be called in this specific order:
@@ -597,235 +934,6 @@ async function setupStealth(page: Page): Promise<void> {
 }
 
 /**
- * Extracts Instagram username from URL
- * e.g., "https://www.instagram.com/cafecaprice/" -> "cafecaprice"
- */
-function extractInstagramUsername(url: string): string | null {
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname;
-    // Remove leading/trailing slashes and get first path segment
-    const parts = pathname.split('/').filter(p => p.length > 0);
-    if (parts.length > 0) {
-      // Skip special paths
-      const specialPaths = ['p', 'reel', 'reels', 'stories', 'explore', 'accounts', 'direct', 'tv'];
-      if (!specialPaths.includes(parts[0].toLowerCase())) {
-        return parts[0];
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Captures Instagram screenshot by navigating through Google search.
- * This bypasses Instagram's direct navigation login wall detection.
- * 
- * Flow:
- * 1. Extract username from Instagram URL
- * 2. Go to Google and search: site:instagram.com "[username]"
- * 3. Click the first Instagram result
- * 4. Take screenshot of the profile page
- */
-async function captureInstagramViaGoogle(
-  url: string,
-  viewport: 'desktop' | 'mobile'
-): Promise<{ success: boolean; screenshot?: string; error?: string }> {
-  let browser: Browser | null = null;
-  let page: Page | null = null;
-
-  try {
-    // Extract username from URL
-    const username = extractInstagramUsername(url);
-    if (!username) {
-      console.error(`[INSTAGRAM] Could not extract username from URL: ${url}`);
-      return { success: false, error: 'Could not extract Instagram username from URL' };
-    }
-    
-    console.log(`[INSTAGRAM] Starting Google-based capture for @${username}`);
-    console.log(`[INSTAGRAM] Original URL: ${url}`);
-    console.log(`[INSTAGRAM] Viewport: ${viewport}`);
-
-    const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
-    const localExecutablePath = process.env.CHROMIUM_EXECUTABLE_PATH;
-    const executablePath = isServerless
-      ? await chromium.executablePath()
-      : (localExecutablePath || undefined);
-
-    // Launch browser
-    const useHeadless = chromium.headless;
-    console.log(`[INSTAGRAM] Launching browser - headless: ${useHeadless}, isServerless: ${isServerless}`);
-
-    browser = await pwChromium.launch({
-      headless: useHeadless,
-      args: [
-        ...(isServerless ? [...chromium.args, ...SERVERLESS_BROWSER_ARGS] : []),
-        '--disable-blink-features=AutomationControlled',
-        '--window-size=1920,1080',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-      ],
-      executablePath,
-      timeout: TIMEOUT_MS
-    });
-
-    console.log(`[INSTAGRAM] Browser launched successfully`);
-
-    // Create context - use DESKTOP settings to avoid mobile app prompts
-    const viewportConfig = VIEWPORTS[viewport];
-    const userAgent = USER_AGENTS.desktop; // Always use desktop UA for Instagram
-    const deviceScaleFactor = viewport === 'mobile' ? 2 : 1;
-
-    const context = await browser.newContext({
-      viewport: viewportConfig,
-      userAgent,
-      deviceScaleFactor,
-      isMobile: false,
-      hasTouch: false,
-      javaScriptEnabled: true,
-      permissions: ['geolocation'],
-      locale: 'en-US',
-    });
-
-    context.setDefaultNavigationTimeout(TIMEOUT_MS);
-    context.setDefaultTimeout(TIMEOUT_MS);
-
-    page = await context.newPage();
-    page.setDefaultNavigationTimeout(TIMEOUT_MS);
-    page.setDefaultTimeout(TIMEOUT_MS);
-
-    // Apply stealth techniques
-    await setupStealth(page);
-    console.log(`[INSTAGRAM] Stealth setup complete`);
-
-    // Set extra headers
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1'
-    });
-
-    // Step 1: Navigate to Google
-    console.log(`[INSTAGRAM] Navigating to Google...`);
-    await page.goto('https://www.google.com', { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
-    await page.waitForTimeout(500 + Math.random() * 500);
-
-    // Step 2: Search for the Instagram profile
-    const searchQuery = `site:instagram.com "${username}"`;
-    console.log(`[INSTAGRAM] Searching Google for: ${searchQuery}`);
-
-    const searchBox = page.locator('textarea[name="q"], input[name="q"]').first();
-    await searchBox.click({ delay: 50 });
-    await searchBox.type(searchQuery, { delay: 30 + Math.random() * 40 });
-    await page.waitForTimeout(200 + Math.random() * 300);
-    await searchBox.press('Enter');
-
-    // Wait for search results
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForTimeout(1500);
-
-    // Step 3: Find and click the Instagram result
-    console.log(`[INSTAGRAM] Looking for Instagram result in Google search...`);
-    
-    // Look for Instagram links in search results
-    const instagramLinkSelectors = [
-      `a[href*="instagram.com/${username}"]`,
-      `a[href*="instagram.com/${username.toLowerCase()}"]`,
-      'a[href*="instagram.com"]:not([href*="support.instagram.com"])',
-    ];
-
-    let clicked = false;
-    for (const selector of instagramLinkSelectors) {
-      try {
-        const links = await page.locator(selector).all();
-        console.log(`[INSTAGRAM] Found ${links.length} links with selector: ${selector}`);
-        
-        for (const link of links) {
-          const href = await link.getAttribute('href');
-          if (href && href.includes('instagram.com') && !href.includes('support.instagram.com')) {
-            console.log(`[INSTAGRAM] Clicking Instagram link: ${href}`);
-            await link.click({ timeout: 5000 });
-            clicked = true;
-            break;
-          }
-        }
-        if (clicked) break;
-      } catch (e) {
-        continue;
-      }
-    }
-
-    if (!clicked) {
-      console.error(`[INSTAGRAM] Could not find Instagram link in Google results`);
-      return { success: false, error: 'Could not find Instagram profile in Google search results' };
-    }
-
-    // Wait for Instagram page to load
-    console.log(`[INSTAGRAM] Waiting for Instagram page to load...`);
-    await page.waitForLoadState('domcontentloaded');
-    
-    try {
-      await page.waitForLoadState('networkidle', { timeout: 10000 });
-    } catch {
-      console.log(`[INSTAGRAM] Network idle timeout, proceeding anyway`);
-    }
-
-    // Additional wait for dynamic content
-    await page.waitForTimeout(2000);
-
-    // Verify we're on Instagram
-    const currentUrl = page.url();
-    console.log(`[INSTAGRAM] Current URL: ${currentUrl}`);
-    
-    if (!currentUrl.includes('instagram.com')) {
-      console.error(`[INSTAGRAM] Not on Instagram page: ${currentUrl}`);
-      return { success: false, error: 'Failed to navigate to Instagram through Google' };
-    }
-
-    // Dismiss any popups
-    console.log(`[INSTAGRAM] Dismissing popups...`);
-    await dismissSocialMediaPopups(page, 'instagram');
-    await removeInstagramPrompts(page);
-
-    // Take screenshot
-    const isMobile = viewport === 'mobile';
-    const useFullPage = !isMobile;
-    
-    console.log(`[INSTAGRAM] Capturing ${useFullPage ? 'full-page' : 'viewport'} screenshot...`);
-    
-    const screenshotBuffer = await page.screenshot({
-      fullPage: useFullPage,
-      timeout: TIMEOUT_MS
-    });
-
-    const base64Screenshot = screenshotBuffer.toString('base64');
-    const dataUrl = `data:image/png;base64,${base64Screenshot}`;
-
-    console.log(`[INSTAGRAM] ✅ Screenshot captured successfully (${base64Screenshot.length} chars)`);
-
-    return {
-      success: true,
-      screenshot: dataUrl,
-    };
-
-  } catch (error) {
-    console.error(`[INSTAGRAM] ❌ Error capturing screenshot:`, error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
-  } finally {
-    await page?.close().catch(() => {});
-    await browser?.close().catch(() => {});
-    console.log(`[INSTAGRAM] Browser closed`);
-  }
-}
-
-/**
  * Takes a screenshot of a social media profile or website.
  * Routes to simple approach for websites, complex stealth for social media.
  */
@@ -852,13 +960,7 @@ async function captureScreenshot(
     return captureWebsiteScreenshot(url);
   }
 
-  // For Instagram, use Google-based navigation to bypass login wall
-  if (platform === 'instagram') {
-    console.log(`[SCREENSHOT] Using Google-based capture for Instagram: ${url}`);
-    return captureInstagramViaGoogle(url, viewport);
-  }
-
-  // For Facebook, use direct stealth approach
+  // For social media (Instagram, Facebook), use stealth approach
   let browser: Browser | null = null;
   let page: Page | null = null;
 
@@ -873,22 +975,28 @@ async function captureScreenshot(
         : (localExecutablePath || undefined);
 
       // Launch browser
-      const useHeadless = chromium.headless;
+      // DEBUG: Set headless: false locally to see what's happening
+      const useHeadless = isServerless ? chromium.headless : false;
       console.log(`[SCREENSHOT] Launching browser - headless: ${useHeadless}, isServerless: ${isServerless}`);
       
       try {
         browser = await pwChromium.launch({
           headless: useHeadless,
-          args: [
-            // Start with @sparticuz/chromium defaults + memory-saving args for serverless
-            ...(isServerless ? [...chromium.args, ...SERVERLESS_BROWSER_ARGS] : []),
-            '--disable-blink-features=AutomationControlled',
-            '--window-size=1920,1080',
-            '--disable-web-security',
-          ],
-          executablePath,
-          timeout: TIMEOUT_MS
-        });
+        args: [
+          // Start with @sparticuz/chromium defaults (serverless-safe). Keep our extras minimal to avoid conflicts.
+          ...(isServerless ? chromium.args : []),
+          '--disable-blink-features=AutomationControlled',
+          // Window size arguments (must match viewport)
+          '--window-size=1920,1080',
+          // Keep existing behavior for some sites; avoid adding redundant sandbox/dev-shm flags (already in chromium.args).
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          // Incognito mode for cleaner session (no cached data)
+          '--incognito',
+        ],
+        executablePath,
+        timeout: TIMEOUT_MS
+      });
       } catch (launchError) {
         if (!isServerless && !localExecutablePath) {
           console.error(
@@ -954,66 +1062,161 @@ async function captureScreenshot(
       console.log(`[SCREENSHOT] Original URL was: ${url}`);
       const startTime = Date.now();
       
-      try {
-        const response = await page.goto(normalizedUrl, {
-          waitUntil: 'domcontentloaded', // Changed from 'networkidle' to 'domcontentloaded' for faster initial load
+      // INSTAGRAM ONLY: Navigate via Google to avoid login screen
+      if (platform === 'instagram') {
+        console.log(`[SCREENSHOT] 🔍 Instagram detected - using Google search approach to bypass login`);
+        
+        // Extract username from Instagram URL
+        // URLs can be: https://www.instagram.com/username/ or https://instagram.com/username
+        const instagramUrlMatch = normalizedUrl.match(/instagram\.com\/([^\/\?]+)/);
+        if (!instagramUrlMatch || !instagramUrlMatch[1]) {
+          return {
+            success: false,
+            error: `Could not extract Instagram username from URL: ${normalizedUrl}`
+          };
+        }
+        const username = instagramUrlMatch[1];
+        console.log(`[SCREENSHOT] Extracted Instagram username: ${username}`);
+        
+        // Step 1: Navigate to Google
+        console.log(`[SCREENSHOT] Step 1: Navigating to Google...`);
+        await page.goto('https://www.google.com', {
+          waitUntil: 'domcontentloaded',
           timeout: TIMEOUT_MS
         });
-
-        const navigationTime = Date.now() - startTime;
-        console.log(`[SCREENSHOT] Navigation completed in ${navigationTime}ms`);
-
-        // Check response status
-        if (response) {
-          const status = response.status();
-          console.log(`[SCREENSHOT] Response status: ${status}`);
+        await page.waitForTimeout(1000);
+        
+        // Step 2: Search for the Instagram profile
+        const searchQuery = `site:instagram.com "${username}"`;
+        console.log(`[SCREENSHOT] Step 2: Searching for: ${searchQuery}`);
+        
+        // Find the search input and type the query
+        const searchInput = page.locator('textarea[name="q"], input[name="q"]').first();
+        await searchInput.fill(searchQuery);
+        await page.keyboard.press('Enter');
+        
+        // Wait for search results to load
+        await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
+        await page.waitForTimeout(2000);
+        
+        console.log(`[SCREENSHOT] Google search executed, current URL: ${page.url()}`);
+        
+        // Step 2.5: Dismiss Google "Not now" popup if present
+        try {
+          const notNowButton = page.locator('g-raised-button:has-text("Not now"), div.sjVJQd:has-text("Not now")').first();
+          const popupVisible = await notNowButton.isVisible({ timeout: 2000 }).catch(() => false);
           
-          if (status >= 400) {
+          if (popupVisible) {
+            console.log(`[SCREENSHOT] Found "Not now" popup, dismissing...`);
+            await notNowButton.click();
+            await page.waitForTimeout(500);
+            console.log(`[SCREENSHOT] Popup dismissed`);
+          }
+        } catch (e) {
+          console.log(`[SCREENSHOT] No "Not now" popup found or already dismissed`);
+        }
+        
+        // Step 3: Click the first Instagram result
+        // Google results have links in <a> tags with href containing instagram.com
+        console.log(`[SCREENSHOT] Step 3: Looking for first Instagram result...`);
+        const instagramResult = page.locator(`a[href*="instagram.com/${username}"]`).first();
+        const resultExists = await instagramResult.count() > 0;
+        
+        if (resultExists) {
+          console.log(`[SCREENSHOT] Found Instagram result, clicking...`);
+          await instagramResult.click();
+          await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
+          await page.waitForTimeout(3000);
+          console.log(`[SCREENSHOT] Navigated to Instagram via Google, current URL: ${page.url()}`);
+          
+          // Step 4: Remove Instagram popup overlays before screenshot
+          console.log(`[SCREENSHOT] Step 4: Removing Instagram popup overlays...`);
+          await removeInstagramOverlaysViaGoogle(page);
+          
+        } else {
+          console.log(`[SCREENSHOT] No direct Instagram result found, trying generic first result...`);
+          // Fallback: click the first search result link
+          const firstResult = page.locator('#search a[href*="instagram.com"]').first();
+          if (await firstResult.count() > 0) {
+            await firstResult.click();
+            await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
+            await page.waitForTimeout(3000);
+            console.log(`[SCREENSHOT] Navigated via fallback, current URL: ${page.url()}`);
+            
+            // Step 4: Remove Instagram popup overlays before screenshot
+            console.log(`[SCREENSHOT] Step 4: Removing Instagram popup overlays...`);
+            await removeInstagramOverlaysViaGoogle(page);
+            
+          } else {
             return {
               success: false,
-              error: `HTTP ${status}: Failed to load page`
+              error: `Could not find Instagram profile in Google search results for: ${username}`
             };
           }
         }
-
-        // Check if page loaded correctly
-        const currentUrl = page.url();
-        console.log(`[SCREENSHOT] Current URL after navigation: ${currentUrl}`);
-        
-        if (!currentUrl || currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
-          return {
-            success: false,
-            error: `Page navigation failed - invalid URL after navigation: ${currentUrl}`
-          };
-        }
-
-        // Wait for page to be fully loaded
-        console.log(`[SCREENSHOT] Waiting for page to load...`);
-        await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
-        
-        // Wait for network to be idle (but with shorter timeout)
+      } else {
+        // FACEBOOK and WEBSITE: Direct navigation (unchanged)
         try {
-          await page.waitForLoadState('networkidle', { timeout: 15000 });
-        } catch (e) {
-          console.log(`[SCREENSHOT] Network idle timeout, proceeding anyway`);
+          const response = await page.goto(normalizedUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: TIMEOUT_MS
+          });
+
+          const navigationTime = Date.now() - startTime;
+          console.log(`[SCREENSHOT] Navigation completed in ${navigationTime}ms`);
+
+          // Check response status
+          if (response) {
+            const status = response.status();
+            console.log(`[SCREENSHOT] Response status: ${status}`);
+            
+            if (status >= 400) {
+              return {
+                success: false,
+                error: `HTTP ${status}: Failed to load page`
+              };
+            }
+          }
+
+          // Check if page loaded correctly
+          const currentUrl = page.url();
+          console.log(`[SCREENSHOT] Current URL after navigation: ${currentUrl}`);
+          
+          if (!currentUrl || currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
+            return {
+              success: false,
+              error: `Page navigation failed - invalid URL after navigation: ${currentUrl}`
+            };
+          }
+
+          // Wait for page to be fully loaded
+          console.log(`[SCREENSHOT] Waiting for page to load...`);
+          await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
+          
+          // Wait for network to be idle (but with shorter timeout)
+          try {
+            await page.waitForLoadState('networkidle', { timeout: 15000 });
+          } catch (e) {
+            console.log(`[SCREENSHOT] Network idle timeout, proceeding anyway`);
+          }
+          
+          // Additional wait for dynamic content (social media pages often load content dynamically)
+          await page.waitForTimeout(3000);
+          console.log(`[SCREENSHOT] Page load complete`);
+        } catch (navigationError) {
+          console.error(`[SCREENSHOT] Navigation error:`, navigationError);
+          const currentUrl = page.url();
+          console.log(`[SCREENSHOT] Current URL after error: ${currentUrl}`);
+          
+          if (currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
+            return {
+              success: false,
+              error: `Navigation failed: ${navigationError instanceof Error ? navigationError.message : 'Unknown error'}`
+            };
+          }
+          // If we got somewhere, continue anyway
         }
-        
-        // Additional wait for dynamic content (social media pages often load content dynamically)
-        await page.waitForTimeout(3000);
-        console.log(`[SCREENSHOT] Page load complete`);
-      } catch (navigationError) {
-        console.error(`[SCREENSHOT] Navigation error:`, navigationError);
-        const currentUrl = page.url();
-        console.log(`[SCREENSHOT] Current URL after error: ${currentUrl}`);
-        
-        if (currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
-          return {
-            success: false,
-            error: `Navigation failed: ${navigationError instanceof Error ? navigationError.message : 'Unknown error'}`
-          };
-        }
-        // If we got somewhere, continue anyway
-      }
+      } // End of else block (Facebook/Website direct navigation)
 
       // Wait for content to be visible (platform-specific selectors)
       const contentSelectors = [
@@ -1069,15 +1272,28 @@ async function captureScreenshot(
         await removeFacebookLoginPrompt(page);
       } else if (platform === 'instagram') {
         await removeInstagramPrompts(page);
+        
+        // INSTAGRAM: Ensure grid is rendered before screenshot
+        console.log(`[SCREENSHOT] Instagram: Ensuring grid is rendered before capture...`);
+        await logInstagramPageState(page, 'Before Instagram capture');
+        const gridResult = await ensureInstagramGridRendered(page);
+        await logInstagramPageState(page, 'After grid render check');
+        
+        if (!gridResult.success) {
+          console.log(`[SCREENSHOT] ⚠️ Instagram grid may not be fully loaded (${gridResult.loadedCount} thumbnails)`);
+        }
       }
 
       // Take screenshot
-      // For mobile: capture viewport only
-      // For desktop social media: capture full page
+      // IMPORTANT: Use viewport-only for Instagram to avoid fullPage rendering issues
       const isMobile = viewport === 'mobile';
-      const useFullPage = !isMobile; // Full-page for desktop social media, viewport for mobile
+      const isInstagram = platform === 'instagram';
       
-      console.log(`[SCREENSHOT] Capturing ${useFullPage ? 'full-page' : 'viewport'} screenshot...`);
+      // Instagram always uses viewport mode to avoid fullPage bugs
+      // Facebook and other social media use fullPage for desktop
+      const useFullPage = isInstagram ? false : !isMobile;
+      
+      console.log(`[SCREENSHOT] Capturing ${useFullPage ? 'full-page' : 'viewport'} screenshot (platform: ${platform})...`);
       const screenshotStartTime = Date.now();
       
       const screenshotBuffer = await page.screenshot({
