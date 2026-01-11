@@ -16,17 +16,101 @@ export const runtime = "nodejs";
 // Viewport configurations
 const VIEWPORTS = {
   desktop: { width: 1920, height: 1080 },
-  mobile: { width: 375, height: 812 }
+  mobile: { width: 375, height: 812 },
+  website: { width: 1440, height: 900 }, // Cleaner viewport for business websites
 };
 
 // User agents for different viewports
 const USER_AGENTS = {
   desktop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  mobile: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+  mobile: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+  website: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
 };
 
 // Timeout configuration
 const TIMEOUT_MS = 30000; // 30 seconds
+
+/**
+ * Simple, clean website screenshot capture.
+ * Uses a straightforward approach without complex stealth scripts.
+ * Best for business websites that don't have aggressive bot detection.
+ */
+async function captureWebsiteScreenshot(
+  url: string
+): Promise<{ success: boolean; screenshot?: string; error?: string }> {
+  let browser: Browser | null = null;
+  let page: Page | null = null;
+
+  try {
+    console.log(`[SCREENSHOT] Starting simple website capture for: ${url}`);
+
+    const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+    const localExecutablePath = process.env.CHROMIUM_EXECUTABLE_PATH;
+    const executablePath = isServerless
+      ? await chromium.executablePath()
+      : (localExecutablePath || undefined);
+
+    // Launch browser with minimal args
+    browser = await pwChromium.launch({
+      headless: chromium.headless,
+      args: chromium.args,
+      executablePath,
+      timeout: TIMEOUT_MS,
+    });
+
+    // Create page with clean 1440x900 viewport
+    page = await browser.newPage({
+      viewport: VIEWPORTS.website,
+      userAgent: USER_AGENTS.website,
+    });
+
+    // Normalize URL
+    let normalizedUrl = url.trim();
+    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+      normalizedUrl = `https://${normalizedUrl}`;
+    }
+
+    console.log(`[SCREENSHOT] Navigating to ${normalizedUrl}...`);
+
+    // Simple navigation with networkidle wait
+    await page.goto(normalizedUrl, {
+      waitUntil: 'networkidle',
+      timeout: TIMEOUT_MS,
+    });
+
+    // Brief wait for any final rendering
+    await page.waitForTimeout(1000);
+
+    console.log(`[SCREENSHOT] Taking viewport screenshot...`);
+
+    // Viewport-only screenshot (not full page)
+    const screenshotBuffer = await page.screenshot({
+      fullPage: false,
+      timeout: TIMEOUT_MS,
+    });
+
+    // Convert to base64
+    const base64Screenshot = screenshotBuffer.toString('base64');
+    const dataUrl = `data:image/png;base64,${base64Screenshot}`;
+
+    console.log(`[SCREENSHOT] ✅ Website screenshot captured (${base64Screenshot.length} chars)`);
+
+    return {
+      success: true,
+      screenshot: dataUrl,
+    };
+  } catch (error) {
+    console.error(`[SCREENSHOT] ❌ Website screenshot failed:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  } finally {
+    await page?.close().catch(() => {});
+    await browser?.close().catch(() => {});
+    console.log(`[SCREENSHOT] Browser closed`);
+  }
+}
 
 /**
  * Dismisses popups and modals for social media platforms (Instagram and Facebook only)
@@ -425,217 +509,225 @@ async function setupStealth(page: Page): Promise<void> {
 }
 
 /**
- * Takes a screenshot of a social media profile
+ * Takes a screenshot of a social media profile or website.
+ * Routes to simple approach for websites, complex stealth for social media.
  */
 async function captureScreenshot(
   url: string,
   viewport: 'desktop' | 'mobile',
   platformParam?: string
 ): Promise<{ success: boolean; screenshot?: string; error?: string }> {
+  // Detect platform early
+  let platform = platformParam || 'unknown';
+  if (platform === 'unknown') {
+    if (url.includes('instagram.com')) {
+      platform = 'instagram';
+    } else if (url.includes('facebook.com')) {
+      platform = 'facebook';
+    } else {
+      platform = 'website';
+    }
+  }
+
+  // For websites, use the simple clean approach (no stealth needed)
+  if (platform === 'website') {
+    console.log(`[SCREENSHOT] Using simple website capture for: ${url}`);
+    return captureWebsiteScreenshot(url);
+  }
+
+  // For social media (Instagram, Facebook), use stealth approach
   let browser: Browser | null = null;
   let page: Page | null = null;
 
   try {
-    console.log(`[SCREENSHOT] Starting capture for ${viewport} viewport`);
+    console.log(`[SCREENSHOT] Starting ${platform} capture for ${viewport} viewport`);
     console.log(`[SCREENSHOT] URL: ${url}`);
 
-    const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
-    const localExecutablePath = process.env.CHROMIUM_EXECUTABLE_PATH;
-    const executablePath = isServerless
-      ? await chromium.executablePath()
-      : (localExecutablePath || undefined);
+      const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+      const localExecutablePath = process.env.CHROMIUM_EXECUTABLE_PATH;
+      const executablePath = isServerless
+        ? await chromium.executablePath()
+        : (localExecutablePath || undefined);
 
-    // Launch browser with UNDETECTABLE headless mode
-    // Note: Playwright's headless: true uses the new headless mode by default (more stealthy than old headless)
-    try {
-      browser = await pwChromium.launch({
-        headless: chromium.headless,
-      args: [
-        // Start with @sparticuz/chromium defaults (serverless-safe). Keep our extras minimal to avoid conflicts.
-        ...chromium.args,
-        '--disable-blink-features=AutomationControlled',
-        // Window size arguments (must match viewport)
-        '--window-size=1920,1080',
-        // Keep existing behavior for some sites; avoid adding redundant sandbox/dev-shm flags (already in chromium.args).
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-      ],
-      executablePath,
-      timeout: TIMEOUT_MS
-    });
-    } catch (launchError) {
-      if (!isServerless && !localExecutablePath) {
-        console.error(
-          `[SCREENSHOT] Chromium launch failed in local dev without a configured browser binary. ` +
-          `Set CHROMIUM_EXECUTABLE_PATH to a local Chromium/Chrome executable path, ` +
-          `or run this route in Linux/serverless where @sparticuz/chromium can provide the binary.`
-        );
-      }
-      throw launchError;
-    }
-
-    console.log(`[SCREENSHOT] Browser launched successfully`);
-
-    // Create context with appropriate viewport and user agent
-    const viewportConfig = VIEWPORTS[viewport];
-    const userAgent = USER_AGENTS[viewport];
-
-    const context = await browser.newContext({
-      viewport: viewportConfig,
-      userAgent: userAgent,
-      // Add device scale factor to look more realistic
-      deviceScaleFactor: 1,
-      isMobile: viewport === 'mobile',
-      hasTouch: viewport === 'mobile',
-      // Disable JavaScript-based detection
-      javaScriptEnabled: true,
-      // Add permissions
-      permissions: ['geolocation'],
-    });
-
-    console.log(`[SCREENSHOT] Context created: ${viewportConfig.width}x${viewportConfig.height}`);
-
-    // Set timeouts
-    context.setDefaultNavigationTimeout(TIMEOUT_MS);
-    context.setDefaultTimeout(TIMEOUT_MS);
-
-    page = await context.newPage();
-    page.setDefaultNavigationTimeout(TIMEOUT_MS);
-    page.setDefaultTimeout(TIMEOUT_MS);
-
-    // Apply stealth techniques
-    await setupStealth(page);
-    console.log(`[SCREENSHOT] Stealth setup complete`);
-
-    // Validate and normalize URL
-    let normalizedUrl = url.trim();
-    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
-      normalizedUrl = `https://${normalizedUrl}`;
-    }
-    
-    console.log(`[SCREENSHOT] Navigating to ${normalizedUrl}...`);
-    console.log(`[SCREENSHOT] Original URL was: ${url}`);
-    const startTime = Date.now();
-    
-    try {
-      const response = await page.goto(normalizedUrl, {
-        waitUntil: 'domcontentloaded', // Changed from 'networkidle' to 'domcontentloaded' for faster initial load
+      // Launch browser with UNDETECTABLE headless mode
+      // Note: Playwright's headless: true uses the new headless mode by default (more stealthy than old headless)
+      try {
+        browser = await pwChromium.launch({
+          headless: chromium.headless,
+        args: [
+          // Start with @sparticuz/chromium defaults (serverless-safe). Keep our extras minimal to avoid conflicts.
+          ...chromium.args,
+          '--disable-blink-features=AutomationControlled',
+          // Window size arguments (must match viewport)
+          '--window-size=1920,1080',
+          // Keep existing behavior for some sites; avoid adding redundant sandbox/dev-shm flags (already in chromium.args).
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+        ],
+        executablePath,
         timeout: TIMEOUT_MS
       });
+      } catch (launchError) {
+        if (!isServerless && !localExecutablePath) {
+          console.error(
+            `[SCREENSHOT] Chromium launch failed in local dev without a configured browser binary. ` +
+            `Set CHROMIUM_EXECUTABLE_PATH to a local Chromium/Chrome executable path, ` +
+            `or run this route in Linux/serverless where @sparticuz/chromium can provide the binary.`
+          );
+        }
+        throw launchError;
+      }
 
-      const navigationTime = Date.now() - startTime;
-      console.log(`[SCREENSHOT] Navigation completed in ${navigationTime}ms`);
+      console.log(`[SCREENSHOT] Browser launched successfully`);
 
-      // Check response status
-      if (response) {
-        const status = response.status();
-        console.log(`[SCREENSHOT] Response status: ${status}`);
+      // Create context with appropriate viewport and user agent
+      const viewportConfig = VIEWPORTS[viewport];
+      const userAgent = USER_AGENTS[viewport];
+
+      const context = await browser.newContext({
+        viewport: viewportConfig,
+        userAgent: userAgent,
+        // Add device scale factor to look more realistic
+        deviceScaleFactor: 1,
+        isMobile: viewport === 'mobile',
+        hasTouch: viewport === 'mobile',
+        // Disable JavaScript-based detection
+        javaScriptEnabled: true,
+        // Add permissions
+        permissions: ['geolocation'],
+      });
+
+      console.log(`[SCREENSHOT] Context created: ${viewportConfig.width}x${viewportConfig.height}`);
+
+      // Set timeouts
+      context.setDefaultNavigationTimeout(TIMEOUT_MS);
+      context.setDefaultTimeout(TIMEOUT_MS);
+
+      page = await context.newPage();
+      page.setDefaultNavigationTimeout(TIMEOUT_MS);
+      page.setDefaultTimeout(TIMEOUT_MS);
+
+      // Apply stealth techniques
+      await setupStealth(page);
+      console.log(`[SCREENSHOT] Stealth setup complete`);
+
+      // Validate and normalize URL
+      let normalizedUrl = url.trim();
+      if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+        normalizedUrl = `https://${normalizedUrl}`;
+      }
+      
+      console.log(`[SCREENSHOT] Navigating to ${normalizedUrl}...`);
+      console.log(`[SCREENSHOT] Original URL was: ${url}`);
+      const startTime = Date.now();
+      
+      try {
+        const response = await page.goto(normalizedUrl, {
+          waitUntil: 'domcontentloaded', // Changed from 'networkidle' to 'domcontentloaded' for faster initial load
+          timeout: TIMEOUT_MS
+        });
+
+        const navigationTime = Date.now() - startTime;
+        console.log(`[SCREENSHOT] Navigation completed in ${navigationTime}ms`);
+
+        // Check response status
+        if (response) {
+          const status = response.status();
+          console.log(`[SCREENSHOT] Response status: ${status}`);
+          
+          if (status >= 400) {
+            return {
+              success: false,
+              error: `HTTP ${status}: Failed to load page`
+            };
+          }
+        }
+
+        // Check if page loaded correctly
+        const currentUrl = page.url();
+        console.log(`[SCREENSHOT] Current URL after navigation: ${currentUrl}`);
         
-        if (status >= 400) {
+        if (!currentUrl || currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
           return {
             success: false,
-            error: `HTTP ${status}: Failed to load page`
+            error: `Page navigation failed - invalid URL after navigation: ${currentUrl}`
           };
         }
-      }
 
-      // Check if page loaded correctly
-      const currentUrl = page.url();
-      console.log(`[SCREENSHOT] Current URL after navigation: ${currentUrl}`);
-      
-      if (!currentUrl || currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
-        return {
-          success: false,
-          error: `Page navigation failed - invalid URL after navigation: ${currentUrl}`
-        };
-      }
-
-      // Wait for page to be fully loaded
-      console.log(`[SCREENSHOT] Waiting for page to load...`);
-      await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
-      
-      // Wait for network to be idle (but with shorter timeout)
-      try {
-        await page.waitForLoadState('networkidle', { timeout: 15000 });
-      } catch (e) {
-        console.log(`[SCREENSHOT] Network idle timeout, proceeding anyway`);
-      }
-      
-      // Additional wait for dynamic content (social media pages often load content dynamically)
-      await page.waitForTimeout(3000);
-      console.log(`[SCREENSHOT] Page load complete`);
-    } catch (navigationError) {
-      console.error(`[SCREENSHOT] Navigation error:`, navigationError);
-      const currentUrl = page.url();
-      console.log(`[SCREENSHOT] Current URL after error: ${currentUrl}`);
-      
-      if (currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
-        return {
-          success: false,
-          error: `Navigation failed: ${navigationError instanceof Error ? navigationError.message : 'Unknown error'}`
-        };
-      }
-      // If we got somewhere, continue anyway
-    }
-
-    // Wait for content to be visible (platform-specific selectors)
-    const contentSelectors = [
-      'body',
-      'main',
-      '[role="main"]',
-      'article',
-      'div[class*="main"]',
-      'div[class*="content"]'
-    ];
-
-    let contentFound = false;
-    for (const selector of contentSelectors) {
-      try {
-        const element = page.locator(selector).first();
-        const isVisible = await element.isVisible({ timeout: 5000 }).catch(() => false);
-        if (isVisible) {
-          contentFound = true;
-          console.log(`[SCREENSHOT] Content found using selector: ${selector}`);
-          break;
+        // Wait for page to be fully loaded
+        console.log(`[SCREENSHOT] Waiting for page to load...`);
+        await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
+        
+        // Wait for network to be idle (but with shorter timeout)
+        try {
+          await page.waitForLoadState('networkidle', { timeout: 15000 });
+        } catch (e) {
+          console.log(`[SCREENSHOT] Network idle timeout, proceeding anyway`);
         }
-      } catch {
-        // Continue to next selector
+        
+        // Additional wait for dynamic content (social media pages often load content dynamically)
+        await page.waitForTimeout(3000);
+        console.log(`[SCREENSHOT] Page load complete`);
+      } catch (navigationError) {
+        console.error(`[SCREENSHOT] Navigation error:`, navigationError);
+        const currentUrl = page.url();
+        console.log(`[SCREENSHOT] Current URL after error: ${currentUrl}`);
+        
+        if (currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
+          return {
+            success: false,
+            error: `Navigation failed: ${navigationError instanceof Error ? navigationError.message : 'Unknown error'}`
+          };
+        }
+        // If we got somewhere, continue anyway
       }
-    }
 
-    if (!contentFound) {
-      console.log(`[SCREENSHOT] Warning: No content selectors found, proceeding anyway`);
-    }
+      // Wait for content to be visible (platform-specific selectors)
+      const contentSelectors = [
+        'body',
+        'main',
+        '[role="main"]',
+        'article',
+        'div[class*="main"]',
+        'div[class*="content"]'
+      ];
 
-    // Verify page actually loaded content (not just blank page)
-    try {
-      const pageContent = await page.content();
-      const bodyText = await page.locator('body').textContent().catch(() => '');
-      
-      if (!pageContent || pageContent.length < 100 || (bodyText && bodyText.length < 10)) {
-        console.log(`[SCREENSHOT] Warning: Page content seems empty (${pageContent?.length || 0} chars, body: ${bodyText?.length || 0} chars)`);
-        // Don't fail, but log warning - some pages might load content dynamically
-      } else {
-        console.log(`[SCREENSHOT] Page content verified: ${pageContent.length} chars, body: ${bodyText?.length || 0} chars`);
+      let contentFound = false;
+      for (const selector of contentSelectors) {
+        try {
+          const element = page.locator(selector).first();
+          const isVisible = await element.isVisible({ timeout: 5000 }).catch(() => false);
+          if (isVisible) {
+            contentFound = true;
+            console.log(`[SCREENSHOT] Content found using selector: ${selector}`);
+            break;
+          }
+        } catch {
+          // Continue to next selector
+        }
       }
-    } catch (e) {
-      console.log(`[SCREENSHOT] Could not verify page content:`, e);
-    }
 
-    // Dismiss popups for social media platforms (only Instagram and Facebook supported)
-    // Use platformParam if provided, otherwise detect from URL
-    let platform = platformParam || 'unknown';
-    if (platform === 'unknown') {
-      if (url.includes('instagram.com')) {
-        platform = 'instagram';
-      } else if (url.includes('facebook.com')) {
-        platform = 'facebook';
-      } else {
-        platform = 'website';
+      if (!contentFound) {
+        console.log(`[SCREENSHOT] Warning: No content selectors found, proceeding anyway`);
       }
-    }
 
-    if (platform === 'instagram' || platform === 'facebook') {
+      // Verify page actually loaded content (not just blank page)
+      try {
+        const pageContent = await page.content();
+        const bodyText = await page.locator('body').textContent().catch(() => '');
+        
+        if (!pageContent || pageContent.length < 100 || (bodyText && bodyText.length < 10)) {
+          console.log(`[SCREENSHOT] Warning: Page content seems empty (${pageContent?.length || 0} chars, body: ${bodyText?.length || 0} chars)`);
+          // Don't fail, but log warning - some pages might load content dynamically
+        } else {
+          console.log(`[SCREENSHOT] Page content verified: ${pageContent.length} chars, body: ${bodyText?.length || 0} chars`);
+        }
+      } catch (e) {
+        console.log(`[SCREENSHOT] Could not verify page content:`, e);
+      }
+
+      // At this point, we're only handling social media (instagram/facebook)
+      // Websites are handled by captureWebsiteScreenshot() above
       console.log(`[SCREENSHOT] ${platform} detected, dismissing popups...`);
       await dismissSocialMediaPopups(page, platform);
       
@@ -645,88 +737,85 @@ async function captureScreenshot(
       } else if (platform === 'instagram') {
         await removeInstagramPrompts(page);
       }
-    }
 
-    // Take screenshot
-    // For mobile: capture only viewport (typical phone screen height)
-    // For desktop social media: capture full page
-    // For desktop websites: capture only viewport (typical desktop screen height)
-    const isMobile = viewport === 'mobile';
-    const isWebsite = platform === 'website';
-    const useFullPage = !isMobile && !isWebsite; // Full-page only for desktop social media, viewport for everything else
-    
-    console.log(`[SCREENSHOT] Capturing ${useFullPage ? 'full-page' : 'viewport'} screenshot...`);
-    const screenshotStartTime = Date.now();
-    
-    const screenshotBuffer = await page.screenshot({
-      fullPage: useFullPage,
-      timeout: TIMEOUT_MS
-    });
-
-    const screenshotTime = Date.now() - screenshotStartTime;
-    console.log(`[SCREENSHOT] Screenshot captured in ${screenshotTime}ms`);
-
-    // Convert to base64
-    const base64Screenshot = screenshotBuffer.toString('base64');
-    const dataUrl = `data:image/png;base64,${base64Screenshot}`;
-    
-    console.log(`[SCREENSHOT] Screenshot converted to base64 (${base64Screenshot.length} chars)`);
-    console.log(`[SCREENSHOT] ✅ Screenshot capture successful`);
-
-    return {
-      success: true,
-      screenshot: dataUrl
-    };
-
-  } catch (error) {
-    console.error(`[SCREENSHOT] ❌ Error capturing screenshot:`, error);
-    
-    if (error instanceof Error) {
-      console.error(`[SCREENSHOT] Error message: ${error.message}`);
-      console.error(`[SCREENSHOT] Error stack: ${error.stack}`);
+      // Take screenshot
+      // For mobile: capture viewport only
+      // For desktop social media: capture full page
+      const isMobile = viewport === 'mobile';
+      const useFullPage = !isMobile; // Full-page for desktop social media, viewport for mobile
       
-      // Check for timeout errors
-      if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+      console.log(`[SCREENSHOT] Capturing ${useFullPage ? 'full-page' : 'viewport'} screenshot...`);
+      const screenshotStartTime = Date.now();
+      
+      const screenshotBuffer = await page.screenshot({
+        fullPage: useFullPage,
+        timeout: TIMEOUT_MS
+      });
+
+      const screenshotTime = Date.now() - screenshotStartTime;
+      console.log(`[SCREENSHOT] Screenshot captured in ${screenshotTime}ms`);
+
+      // Convert to base64
+      const base64Screenshot = screenshotBuffer.toString('base64');
+      const dataUrl = `data:image/png;base64,${base64Screenshot}`;
+      
+      console.log(`[SCREENSHOT] Screenshot converted to base64 (${base64Screenshot.length} chars)`);
+      console.log(`[SCREENSHOT] ✅ Screenshot capture successful`);
+
+      return {
+        success: true,
+        screenshot: dataUrl
+      };
+
+    } catch (error) {
+      console.error(`[SCREENSHOT] ❌ Error capturing screenshot:`, error);
+      
+      if (error instanceof Error) {
+        console.error(`[SCREENSHOT] Error message: ${error.message}`);
+        console.error(`[SCREENSHOT] Error stack: ${error.stack}`);
+        
+        // Check for timeout errors
+        if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+          return {
+            success: false,
+            error: `Timeout: Page took longer than ${TIMEOUT_MS}ms to load`
+          };
+        }
+        
         return {
           success: false,
-          error: `Timeout: Page took longer than ${TIMEOUT_MS}ms to load`
+          error: error.message
         };
       }
       
       return {
         success: false,
-        error: error.message
+        error: 'Unknown error occurred during screenshot capture'
       };
-    }
-    
-    return {
-      success: false,
-      error: 'Unknown error occurred during screenshot capture'
-    };
-  } finally {
-    // Always close browser and page
-    try {
-      if (page) {
-        await page.close().catch((err) => {
-          console.error(`[SCREENSHOT] Error closing page:`, err);
-        });
+    } finally {
+      // Always close browser and page
+      try {
+        if (page) {
+          await page.close().catch((err) => {
+            console.error(`[SCREENSHOT] Error closing page:`, err);
+          });
+        }
+      } catch (err) {
+        console.error(`[SCREENSHOT] Error in page cleanup:`, err);
       }
-    } catch (err) {
-      console.error(`[SCREENSHOT] Error in page cleanup:`, err);
-    }
 
-    try {
-      if (browser) {
-        await browser.close().catch((err) => {
-          console.error(`[SCREENSHOT] Error closing browser:`, err);
-        });
-        console.log(`[SCREENSHOT] Browser closed`);
+      try {
+        if (browser) {
+          await browser.close().catch((err) => {
+            console.error(`[SCREENSHOT] Error closing browser:`, err);
+          });
+          console.log(`[SCREENSHOT] Browser closed`);
+        }
+      } catch (err) {
+        console.error(`[SCREENSHOT] Error in browser cleanup:`, err);
       }
-    } catch (err) {
-      console.error(`[SCREENSHOT] Error in browser cleanup:`, err);
     }
   }
-}
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();

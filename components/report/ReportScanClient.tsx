@@ -20,6 +20,17 @@ interface PlaceDetails {
   website?: string | null;
 }
 
+// Interface for online presence data to pass to StageOnlinePresence
+interface OnlinePresenceResult {
+  websiteUrl: string | null;
+  websiteScreenshot: string | null;
+  socialLinks: Array<{
+    platform: string;
+    url: string;
+    screenshot: string | null;
+  }>;
+}
+
 export default function ReportScanClient({
   scanId,
   placeId,
@@ -28,6 +39,7 @@ export default function ReportScanClient({
 }: ReportScanClientProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null);
+  const [onlinePresenceData, setOnlinePresenceData] = useState<OnlinePresenceResult | null>(null);
   const scraperTriggeredRef = useRef(false); // Prevent duplicate scraper triggers
 
   const websiteScreenshotTriggeredRef = useRef(false); // Prevent duplicate website screenshot triggers
@@ -67,8 +79,16 @@ export default function ReportScanClient({
         if (response.ok) {
           const result = await response.json();
           
-          // Do NOT store the screenshot locally (avoids quota errors).
-          // It remains available via the API cache when StageOnlinePresence fetches.
+          // Store the screenshot in React state so it can be passed to StageOnlinePresence
+          // This avoids relying on the volatile serverless API cache
+          if (result.screenshot) {
+            console.log('[WEBSITE SCREENSHOT] ✅ Captured, storing in React state');
+            setOnlinePresenceData(prev => ({
+              websiteUrl: websiteUrl,
+              websiteScreenshot: result.screenshot,
+              socialLinks: prev?.socialLinks || [],
+            }));
+          }
         } else {
           console.error('Failed to capture website screenshot:', await response.text());
           websiteScreenshotTriggeredRef.current = false; // Reset on failure to allow retry
@@ -135,7 +155,27 @@ export default function ReportScanClient({
 
         if (response.ok) {
           const result = await response.json();
-          // Store metadata + URLs to screenshots (NOT the actual base64 data - too large for localStorage)
+          
+          // Store the FULL result in React state for immediate access by StageOnlinePresence
+          // This is the key fix: serverless API cache is volatile, so we keep data in React state
+          console.log('[SCRAPER] ✅ Result received, storing in React state:', {
+            hasWebsiteScreenshot: !!result.websiteScreenshot,
+            websiteUrl: result.websiteUrl,
+            socialLinksCount: result.socialLinks?.length || 0,
+          });
+          
+          setOnlinePresenceData(prev => ({
+            websiteUrl: result.websiteUrl || prev?.websiteUrl || null,
+            // Use result screenshot, or keep existing from immediate capture
+            websiteScreenshot: result.websiteScreenshot || prev?.websiteScreenshot || null,
+            socialLinks: (result.socialLinks || []).map((link: any) => ({
+              platform: link.platform,
+              url: link.url,
+              screenshot: link.screenshot || null,
+            })),
+          }));
+          
+          // Store metadata to localStorage (NOT the actual base64 data - too large)
           const dataToStore = {
             websiteUrl: result.websiteUrl,
             hasWebsiteScreenshot: !!result.websiteScreenshot,
@@ -146,14 +186,12 @@ export default function ReportScanClient({
             })),
             timestamp: Date.now(),
             completed: true, // Flag to indicate scraper has completed
-            // Store actual screenshot data in a separate key to check without loading everything
             screenshotsReady: !!(result.websiteScreenshot || (result.socialLinks && result.socialLinks.some((l: any) => l.screenshot))),
           };
           
           try {
             localStorage.setItem(`onlinePresence_${scanId}`, JSON.stringify(dataToStore));
           } catch (error) {
-            // If localStorage fails, log but don't block - API cache will still work
             console.warn('Failed to store in localStorage (quota exceeded?):', error);
           }
         }
@@ -336,11 +374,11 @@ export default function ReportScanClient({
               ) : currentStep === 4 ? (
                 // Step 4: Online presence analysis
                 <div className="absolute inset-0">
-                  <ScanLineOverlay />
                   <StageOnlinePresence 
                     businessName={name}
                     address={addr}
                     scanId={scanId}
+                    initialData={onlinePresenceData}
                   />
                 </div>
               ) : (

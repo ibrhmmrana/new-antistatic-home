@@ -1,5 +1,5 @@
 /**
- * WARNING: This endpoint performs automated browsing using Selenium WebDriver.
+ * WARNING: This endpoint performs automated browsing using Playwright.
  * Use cautiously to avoid being blocked by target sites. Consider implementing:
  * - Rate limiting
  * - User-agent rotation
@@ -8,13 +8,96 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { Builder, WebDriver, By, until, WebElement, Key } from "selenium-webdriver";
-import { Options as ChromeOptions, ServiceBuilder } from "selenium-webdriver/chrome";
-import * as path from "path";
-import * as fs from "fs";
+import { chromium as pwChromium, Browser, Page, Locator } from "playwright-core";
+import chromium from "@sparticuz/chromium";
 
-// Force Node.js runtime (Selenium is not compatible with Edge runtime)
+// Force Node.js runtime (Playwright is not compatible with Edge runtime)
 export const runtime = "nodejs";
+
+const DEFAULT_ACTION_TIMEOUT_MS = 15_000;
+const DEFAULT_NAV_TIMEOUT_MS = 30_000;
+
+// Randomized user agents (all recent Chrome on Windows)
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+];
+
+function getRandomUserAgent(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+function randomDelay(minMs: number, maxMs: number): Promise<void> {
+  const delay = minMs + Math.random() * (maxMs - minMs);
+  return new Promise((resolve) => setTimeout(resolve, delay));
+}
+
+async function humanMouseMove(page: Page): Promise<void> {
+  // Simulate human-like mouse movement across the page
+  const viewportSize = page.viewportSize();
+  if (!viewportSize) return;
+  
+  const startX = Math.random() * viewportSize.width * 0.3;
+  const startY = Math.random() * viewportSize.height * 0.3;
+  const endX = viewportSize.width * 0.5 + Math.random() * viewportSize.width * 0.4;
+  const endY = viewportSize.height * 0.3 + Math.random() * viewportSize.height * 0.4;
+  
+  // Move in steps to simulate human movement
+  const steps = 5 + Math.floor(Math.random() * 5);
+  for (let i = 0; i <= steps; i++) {
+    const x = startX + (endX - startX) * (i / steps) + (Math.random() - 0.5) * 20;
+    const y = startY + (endY - startY) * (i / steps) + (Math.random() - 0.5) * 20;
+    await page.mouse.move(x, y);
+    await randomDelay(10, 30);
+  }
+}
+
+async function humanScroll(page: Page): Promise<void> {
+  // Random small scroll to look human
+  const scrollAmount = 100 + Math.random() * 200;
+  await page.mouse.wheel(0, scrollAmount);
+  await randomDelay(100, 300);
+  await page.mouse.wheel(0, -scrollAmount * 0.3); // Scroll back up a bit
+}
+
+class CaptchaDetectedError extends Error {
+  public readonly code = "CAPTCHA_DETECTED";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "CaptchaDetectedError";
+  }
+}
+
+function isLikelyCaptchaUrl(url: string): boolean {
+  const u = url.toLowerCase();
+  return u.includes("/sorry/") || u.includes("google.com/sorry") || u.includes("recaptcha");
+}
+
+async function throwIfCaptcha(page: Page, stage: string): Promise<void> {
+  const url = page.url();
+
+  if (isLikelyCaptchaUrl(url)) {
+    throw new CaptchaDetectedError(`[${stage}] CAPTCHA/bot-check detected (url=${url})`);
+  }
+
+  // Fast selector/text checks (do not wait long; we only want to detect and fail fast)
+  const checks: Array<Promise<boolean>> = [
+    page.locator("form#captcha-form").first().isVisible({ timeout: 750 }).catch(() => false),
+    page.locator("input[name=\"captcha\"]").first().isVisible({ timeout: 750 }).catch(() => false),
+    page.locator("iframe[src*=\"recaptcha\"]").first().isVisible({ timeout: 750 }).catch(() => false),
+    page.locator("text=/unusual traffic/i").first().isVisible({ timeout: 750 }).catch(() => false),
+    page.locator("text=/verify you are a human/i").first().isVisible({ timeout: 750 }).catch(() => false),
+  ];
+
+  const results = await Promise.all(checks);
+  if (results.some(Boolean)) {
+    throw new CaptchaDetectedError(`[${stage}] CAPTCHA/bot-check detected`);
+  }
+}
 
 // In-memory cache to prevent duplicate scraper executions
 // Key: scanId, Value: { status: 'running' | 'completed', result?: any, promise?: Promise<any> }
@@ -76,7 +159,7 @@ async function captureSocialScreenshot(
  * Extracts social media profile links and website URL from a Google Business Profile (GBP) knowledge panel.
  * 
  * This function:
- * 1. Launches a headless browser using Selenium WebDriver
+ * 1. Launches a headless browser
  * 2. Searches Google for the business
  * 3. Locates the GBP knowledge panel on the right side
  * 4. Expands the panel to reveal the "Profiles" section
@@ -90,342 +173,311 @@ async function captureSocialScreenshot(
 async function extractSocialLinksFromGBP(
   businessName: string,
   address: string
-): Promise<{ socialLinks: { platform: string; url: string }[] }> {
-  let driver: WebDriver | null = null;
+): Promise<{ socialLinks: { platform: string; url: string }[]; websiteUrl: string | null }> {
+  let browser: Browser | null = null;
 
   try {
-    // Configure Chrome options with UNDETECTABLE headless mode
-    const chromeOptions = new ChromeOptions();
-    chromeOptions.addArguments(
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-dev-shm-usage',
-      // CRITICAL: These make headless look like headful
-      '--disable-web-security',
-      '--disable-features=IsolateOrigins,site-per-process',
-      '--disable-accelerated-2d-canvas',
-      '--disable-gpu', // GPU can cause issues in headless
-      // Window size arguments (must match viewport)
-      '--window-size=1920,1080',
-      '--start-maximized', // Pretend to be maximized
-      // User agent (use a recent Chrome version)
-      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-      // Additional stealth
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--disable-breakpad',
-      '--disable-component-update',
-      '--disable-default-apps',
-      '--disable-domain-reliability',
-      '--disable-sync',
-      '--metrics-recording-only',
-      '--safebrowsing-disable-auto-update',
-      '--password-store=basic',
-      '--use-mock-keychain'
-    );
-    
-    // Set headless mode
-    chromeOptions.addArguments('--headless=new');
+    // Configure serverless Chromium for production (Vercel/Lambda)
+    const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+    const localExecutablePath = process.env.CHROMIUM_EXECUTABLE_PATH;
+    const executablePath = isServerless
+      ? await chromium.executablePath()
+      : (localExecutablePath || undefined);
 
-    // Configure ChromeDriver service to use the chromedriver package
-    // This fixes the Selenium Manager issue in Next.js bundled environments
-    // Use require() for CommonJS module compatibility in Next.js
-    const chromedriver = require('chromedriver');
-    
-    // Get the path from chromedriver package - it should be absolute
-    let chromedriverPath = chromedriver.path;
-    
-    // Ensure it's an absolute path
-    if (!path.isAbsolute(chromedriverPath)) {
-      chromedriverPath = path.resolve(chromedriverPath);
-    }
-    
-    // Try the chromedriver.path first, then fallback to project node_modules
-    const possiblePaths = [
-      chromedriverPath,
-      path.resolve(process.cwd(), 'node_modules', 'chromedriver', 'lib', 'chromedriver', process.platform === 'win32' ? 'chromedriver.exe' : 'chromedriver'),
-    ];
-    
-    // Find the first path that exists (if fs.existsSync works in this environment)
-    let foundPath = chromedriverPath; // Default to chromedriver.path
+    // Launch a Chromium browser with UNDETECTABLE headless mode
+    // Note: Playwright's headless: true uses the new headless mode by default (more stealthy than old headless)
     try {
-      for (const testPath of possiblePaths) {
-        if (fs.existsSync(testPath)) {
-          foundPath = testPath;
-          break;
-        }
+      browser = await pwChromium.launch({
+        headless: chromium.headless,
+        args: [
+          // Start with @sparticuz/chromium defaults (serverless-safe). Keep our extras minimal to avoid conflicts.
+          ...chromium.args,
+          '--disable-blink-features=AutomationControlled',
+          // Window size arguments (must match viewport)
+          '--window-size=1920,1080',
+          // Keep existing behavior for some sites; avoid adding redundant sandbox/dev-shm flags (already in chromium.args).
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+        ],
+        executablePath,
+        timeout: 30000,
+      });
+    } catch (launchError) {
+      if (!isServerless && !localExecutablePath) {
+        console.error(
+          `[DEBUG] Chromium launch failed in local dev without a configured browser binary. ` +
+          `Set CHROMIUM_EXECUTABLE_PATH to a local Chromium/Chrome executable path, ` +
+          `or run this route in Linux/serverless where @sparticuz/chromium can provide the binary.`
+        );
       }
-    } catch {
-      // If fs.existsSync fails, just use chromedriver.path
-      // ServiceBuilder will throw a better error if the path is wrong
+      throw launchError;
     }
+
+    const userAgent = getRandomUserAgent();
     
-    console.log(`[DEBUG] Using ChromeDriver at: ${foundPath}`);
-    const service = new ServiceBuilder(foundPath);
-
-    // Build the WebDriver
-    driver = await new Builder()
-      .forBrowser('chrome')
-      .setChromeOptions(chromeOptions)
-      .setChromeService(service)
-      .build();
-
-    // Set timeouts - increase script timeout to prevent stealth script timeouts
-    driver.manage().setTimeouts({
-      implicit: 10000,
-      pageLoad: 30000,
-      script: 5000 // Reduce script timeout to fail fast if stealth script hangs
+    // Create a new context with realistic settings
+    const context = await browser.newContext({
+      viewport: { width: 1920, height: 1080 },
+      userAgent,
+      deviceScaleFactor: 1,
+      isMobile: false,
+      hasTouch: false,
+      javaScriptEnabled: true,
+      permissions: ['geolocation'],
+      // Set locale and timezone to look more realistic
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
+      // Bypass CSP for stealth scripts
+      bypassCSP: true,
     });
+    
+    const page = await context.newPage();
+    context.setDefaultTimeout(DEFAULT_ACTION_TIMEOUT_MS);
+    context.setDefaultNavigationTimeout(DEFAULT_NAV_TIMEOUT_MS);
+    page.setDefaultTimeout(DEFAULT_ACTION_TIMEOUT_MS);
+    page.setDefaultNavigationTimeout(DEFAULT_NAV_TIMEOUT_MS);
 
-    // Set window size
-    await driver.manage().window().setRect({ width: 1920, height: 1080 });
-
+    // Set comprehensive HTTP headers including Chrome Client Hints (Sec-CH-*)
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'max-age=0',
+      'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"Windows"',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
+    });
+    
     // CRITICAL: Comprehensive stealth script to bypass headless detection
-    // Note: Execute this AFTER navigating to a page, not before
-    // We'll execute it after the first page load
+    await page.addInitScript(() => {
+      // Delete webdriver property entirely
+      delete (navigator as any).__proto__.webdriver;
+      
+      // Also override it in case it gets re-added
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+        configurable: true,
+      });
+
+      // Override chrome object with realistic properties
+      Object.defineProperty(window, 'chrome', {
+        writable: true,
+        enumerable: true,
+        configurable: true,
+        value: {
+          runtime: {
+            PlatformOs: { MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd' },
+            PlatformArch: { ARM: 'arm', X86_32: 'x86-32', X86_64: 'x86-64' },
+            PlatformNaclArch: { ARM: 'arm', X86_32: 'x86-32', X86_64: 'x86-64' },
+            RequestUpdateCheckStatus: { THROTTLED: 'throttled', NO_UPDATE: 'no_update', UPDATE_AVAILABLE: 'update_available' },
+            OnInstalledReason: { INSTALL: 'install', UPDATE: 'update', CHROME_UPDATE: 'chrome_update', SHARED_MODULE_UPDATE: 'shared_module_update' },
+            OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic' },
+          },
+          loadTimes: function() { return {}; },
+          csi: function() { return {}; },
+          app: {
+            isInstalled: false,
+            InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+            RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+          },
+        },
+      });
+
+      // Override permissions query to look realistic
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters: any) => {
+        if (parameters.name === 'notifications') {
+          return Promise.resolve({ state: Notification.permission, onchange: null } as PermissionStatus);
+        }
+        return originalQuery.call(window.navigator.permissions, parameters);
+      };
+
+      // Realistic plugins array (mimics Chrome)
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+          const plugins = [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
+          ];
+          const pluginArray = Object.create(PluginArray.prototype);
+          plugins.forEach((p, i) => {
+            const plugin = Object.create(Plugin.prototype);
+            Object.defineProperties(plugin, {
+              name: { value: p.name },
+              filename: { value: p.filename },
+              description: { value: p.description },
+              length: { value: 0 },
+            });
+            pluginArray[i] = plugin;
+          });
+          Object.defineProperty(pluginArray, 'length', { value: plugins.length });
+          return pluginArray;
+        },
+      });
+
+      // Override languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+
+      // Override hardware concurrency (randomize a bit)
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        get: () => 8,
+      });
+
+      // Override device memory
+      Object.defineProperty(navigator, 'deviceMemory', {
+        get: () => 8,
+      });
+
+      // Override connection info
+      Object.defineProperty(navigator, 'connection', {
+        get: () => ({
+          effectiveType: '4g',
+          rtt: 50,
+          downlink: 10,
+          saveData: false,
+        }),
+      });
+
+      // WebGL fingerprint spoofing
+      const getParameterOriginal = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter: number) {
+        if (parameter === 37445) return 'Google Inc. (Intel)'; // UNMASKED_VENDOR_WEBGL
+        if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)'; // UNMASKED_RENDERER_WEBGL
+        return getParameterOriginal.call(this, parameter);
+      };
+
+      // Also handle WebGL2
+      if (typeof WebGL2RenderingContext !== 'undefined') {
+        const getParameter2Original = WebGL2RenderingContext.prototype.getParameter;
+        WebGL2RenderingContext.prototype.getParameter = function(parameter: number) {
+          if (parameter === 37445) return 'Google Inc. (Intel)';
+          if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+          return getParameter2Original.call(this, parameter);
+        };
+      }
+
+      // Mask automation-related window properties
+      Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
+      Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight + 85 }); // Account for Chrome UI
+      
+      // Override screen properties to look normal
+      Object.defineProperty(screen, 'availWidth', { get: () => screen.width });
+      Object.defineProperty(screen, 'availHeight', { get: () => screen.height - 40 }); // Taskbar
+
+      // Fix iframe contentWindow detection
+      const originalContentWindow = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+      Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+        get: function() {
+          const win = originalContentWindow?.get?.call(this);
+          if (win) {
+            try {
+              // Ensure webdriver is also false in iframes
+              Object.defineProperty(win.navigator, 'webdriver', { get: () => undefined });
+            } catch (e) { /* cross-origin, ignore */ }
+          }
+          return win;
+        },
+      });
+
+      // Prevent detection via toString
+      const oldCall = Function.prototype.call;
+      Function.prototype.call = function(...args: any[]) {
+        if (args[0] === null && this === toString) {
+          return 'function webdriver() { [native code] }';
+        }
+        return oldCall.apply(this, args);
+      };
+    });
 
     // Construct the search query: "BusinessName FullAddress"
     const searchQuery = `${businessName} ${address}`;
     console.log(`[DEBUG] Searching for: ${searchQuery}`);
 
-    // Navigate directly to Google
-    await driver.get('https://www.google.com');
+    // STRATEGY: Navigate directly to Google search results URL
+    // This is less detectable than typing in search box because:
+    // 1. Fewer interactions for Google to analyze
+    // 2. No typing patterns to fingerprint
+    // 3. Mimics clicking a link/bookmark
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}&hl=en&gl=us`;
+    console.log(`[DEBUG] Direct navigation to: ${searchUrl}`);
     
-    // Wait for page to load
-    await driver.wait(until.titleContains('Google'), 30000);
+    // Random delay before navigation (looks like user thinking)
+    await randomDelay(500, 1500);
     
-    // CRITICAL: Execute stealth script AFTER page load to avoid property redefinition errors
-    // Chrome already defines window.chrome, so we need to check before redefining
-    await driver.executeScript(`
-      // Override the navigator.webdriver property (only if not already false)
-      try {
-        if (navigator.webdriver !== false) {
-          Object.defineProperty(navigator, 'webdriver', {
-            get: () => false,
-            configurable: true
-          });
-        }
-      } catch (e) {
-        // Property might already be defined, ignore
-      }
-
-      // Only override chrome if it doesn't exist or is incomplete
-      try {
-        if (!window.chrome || !window.chrome.runtime) {
-          Object.defineProperty(window, 'chrome', {
-            get: () => ({
-              runtime: {},
-              loadTimes: () => {},
-              csi: () => {},
-              app: {
-                isInstalled: false,
-                InstallState: {
-                  DISABLED: 'disabled',
-                  INSTALLED: 'installed',
-                  NOT_INSTALLED: 'not_installed',
-                },
-                RunningState: {
-                  CANNOT_RUN: 'cannot_run',
-                  READY_TO_RUN: 'ready_to_run',
-                  RUNNING: 'running',
-                },
-              },
-            }),
-            configurable: true
-          });
-        }
-      } catch (e) {
-        // Chrome object might already be defined, ignore
-      }
-
-      // Override permissions query
-      try {
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) => (
-          parameters.name === 'notifications'
-            ? Promise.resolve({ state: Notification.permission })
-            : originalQuery(parameters)
-        );
-      } catch (e) {
-        // Ignore if can't override
-      }
-
-      // Override plugins to mimic a real browser
-      try {
-        Object.defineProperty(navigator, 'plugins', {
-          get: () => [1, 2, 3, 4, 5],
-          configurable: true
-        });
-      } catch (e) {
-        // Ignore if can't override
-      }
-
-      // Override languages
-      try {
-        Object.defineProperty(navigator, 'languages', {
-          get: () => ['en-US', 'en', 'en-GB'],
-          configurable: true
-        });
-      } catch (e) {
-        // Ignore if can't override
-      }
-
-      // Override hardware concurrency
-      try {
-        Object.defineProperty(navigator, 'hardwareConcurrency', {
-          get: () => 8,
-          configurable: true
-        });
-      } catch (e) {
-        // Ignore if can't override
-      }
-
-      // WebGL vendor/renderer
-      try {
-        const getParameter = WebGLRenderingContext.prototype.getParameter;
-        WebGLRenderingContext.prototype.getParameter = function(parameter) {
-          if (parameter === 37445) return 'Intel Inc.'; // VENDOR
-          if (parameter === 37446) return 'Intel Iris OpenGL Engine'; // RENDERER
-          return getParameter.call(this, parameter);
-        };
-      } catch (e) {
-        // Ignore if can't override
-      }
-    `);
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: DEFAULT_NAV_TIMEOUT_MS });
+    await throwIfCaptcha(page, "after_search_results_load");
     
-    console.log('[DEBUG] Stealth script executed, ready to interact');
+    // Human-like behavior after page load
+    await randomDelay(800, 1500);
+    await humanMouseMove(page);
+    await randomDelay(300, 700);
     
-    // Minimal delay before interacting (reduced from 1-3s to 0.3-0.8s)
-    const interactionDelay = 300 + Math.random() * 500;
-    await new Promise(resolve => setTimeout(resolve, interactionDelay));
-
-    // Find the search box more reliably - try multiple selectors
-    console.log('[DEBUG] Looking for search box...');
-    let searchBox: WebElement;
+    // Small random scroll to look human
     try {
-      // Wait for search box to be visible and interactable
-      searchBox = await driver.wait(until.elementLocated(By.css('textarea[name="q"], input[name="q"]')), 10000);
-      await driver.wait(until.elementIsVisible(searchBox), 5000);
-      console.log('[DEBUG] Search box found and visible');
-    } catch (error) {
-      console.error('[DEBUG] Error finding search box with primary selector:', error);
-      // Fallback selector
-      try {
-        searchBox = await driver.findElement(By.css('textarea[name="q"]'));
-        await driver.wait(until.elementIsVisible(searchBox), 5000);
-        console.log('[DEBUG] Search box found with fallback selector');
-      } catch (fallbackError) {
-        console.error('[DEBUG] Error finding search box with fallback selector:', fallbackError);
-        throw new Error('Could not find Google search box');
-      }
-    }
-    
-    // Scroll to search box to ensure it's in view
-    await driver.executeScript('arguments[0].scrollIntoView({behavior: "smooth", block: "center"});', searchBox);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Click the search box with a small delay
-    console.log('[DEBUG] Clicking search box...');
-    await searchBox.click();
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
-    // Clear any existing text first
-    await searchBox.clear();
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // Type like a human with optimized delays (reduced from 50-150ms to 30-80ms)
-    console.log(`[DEBUG] Typing search query: ${searchQuery}`);
-    for (const char of searchQuery) {
-      await searchBox.sendKeys(char);
-      await new Promise(resolve => setTimeout(resolve, 30 + Math.random() * 50));
-    }
-    
-    // Reduced hesitation before pressing Enter (from 500-1500ms to 200-600ms)
-    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 400));
-    console.log('[DEBUG] Pressing Enter to search...');
-    await searchBox.sendKeys(Key.RETURN);
-    
-    // Wait for search results to load - check if title contains business name OR URL contains 'search'
-    try {
-      await driver.wait(async () => {
-        const title = await driver.getTitle();
-        const url = await driver.getCurrentUrl();
-        return title.includes(businessName) || url.includes('search');
-      }, 30000);
+      await humanScroll(page);
     } catch {
-      // Continue even if wait times out - page might have loaded
-      console.log('[DEBUG] Wait for search results timed out, continuing...');
+      // Scroll might fail, not critical
     }
     
-    // Minimal wait for GBP panel to render (reduced from 5000ms to 2000ms)
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait for GBP panel to render
+    await randomDelay(1500, 2500);
 
     // Try multiple strategies to find the GBP panel
     console.log('[DEBUG] Looking for GBP panel...');
     
-    let gbpPanel: WebElement | null = null;
-    let panelFound = false;
-    
     // Strategy 1: Look for role="complementary" (knowledge panel)
-    try {
-      gbpPanel = await driver.wait(until.elementLocated(By.css('[role="complementary"]')), 2000);
-      panelFound = true;
-      console.log('[DEBUG] Strategy 1 - Panel found via role="complementary"');
-    } catch {
-      // Strategy 2: Look for common GBP panel classes/attributes
-      try {
-        gbpPanel = await driver.wait(until.elementLocated(By.css('.kp-blk, .kp-wholepage, [data-ved*="Cg"], [jsname="kno-fv"]')), 2000);
-        panelFound = true;
-        console.log('[DEBUG] Strategy 2 - Panel found via classes');
-      } catch {
-        // Strategy 3: Look for business name in a prominent position (usually in GBP)
-        try {
-          const businessNameElements = await driver.findElements(By.xpath(`//*[contains(text(), "${businessName}")]`));
-          if (businessNameElements.length > 0) {
-            // Find parent container that likely contains the GBP
-            gbpPanel = await driver.findElement(By.xpath(`//*[contains(text(), "${businessName}")]/ancestor::*[@role="complementary" or contains(@class, "kp-") or contains(@data-ved, "")][1]`));
-            panelFound = true;
-            console.log('[DEBUG] Strategy 3 - Panel found via business name');
-          }
-        } catch {
-          console.log('[DEBUG] GBP panel not found with any strategy');
-        }
+    let gbpPanel = page.locator('[role="complementary"]').first();
+    let panelFound = await gbpPanel.count() > 0;
+    
+    // Strategy 2: Look for common GBP panel classes/attributes
+    if (!panelFound) {
+      gbpPanel = page.locator('.kp-blk, .kp-wholepage, [data-ved*="Cg"], [jsname="kno-fv"]').first();
+      panelFound = await gbpPanel.count() > 0;
+      console.log(`[DEBUG] Strategy 2 - Panel found: ${panelFound}`);
+    }
+
+    // Strategy 3: Look for business name in a prominent position (usually in GBP)
+    if (!panelFound) {
+      const businessNameLocator = page.locator(`text=/^${businessName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$/i`).first();
+      if (await businessNameLocator.count() > 0) {
+        // Find parent container that likely contains the GBP
+        gbpPanel = businessNameLocator.locator('xpath=ancestor::*[@role="complementary" or contains(@class, "kp-") or contains(@data-ved, "")][1]').first();
+        panelFound = await gbpPanel.count() > 0;
+        console.log(`[DEBUG] Strategy 3 - Panel found: ${panelFound}`);
       }
     }
 
     if (!panelFound) {
       console.log(`[DEBUG] GBP panel not found. Trying to find Profiles section directly on page...`);
       // If panel not found, try to find Profiles section anywhere on the page
-      try {
-        const profilesOnPage = await driver.findElements(By.xpath('//*[contains(text(), "Profiles")]'));
-        if (profilesOnPage.length > 0) {
-          console.log(`[DEBUG] Found Profiles section without GBP panel`);
-          // Continue with extraction from page
-        } else {
-          console.log(`[DEBUG] No Profiles section found. Returning empty result.`);
-          return { socialLinks: [] };
-        }
-      } catch {
+      const profilesOnPage = page.locator('text=/Profiles/i');
+      if (await profilesOnPage.count() > 0) {
+        console.log(`[DEBUG] Found Profiles section without GBP panel`);
+        // Continue with extraction from page
+      } else {
         console.log(`[DEBUG] No Profiles section found. Returning empty result.`);
-        return { socialLinks: [] };
+        return { socialLinks: [], websiteUrl: null };
       }
     }
 
     // Look for "Profiles" section - try multiple approaches
     console.log('[DEBUG] Looking for Profiles section...');
-    let profilesSection: WebElement | null = null;
-    let profilesFound = false;
-    
-    try {
-      profilesSection = await driver.wait(until.elementLocated(By.xpath('//*[contains(text(), "Profiles")]')), 2000);
-      profilesFound = true;
-      console.log('[DEBUG] Profiles section found!');
-    } catch {
+    let profilesSection = page.locator('text=/^Profiles$/i, text=/Profiles/i').first();
+    let profilesFound = await profilesSection.count() > 0;
+
+    // If Profiles not found, try looking for social media icons/links directly
+    if (!profilesFound) {
       console.log('[DEBUG] Profiles text not found. Searching for social links directly...');
+    } else {
+      console.log('[DEBUG] Profiles section found!');
     }
 
     // Collect all potential social media links from the page
@@ -440,64 +492,60 @@ async function extractSocialLinksFromGBP(
     ];
 
     for (const selector of socialLinkSelectors) {
-      try {
-        const links = await driver.findElements(By.css(selector));
-        console.log(`[DEBUG] Found ${links.length} links matching ${selector}`);
-        
-        for (const link of links) {
-          try {
-            let href = await link.getAttribute('href');
-            if (!href) continue;
+      const links = await page.locator(selector).all();
+      console.log(`[DEBUG] Found ${links.length} links matching ${selector}`);
+      
+      for (const link of links) {
+        try {
+          let href = await link.getAttribute('href');
+          if (!href) continue;
 
-            // Handle Google's redirect URLs (e.g., /url?q=...)
-            if (href.startsWith('/url?q=')) {
-              const urlMatch = href.match(/\/url\?q=([^&]+)/);
-              if (urlMatch) {
-                href = decodeURIComponent(urlMatch[1]);
-              }
-            } else if (href.startsWith('/url?')) {
-              // Alternative redirect format
-              const urlParams = new URLSearchParams(href.split('?')[1]);
-              const qParam = urlParams.get('q');
-              if (qParam) {
-                href = decodeURIComponent(qParam);
-              }
+          // Handle Google's redirect URLs (e.g., /url?q=...)
+          if (href.startsWith('/url?q=')) {
+            const urlMatch = href.match(/\/url\?q=([^&]+)/);
+            if (urlMatch) {
+              href = decodeURIComponent(urlMatch[1]);
             }
-
-            // Resolve relative URLs
-            if (!href.startsWith('http')) {
-              try {
-                href = new URL(href, 'https://www.google.com').toString();
-              } catch {
-                continue; // Skip invalid URLs
-              }
+          } else if (href.startsWith('/url?')) {
+            // Alternative redirect format
+            const urlParams = new URLSearchParams(href.split('?')[1]);
+            const qParam = urlParams.get('q');
+            if (qParam) {
+              href = decodeURIComponent(qParam);
             }
-
-            // Extract platform and validate
-            const platform = extractPlatformFromUrl(href);
-            if (platform && !seenUrls.has(href)) {
-              seenUrls.add(href);
-              socialLinks.push({ platform, url: href });
-              console.log(`[DEBUG] Found ${platform}: ${href}`);
-            }
-          } catch (error) {
-            // Skip problematic links
-            continue;
           }
+
+          // Resolve relative URLs
+          if (!href.startsWith('http')) {
+            try {
+              href = new URL(href, 'https://www.google.com').toString();
+            } catch {
+              continue; // Skip invalid URLs
+            }
+          }
+
+          // Extract platform and validate
+          const platform = extractPlatformFromUrl(href);
+          if (platform && !seenUrls.has(href)) {
+            seenUrls.add(href);
+            socialLinks.push({ platform, url: href });
+            console.log(`[DEBUG] Found ${platform}: ${href}`);
+          }
+        } catch (error) {
+          // Skip problematic links
+          continue;
         }
-      } catch (error) {
-        console.log(`[DEBUG] Error finding links with selector ${selector}:`, error);
       }
     }
 
     // Strategy 2: If Profiles section was found, look for links near it
-    if (profilesFound && socialLinks.length === 0 && profilesSection) {
+    if (profilesFound && socialLinks.length === 0) {
       console.log('[DEBUG] Profiles found but no links yet. Searching near Profiles section...');
       
-      try {
-        // Find the Profiles container and look for links within it
-        const profilesContainer = await driver.findElement(By.xpath('//*[contains(text(), "Profiles")]/ancestor::*[contains(@class, "section") or contains(@data-ved, "")][1]'));
-        const containerLinks = await profilesContainer.findElements(By.css('a[href]'));
+      // Find the Profiles container and look for links within it
+      const profilesContainer = profilesSection.locator('xpath=ancestor::*[contains(@class, "section") or contains(@data-ved, "")][1]').first();
+      if (await profilesContainer.count() > 0) {
+        const containerLinks = await profilesContainer.locator('a[href]').all();
         console.log(`[DEBUG] Found ${containerLinks.length} links in Profiles container`);
         
         for (const link of containerLinks) {
@@ -531,15 +579,107 @@ async function extractSocialLinksFromGBP(
             continue;
           }
         }
-      } catch (error) {
-        console.log('[DEBUG] Error searching near Profiles section:', error);
       }
     }
 
     console.log(`[DEBUG] Total social links found: ${socialLinks.length}`);
     
-    // Return only social links (website URL comes from GBP API, not scraping)
-    return { socialLinks };
+    // Extract website URL from GBP panel
+    let websiteUrl: string | null = null;
+    try {
+      console.log('[DEBUG] Looking for website URL in GBP panel...');
+      
+      // Look for website link in the GBP panel
+      // Website links are usually in a "Website" button or link
+      const websiteSelectors = [
+        'a[href*="http"]:has-text("Website")',
+        'a:has-text("Website")',
+        'a[data-ved*="Cg"]:has-text("Website")',
+        // Also look for links that are clearly website links (not social media)
+        'a[href^="http"]:not([href*="instagram.com"]):not([href*="facebook.com"]):not([href*="twitter.com"]):not([href*="x.com"]):not([href*="linkedin.com"])',
+      ];
+
+      for (const selector of websiteSelectors) {
+        try {
+          const websiteLink = page.locator(selector).first();
+          const isVisible = await websiteLink.isVisible({ timeout: 1000 }).catch(() => false);
+          
+          if (isVisible) {
+            let href = await websiteLink.getAttribute('href');
+            if (href) {
+              // Handle Google redirects
+              if (href.startsWith('/url?q=')) {
+                const urlMatch = href.match(/\/url\?q=([^&]+)/);
+                if (urlMatch) {
+                  href = decodeURIComponent(urlMatch[1]);
+                }
+              } else if (href.startsWith('/url?')) {
+                const urlParams = new URLSearchParams(href.split('?')[1]);
+                const qParam = urlParams.get('q');
+                if (qParam) {
+                  href = decodeURIComponent(qParam);
+                }
+              }
+
+              // Validate it's a proper website URL (not social media)
+              if (href.startsWith('http') && 
+                  !href.includes('instagram.com') && 
+                  !href.includes('facebook.com') && 
+                  !href.includes('twitter.com') && 
+                  !href.includes('x.com') &&
+                  !href.includes('linkedin.com')) {
+                websiteUrl = href;
+                console.log(`[DEBUG] Found website URL: ${websiteUrl}`);
+                break;
+              }
+            }
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      // Alternative: Look for website in the GBP panel by checking for common patterns
+      if (!websiteUrl && panelFound) {
+        const allLinks = await gbpPanel.locator('a[href^="http"]').all();
+        for (const link of allLinks) {
+          try {
+            let href = await link.getAttribute('href');
+            if (!href) continue;
+
+            // Handle redirects
+            if (href.startsWith('/url?q=')) {
+              const urlMatch = href.match(/\/url\?q=([^&]+)/);
+              if (urlMatch) {
+                href = decodeURIComponent(urlMatch[1]);
+              }
+            }
+
+            // Check if it's a website (not social media, not Google)
+            if (href.startsWith('http') && 
+                !href.includes('google.com') &&
+                !href.includes('instagram.com') && 
+                !href.includes('facebook.com') && 
+                !href.includes('twitter.com') && 
+                !href.includes('x.com') &&
+                !href.includes('linkedin.com') &&
+                !href.includes('youtube.com') &&
+                !href.includes('maps.google.com')) {
+              websiteUrl = href;
+              console.log(`[DEBUG] Found website URL (alternative method): ${websiteUrl}`);
+              break;
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`[DEBUG] Error extracting website URL:`, error);
+    }
+
+    // Return social links and website URL
+    return { socialLinks, websiteUrl };
 
   } catch (error) {
     console.error('[ERROR] Error extracting social links from GBP:', error);
@@ -548,17 +688,15 @@ async function extractSocialLinksFromGBP(
       console.error('[ERROR] Error stack:', error.stack);
     }
     
-    // Driver will quit in finally block - no need to keep it open on error
+    // Browser will close in finally block - no need to keep it open on error
     
-    return { socialLinks: [] };
+    return { socialLinks: [], websiteUrl: null };
   } finally {
-    // Always quit the driver to free resources
-    if (driver) {
-      try {
-        await driver.quit();
-      } catch (err) {
-        console.error('Error quitting driver:', err);
-      }
+    // Always close the browser to free resources
+    if (browser) {
+      await browser.close().catch((err) => {
+        console.error('Error closing browser:', err);
+      });
     }
   }
 }
@@ -731,6 +869,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    
+    console.log(`[API] Received websiteUrl from request: ${providedWebsiteUrl || 'none'}`);
 
     // CRITICAL: Prevent duplicate execution using in-memory cache
     if (scanId) {
@@ -738,7 +878,7 @@ export async function POST(request: NextRequest) {
       
       if (cached) {
         if (cached.status === 'completed' && cached.result) {
-          // Already completed, return cached result immediately
+          // Already completed, return cached result
           console.log(`[API] Returning cached result for scanId: ${scanId}`);
           return NextResponse.json(cached.result, { status: 200 });
         } else if (cached.status === 'running' && cached.promise) {
@@ -758,20 +898,23 @@ export async function POST(request: NextRequest) {
 
     // Create the scraper execution promise
     const scraperPromise = (async () => {
-      // Call the extraction function (only extracts social links, not website URL)
-      console.log(`[API] Starting Selenium extraction for: ${businessName}, ${address}`);
+      // Call the extraction function
       const extractionResult = await extractSocialLinksFromGBP(businessName, address);
-      console.log(`[API] Selenium extraction complete. Raw links found: ${extractionResult.socialLinks.length}`);
 
     // Clean and deduplicate the links
     const socialLinks = cleanAndDeduplicateSocialLinks(extractionResult.socialLinks);
-    console.log(`[API] After cleaning/deduplication: ${socialLinks.length} links`);
 
-    // Use website URL from GBP API (providedWebsiteUrl) instead of scraping it
-    const websiteUrl = providedWebsiteUrl || null;
+    // Determine website URL to use:
+    // 1. Use URL from GBP scraping if found
+    // 2. Fall back to URL provided from Google Places API (more reliable when scraping fails)
+    const websiteUrlToUse = extractionResult.websiteUrl || providedWebsiteUrl || null;
+    console.log(`[API] Website URL - from GBP: ${extractionResult.websiteUrl || 'none'}, from Places API: ${providedWebsiteUrl || 'none'}, using: ${websiteUrlToUse || 'none'}`);
 
     // Now capture screenshots in parallel after links are extracted
     const screenshotPromises: Promise<{ platform: string; url: string; screenshot: string | null; status: 'success' | 'error' } | { websiteScreenshot: string | null }>[] = [];
+    
+    // Import the screenshot function (we'll need to create a shared function or call the API)
+    // For now, we'll use the internal screenshot capture logic
     
     // Capture mobile screenshots for social media links
     for (const link of socialLinks) {
@@ -780,10 +923,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Capture website screenshot (desktop) if website URL exists (from GBP API)
-    if (websiteUrl) {
+    // Capture website screenshot (desktop) if website URL exists
+    if (websiteUrlToUse) {
+      console.log(`[API] Triggering website screenshot for: ${websiteUrlToUse}`);
       screenshotPromises.push(
-        captureSocialScreenshot('website', websiteUrl, 'desktop')
+        captureSocialScreenshot('website', websiteUrlToUse, 'desktop')
       );
     }
 
@@ -815,16 +959,16 @@ export async function POST(request: NextRequest) {
         businessName,
         address,
         socialLinks: socialScreenshots,
-        websiteUrl: websiteUrl, // Use website URL from GBP API
+        websiteUrl: websiteUrlToUse,
         websiteScreenshot,
         count: socialLinks.length,
         rawCount: extractionResult.socialLinks.length,
         scanId,
       };
+      
+      console.log(`[API] Final result - websiteUrl: ${websiteUrlToUse || 'none'}, hasWebsiteScreenshot: ${!!websiteScreenshot}`);
 
       // Cache the result
-      // CRITICAL: Update cache to 'completed' status BEFORE storing metadata in localStorage
-      // This ensures the cache is ready when StageOnlinePresence tries to fetch
       if (scanId) {
         scraperCache.set(scanId, { status: 'completed', result });
         // Clean up cache after 1 hour to prevent memory leaks
@@ -837,17 +981,8 @@ export async function POST(request: NextRequest) {
     })();
 
     // Store the promise in cache if scanId exists
-    // CRITICAL: Only set to "running" if cache doesn't already exist or is not "completed"
-    // This prevents overwriting a completed cache with a new "running" status
     if (scanId) {
-      const existingCache = scraperCache.get(scanId);
-      if (!existingCache || existingCache.status !== 'completed') {
-        scraperCache.set(scanId, { status: 'running', promise: scraperPromise });
-      } else {
-        // Cache already completed, return it immediately instead of starting new scraper
-        console.log(`[API] Cache already completed for scanId: ${scanId}, returning cached result`);
-        return NextResponse.json(existingCache.result, { status: 200 });
-      }
+      scraperCache.set(scanId, { status: 'running', promise: scraperPromise });
     }
 
     // Execute and return
@@ -861,13 +996,26 @@ export async function POST(request: NextRequest) {
     }
     
     console.error("Error in POST /api/scan/socials:", error);
+
+    if (error instanceof CaptchaDetectedError) {
+      return NextResponse.json(
+        {
+          error: error.code,
+          message:
+            "Google blocked this automated request with a bot-check/CAPTCHA. " +
+            "This endpoint fails fast rather than hanging. " +
+            "Try again later, reduce request volume, or use an official API-based data source.",
+        },
+        { status: 429 }
+      );
+    }
+
     return NextResponse.json(
       {
         error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error occurred"
+        message: error instanceof Error ? error.message : "Unknown error occurred",
       },
       { status: 500 }
     );
   }
 }
-

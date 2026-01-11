@@ -3,12 +3,6 @@
 import { useState, useEffect } from "react";
 import ScanLineOverlay from "./ScanLineOverlay";
 
-interface StageOnlinePresenceProps {
-  businessName: string;
-  address: string;
-  scanId: string;
-}
-
 interface SocialScreenshot {
   platform: string;
   url: string;
@@ -22,16 +16,67 @@ interface OnlinePresenceData {
   socialLinks: SocialScreenshot[];
 }
 
+// Initial data passed from parent to avoid serverless cache issues
+interface InitialOnlinePresenceData {
+  websiteUrl: string | null;
+  websiteScreenshot: string | null;
+  socialLinks: Array<{
+    platform: string;
+    url: string;
+    screenshot: string | null;
+  }>;
+}
+
+interface StageOnlinePresenceProps {
+  businessName: string;
+  address: string;
+  scanId: string;
+  initialData?: InitialOnlinePresenceData | null;
+}
+
 export default function StageOnlinePresence({
   businessName,
   address,
   scanId,
+  initialData,
 }: StageOnlinePresenceProps) {
   const [data, setData] = useState<OnlinePresenceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Use initialData from parent if available (primary source - avoids serverless cache issues)
   useEffect(() => {
+    if (initialData) {
+      console.log('[StageOnlinePresence] Using initialData from parent:', {
+        hasWebsiteScreenshot: !!initialData.websiteScreenshot,
+        websiteUrl: initialData.websiteUrl,
+        socialLinksCount: initialData.socialLinks?.length || 0,
+      });
+      
+      const completeData: OnlinePresenceData = {
+        websiteUrl: initialData.websiteUrl,
+        websiteScreenshot: initialData.websiteScreenshot,
+        socialLinks: (initialData.socialLinks || []).map((link) => ({
+          platform: link.platform,
+          url: link.url,
+          screenshot: link.screenshot,
+          status: link.screenshot ? 'success' : 'pending',
+        })),
+      };
+      
+      setData(completeData);
+      setLoading(false);
+      return; // Don't fetch from API if we have data
+    }
+  }, [initialData]);
+
+  // Fallback: fetch from API if no initialData (e.g., page refresh)
+  useEffect(() => {
+    // Skip if we already have data from initialData
+    if (data || initialData) {
+      return;
+    }
+    
     const fetchData = async () => {
       try {
         // 1. Check localStorage for completion flag
@@ -46,6 +91,8 @@ export default function StageOnlinePresence({
         
         // 2. If completed, pull full data from API cache
         // We call the POST endpoint which returns the cached result immediately if it exists
+        // IMPORTANT: Pass websiteUrl from localStorage so screenshot can be captured
+        // even if serverless cache was cleared (cold start)
         const response = await fetch('/api/scan/socials', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -53,6 +100,7 @@ export default function StageOnlinePresence({
             businessName,
             address,
             scanId,
+            websiteUrl: parsed.websiteUrl || null, // Pass stored URL for fallback
           }),
         });
 
@@ -61,11 +109,43 @@ export default function StageOnlinePresence({
         }
 
         const result = await response.json();
+        console.log('[StageOnlinePresence] API result:', { 
+          hasWebsiteScreenshot: !!result.websiteScreenshot, 
+          websiteUrl: result.websiteUrl,
+          socialLinksCount: result.socialLinks?.length || 0 
+        });
+
+        // Determine the website URL (from result or localStorage)
+        const websiteUrl = result.websiteUrl || parsed.websiteUrl || null;
+        let websiteScreenshot = result.websiteScreenshot || null;
+
+        // FALLBACK: If we have URL but no screenshot (cache cleared), capture it directly
+        if (websiteUrl && !websiteScreenshot && parsed.hasWebsiteScreenshot) {
+          console.log('[StageOnlinePresence] Cache miss - capturing website screenshot directly...');
+          try {
+            const screenshotResponse = await fetch('/api/scan/socials/screenshot', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                platform: 'website',
+                url: websiteUrl,
+                viewport: 'desktop',
+              }),
+            });
+            if (screenshotResponse.ok) {
+              const screenshotData = await screenshotResponse.json();
+              websiteScreenshot = screenshotData.screenshot || null;
+              console.log('[StageOnlinePresence] Direct screenshot capture:', !!websiteScreenshot);
+            }
+          } catch (screenshotErr) {
+            console.error('[StageOnlinePresence] Direct screenshot capture failed:', screenshotErr);
+          }
+        }
 
         // 3. Format and set data
         const completeData: OnlinePresenceData = {
-          websiteUrl: result.websiteUrl || parsed.websiteUrl || null,
-          websiteScreenshot: result.websiteScreenshot || null,
+          websiteUrl,
+          websiteScreenshot,
           socialLinks: (result.socialLinks || []).map((link: any) => ({
             platform: link.platform,
             url: link.url,
@@ -92,13 +172,13 @@ export default function StageOnlinePresence({
     
     // Optional: poll if not complete
     const interval = setInterval(() => {
-      if (loading) {
+      if (loading && !data && !initialData) {
         fetchData();
       }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [scanId, businessName, address, loading]);
+  }, [scanId, businessName, address, loading, data, initialData]);
 
   // Website Screenshot Component with browser chrome (Windows style)
   const WebsiteScreenshot = ({ screenshot, url }: { screenshot: string | null; url?: string | null }) => (
