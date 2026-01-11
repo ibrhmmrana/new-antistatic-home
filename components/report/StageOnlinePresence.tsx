@@ -329,42 +329,140 @@ export default function StageOnlinePresence({
 
   const instagramLink = data?.socialLinks.find(link => link.platform === 'instagram');
   const facebookLink = data?.socialLinks.find(link => link.platform === 'facebook');
-
-  return (
-    <div className="w-full h-full flex items-center justify-center p-8 relative overflow-hidden">
-      <ScanLineOverlay />
-      <div className="max-w-6xl w-full">
+  
+  // Determine which screenshots we have
+  const hasWebsite = !!(data?.websiteScreenshot || data?.websiteUrl);
+  const hasInstagram = !!(instagramLink?.screenshot);
+  const hasFacebook = !!(facebookLink?.screenshot);
+  
+  // Count available screenshots
+  const screenshotCount = [hasWebsite, hasInstagram, hasFacebook].filter(Boolean).length;
+  
+  // Layout configurations based on available screenshots
+  const renderLayout = () => {
+    // No screenshots at all
+    if (screenshotCount === 0 && !loading) {
+      return (
+        <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+          No online presence data found for this business.
+        </div>
+      );
+    }
+    
+    // ALL THREE SCREENSHOTS
+    if (hasWebsite && hasInstagram && hasFacebook) {
+      return (
         <div className="relative flex items-center justify-center" style={{ minHeight: '520px' }}>
-          {/* Website Screenshot - Center */}
-          <div className="relative z-0 w-full max-w-4xl mx-auto transition-all duration-700 transform">
+          {/* Website - Center */}
+          <div className="relative z-0 w-full max-w-3xl mx-auto">
             <WebsiteScreenshot 
               screenshot={data?.websiteScreenshot || null} 
               url={data?.websiteUrl} 
               hasError={screenshotError && !data?.websiteScreenshot}
             />
           </div>
-
-          {/* Instagram Screenshot - Left */}
-          {instagramLink && (
-            <div className="absolute left-[-20px] top-[55%] -translate-y-1/2 z-10 w-44 md:w-52 transform -rotate-6 transition-all duration-700 hover:rotate-0 hover:scale-105 cursor-pointer">
-              <SocialScreenshot screenshot={instagramLink.screenshot} platform="instagram" />
+          {/* Instagram - Left */}
+          <div className="absolute left-0 top-[55%] -translate-y-1/2 z-10 w-40 md:w-48 transform -rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
+            <SocialScreenshot screenshot={instagramLink.screenshot} platform="instagram" />
+          </div>
+          {/* Facebook - Right */}
+          <div className="absolute right-0 top-[55%] -translate-y-1/2 z-10 w-40 md:w-48 transform rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
+            <SocialScreenshot screenshot={facebookLink.screenshot} platform="facebook" />
+          </div>
+        </div>
+      );
+    }
+    
+    // WEBSITE + ONE SOCIAL (Instagram or Facebook)
+    if (hasWebsite && (hasInstagram || hasFacebook) && !(hasInstagram && hasFacebook)) {
+      const socialLink = hasInstagram ? instagramLink : facebookLink;
+      const platform = hasInstagram ? 'instagram' : 'facebook';
+      const isInstagram = hasInstagram;
+      
+      return (
+        <div className="flex items-center justify-center gap-8 md:gap-12" style={{ minHeight: '520px' }}>
+          {/* Social on left if Instagram, right if Facebook */}
+          {isInstagram && (
+            <div className="w-44 md:w-52 transform -rotate-3 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer flex-shrink-0">
+              <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} />
             </div>
           )}
-
-          {/* Facebook Screenshot - Right */}
-          {facebookLink && (
-            <div className="absolute right-[-20px] top-[55%] -translate-y-1/2 z-10 w-44 md:w-52 transform rotate-6 transition-all duration-700 hover:rotate-0 hover:scale-105 cursor-pointer">
-              <SocialScreenshot screenshot={facebookLink.screenshot} platform="facebook" />
-            </div>
-          )}
-
-          {/* Fallback if no screenshots found at all */}
-          {!data?.websiteScreenshot && !instagramLink?.screenshot && !facebookLink?.screenshot && !loading && (
-            <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
-              No presence data found for this business.
+          {/* Website - Center */}
+          <div className="relative z-0 w-full max-w-2xl">
+            <WebsiteScreenshot 
+              screenshot={data?.websiteScreenshot || null} 
+              url={data?.websiteUrl} 
+              hasError={screenshotError && !data?.websiteScreenshot}
+            />
+          </div>
+          {/* Facebook on right */}
+          {!isInstagram && (
+            <div className="w-44 md:w-52 transform rotate-3 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer flex-shrink-0">
+              <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} />
             </div>
           )}
         </div>
+      );
+    }
+    
+    // TWO SOCIALS ONLY (Instagram + Facebook, no website)
+    if (!hasWebsite && hasInstagram && hasFacebook) {
+      return (
+        <div className="flex items-center justify-center gap-6 md:gap-12" style={{ minHeight: '520px' }}>
+          {/* Instagram - Left */}
+          <div className="w-44 md:w-56 transform -rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
+            <SocialScreenshot screenshot={instagramLink.screenshot} platform="instagram" />
+          </div>
+          {/* Facebook - Right */}
+          <div className="w-44 md:w-56 transform rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
+            <SocialScreenshot screenshot={facebookLink.screenshot} platform="facebook" />
+          </div>
+        </div>
+      );
+    }
+    
+    // WEBSITE ONLY
+    if (hasWebsite && !hasInstagram && !hasFacebook) {
+      return (
+        <div className="flex items-center justify-center" style={{ minHeight: '520px' }}>
+          <div className="relative z-0 w-full max-w-4xl mx-auto">
+            <WebsiteScreenshot 
+              screenshot={data?.websiteScreenshot || null} 
+              url={data?.websiteUrl} 
+              hasError={screenshotError && !data?.websiteScreenshot}
+            />
+          </div>
+        </div>
+      );
+    }
+    
+    // SINGLE SOCIAL ONLY (Instagram or Facebook)
+    if (!hasWebsite && ((hasInstagram && !hasFacebook) || (!hasInstagram && hasFacebook))) {
+      const socialLink = hasInstagram ? instagramLink : facebookLink;
+      const platform = hasInstagram ? 'instagram' : 'facebook';
+      
+      return (
+        <div className="flex items-center justify-center" style={{ minHeight: '520px' }}>
+          <div className="w-52 md:w-64 transition-all duration-500 hover:scale-105 cursor-pointer">
+            <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} />
+          </div>
+        </div>
+      );
+    }
+    
+    // Fallback - loading state
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-gray-400 text-sm">Loading screenshots...</div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="w-full h-full flex items-center justify-center p-8 relative overflow-hidden">
+      <ScanLineOverlay />
+      <div className="max-w-6xl w-full h-full">
+        {renderLayout()}
       </div>
     </div>
   );
