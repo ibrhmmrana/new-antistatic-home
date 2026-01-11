@@ -1441,104 +1441,24 @@ async function captureScreenshot(
         const loggedIn = await handleInstagramLoginIfNeeded(page);
         
         if (loggedIn) {
-          // Check if we're currently on a challenge page
-          const isChallenge = await isInstagramChallengePage(page);
-          
-          if (isChallenge) {
-            // If on challenge page, take screenshot of challenge page and return
-            console.log(`[SCREENSHOT] On challenge page - taking screenshot of challenge page`);
-            await page.waitForTimeout(2000); // Wait for page to settle
-            
-            // Log elements on challenge page
-            await logPageElements(page, 'Challenge page - taking screenshot');
-            
-            // Take screenshot of challenge page
-            const screenshotBuffer = await page.screenshot({
-              fullPage: false,
-              timeout: TIMEOUT_MS
-            });
-            
-            const screenshotBase64 = screenshotBuffer.toString('base64');
-            console.log(`[SCREENSHOT] ✅ Challenge page screenshot captured (${screenshotBase64.length} chars)`);
-            
-            // Close browser before returning
-            if (browser) {
-              await browser.close();
-              console.log(`[SCREENSHOT] Browser closed`);
-            }
-            
-            return {
-              success: true,
-              screenshot: screenshotBase64
-            };
-          } else {
-            // After login, navigate to the profile URL again
-            console.log(`[SCREENSHOT] Navigating to profile after login: ${normalizedUrl}`);
-            await page.goto(normalizedUrl, {
-              waitUntil: 'domcontentloaded',
-              timeout: TIMEOUT_MS
-            });
-            await page.waitForTimeout(2000);
-            
-            // Check if we got redirected to challenge page after navigation
-            const isChallengeAfterNav = await isInstagramChallengePage(page);
-            if (isChallengeAfterNav) {
-              // Take screenshot of challenge page and return
-              console.log(`[SCREENSHOT] Redirected to challenge page after navigation - taking screenshot`);
-              await page.waitForTimeout(2000);
-              
-              await logPageElements(page, 'Challenge page after navigation - taking screenshot');
-              
-              const screenshotBuffer = await page.screenshot({
-                fullPage: false,
-                timeout: TIMEOUT_MS
-              });
-              
-              const screenshotBase64 = screenshotBuffer.toString('base64');
-              console.log(`[SCREENSHOT] ✅ Challenge page screenshot captured (${screenshotBase64.length} chars)`);
-              
-              if (browser) {
-                await browser.close();
-                console.log(`[SCREENSHOT] Browser closed`);
-              }
-              
-              return {
-                success: true,
-                screenshot: screenshotBase64
-              };
-            }
-          }
-          
-          // Check final URL after navigation
-          const currentUrl = page.url();
-          console.log(`[SCREENSHOT] Final URL after navigation: ${currentUrl}`);
-          
-          if (currentUrl.includes('/accounts/login/')) {
-            console.log(`[SCREENSHOT] ⚠️ Still redirected to login page`);
-          } else {
-            console.log(`[SCREENSHOT] ✅ Successfully navigated to profile or content page`);
-          }
-          
-          // Log elements after navigating to profile
-          await logPageElements(page, 'After navigating to profile post-login');
-        }
-        
-        // Check if we're on challenge page before proceeding with Instagram processing
-        const isChallengeBeforeProcessing = await isInstagramChallengePage(page);
-        if (isChallengeBeforeProcessing) {
-          console.log(`[SCREENSHOT] On challenge page before Instagram processing - taking screenshot`);
+          // Wait 2 seconds after login, then take screenshot and return
+          console.log(`[SCREENSHOT] Login successful - waiting 2 seconds then taking screenshot`);
           await page.waitForTimeout(2000);
           
-          await logPageElements(page, 'Challenge page before processing - taking screenshot');
+          // Log elements after login
+          await logPageElements(page, 'After login - taking screenshot');
           
+          // Take screenshot of page after login
           const screenshotBuffer = await page.screenshot({
             fullPage: false,
             timeout: TIMEOUT_MS
           });
           
           const screenshotBase64 = screenshotBuffer.toString('base64');
-          console.log(`[SCREENSHOT] ✅ Challenge page screenshot captured (${screenshotBase64.length} chars)`);
+          console.log(`[SCREENSHOT] ✅ Post-login screenshot captured (${screenshotBase64.length} chars)`);
+          console.log(`[SCREENSHOT] Current URL: ${page.url()}`);
           
+          // Close browser before returning
           if (browser) {
             await browser.close();
             console.log(`[SCREENSHOT] Browser closed`);
