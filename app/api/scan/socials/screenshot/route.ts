@@ -557,9 +557,50 @@ async function handleInstagramChallenge(page: Page): Promise<boolean> {
     const nextButton = page.locator('div[role="button"]:has-text("Next")').first();
     
     if (await nextButton.isVisible({ timeout: 5000 })) {
-      console.log(`[SCREENSHOT] Found "Next" button, clicking...`);
-      await nextButton.click();
-      console.log(`[SCREENSHOT] ✅ Clicked "Next" button on challenge page`);
+      console.log(`[SCREENSHOT] Found "Next" button, checking if enabled...`);
+      
+      // Check if button is disabled and wait for it to become enabled
+      const isEnabled = await nextButton.evaluate((el) => {
+        const div = el as HTMLElement;
+        const ariaDisabled = div.getAttribute('aria-disabled');
+        const tabIndex = div.getAttribute('tabindex');
+        // Button is enabled if aria-disabled is not "true" and tabindex is not "-1"
+        return ariaDisabled !== 'true' && tabIndex !== '-1';
+      });
+      
+      if (!isEnabled) {
+        console.log(`[SCREENSHOT] "Next" button is disabled, waiting for it to become enabled...`);
+        // Wait for button to become enabled (check every 500ms for up to 10 seconds)
+        let enabled = false;
+        for (let i = 0; i < 20; i++) {
+          await page.waitForTimeout(500);
+          enabled = await nextButton.evaluate((el) => {
+            const div = el as HTMLElement;
+            const ariaDisabled = div.getAttribute('aria-disabled');
+            const tabIndex = div.getAttribute('tabindex');
+            return ariaDisabled !== 'true' && tabIndex !== '-1';
+          });
+          if (enabled) {
+            console.log(`[SCREENSHOT] "Next" button is now enabled!`);
+            break;
+          }
+        }
+        
+        if (!enabled) {
+          console.log(`[SCREENSHOT] ⚠️ "Next" button did not become enabled, trying JavaScript click...`);
+          // Try JavaScript click as fallback
+          await nextButton.evaluate((el) => {
+            (el as HTMLElement).click();
+          });
+          console.log(`[SCREENSHOT] ✅ Clicked "Next" button via JavaScript`);
+        } else {
+          await nextButton.click();
+          console.log(`[SCREENSHOT] ✅ Clicked "Next" button on challenge page`);
+        }
+      } else {
+        await nextButton.click();
+        console.log(`[SCREENSHOT] ✅ Clicked "Next" button on challenge page`);
+      }
       
       // Wait for navigation/response
       await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
