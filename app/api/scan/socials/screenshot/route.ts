@@ -394,9 +394,14 @@ async function handleInstagramLoginIfNeeded(page: Page): Promise<boolean> {
   
   // Check for login form indicators - try multiple selector strategies
   const loginDetected = await page.evaluate(() => {
-    // Try exact selector first
-    let usernameInput = document.querySelector('input[name="username"][aria-label*="Phone number, username, or email"]') as HTMLInputElement;
+    // Try new Instagram UI selectors first
+    let usernameInput = document.querySelector('input[name="username"][aria-label*="Username, email or mobile number"]') as HTMLInputElement;
     let passwordInput = document.querySelector('input[name="password"][aria-label="Password"]') as HTMLInputElement;
+    
+    // Fallback: try old selector
+    if (!usernameInput) {
+      usernameInput = document.querySelector('input[name="username"][aria-label*="Phone number, username, or email"]') as HTMLInputElement;
+    }
     
     // Fallback: try just by name attribute
     if (!usernameInput) {
@@ -439,7 +444,12 @@ async function handleInstagramLoginIfNeeded(page: Page): Promise<boolean> {
   try {
     // Wait for inputs to be visible and ready
     console.log(`[SCREENSHOT] Waiting for username input...`);
-    const usernameInput = page.locator('input[name="username"]').first();
+    // Try new Instagram UI selector first
+    let usernameInput = page.locator('input[name="username"][aria-label*="Username, email or mobile number"]').first();
+    if (await usernameInput.count() === 0) {
+      // Fallback to just name attribute
+      usernameInput = page.locator('input[name="username"]').first();
+    }
     await usernameInput.waitFor({ state: 'visible', timeout: 5000 });
     await usernameInput.fill(username);
     console.log(`[SCREENSHOT] ✅ Username filled`);
@@ -449,7 +459,11 @@ async function handleInstagramLoginIfNeeded(page: Page): Promise<boolean> {
     
     // Fill password
     console.log(`[SCREENSHOT] Waiting for password input...`);
-    const passwordInput = page.locator('input[name="password"]').first();
+    let passwordInput = page.locator('input[name="password"][aria-label="Password"]').first();
+    if (await passwordInput.count() === 0) {
+      // Fallback to just name attribute
+      passwordInput = page.locator('input[name="password"]').first();
+    }
     await passwordInput.waitFor({ state: 'visible', timeout: 5000 });
     await passwordInput.fill(password);
     console.log(`[SCREENSHOT] ✅ Password filled`);
@@ -459,9 +473,16 @@ async function handleInstagramLoginIfNeeded(page: Page): Promise<boolean> {
     
     // Click login button - try multiple selectors
     console.log(`[SCREENSHOT] Looking for login button...`);
-    let loginButton = page.locator('button[type="submit"]').filter({ hasText: 'Log in' });
+    // New Instagram UI uses div[role="button"][aria-label="Log in"]
+    let loginButton = page.locator('div[role="button"][aria-label="Log in"]').first();
     
-    // If that doesn't work, try just button with type submit
+    // Fallback: try button element
+    if (await loginButton.count() === 0) {
+      console.log(`[SCREENSHOT] Trying button element selector...`);
+      loginButton = page.locator('button[type="submit"]').filter({ hasText: 'Log in' });
+    }
+    
+    // Fallback: try just button with type submit
     if (await loginButton.count() === 0) {
       console.log(`[SCREENSHOT] Trying alternative login button selector...`);
       loginButton = page.locator('button[type="submit"]').first();
@@ -470,14 +491,6 @@ async function handleInstagramLoginIfNeeded(page: Page): Promise<boolean> {
     await loginButton.waitFor({ state: 'visible', timeout: 5000 });
     await loginButton.click();
     console.log(`[SCREENSHOT] ✅ Login button clicked`);
-    
-    // ============================================
-    // DEBUG PAUSE: After clicking login button
-    // ============================================
-    console.log(`[SCREENSHOT] 🛑 DEBUG PAUSE - After clicking login button`);
-    await page.pause();
-    console.log(`[SCREENSHOT] ▶️ Resuming after pause...`);
-    // ============================================
     
     // Wait for navigation/response
     await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
