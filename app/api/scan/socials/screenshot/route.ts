@@ -13,6 +13,29 @@ import chromium from "@sparticuz/chromium";
 // Force Node.js runtime (Playwright is not compatible with Edge runtime)
 export const runtime = "nodejs";
 
+// Increase memory for Vercel serverless function (Chromium needs more RAM)
+export const maxDuration = 60; // 60 seconds max
+
+// Memory-saving browser args for serverless environment
+const SERVERLESS_BROWSER_ARGS = [
+  '--single-process', // Critical: reduces memory by running in single process
+  '--no-zygote', // Disable zygote process (saves memory)
+  '--disable-gpu',
+  '--disable-dev-shm-usage', // Use /tmp instead of /dev/shm (limited in Lambda)
+  '--disable-setuid-sandbox',
+  '--no-sandbox',
+  '--disable-accelerated-2d-canvas',
+  '--disable-background-networking',
+  '--disable-default-apps',
+  '--disable-extensions',
+  '--disable-sync',
+  '--disable-translate',
+  '--metrics-recording-only',
+  '--mute-audio',
+  '--no-first-run',
+  '--disable-features=site-per-process', // Reduces memory
+];
+
 // Viewport configurations
 const VIEWPORTS = {
   desktop: { width: 1920, height: 1080 },
@@ -52,11 +75,13 @@ async function captureWebsiteScreenshot(
     const executablePath = isServerless
       ? await chromium.executablePath()
       : (localExecutablePath || undefined);
-
-    // Launch browser with minimal args
+    
+    // Launch browser with memory-optimized args for serverless
     browser = await pwChromium.launch({
       headless: chromium.headless,
-      args: chromium.args,
+      args: isServerless 
+        ? [...chromium.args, ...SERVERLESS_BROWSER_ARGS]
+        : [],
       executablePath,
       timeout: TIMEOUT_MS,
     });
@@ -75,14 +100,14 @@ async function captureWebsiteScreenshot(
 
     console.log(`[SCREENSHOT] Navigating to ${normalizedUrl}...`);
 
-    // Simple navigation with networkidle wait
+    // Use domcontentloaded instead of networkidle (much faster, less resource-intensive)
     await page.goto(normalizedUrl, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: TIMEOUT_MS,
     });
-
-    // Brief wait for any final rendering
-    await page.waitForTimeout(1000);
+    
+    // Wait a bit for images and styles to load
+    await page.waitForTimeout(2000);
 
     console.log(`[SCREENSHOT] Taking viewport screenshot...`);
 
@@ -619,19 +644,16 @@ async function captureScreenshot(
       try {
         browser = await pwChromium.launch({
           headless: useHeadless,
-        args: [
-          // Start with @sparticuz/chromium defaults (serverless-safe). Keep our extras minimal to avoid conflicts.
-          ...(isServerless ? chromium.args : []),
-          '--disable-blink-features=AutomationControlled',
-          // Window size arguments (must match viewport)
-          '--window-size=1920,1080',
-          // Keep existing behavior for some sites; avoid adding redundant sandbox/dev-shm flags (already in chromium.args).
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
-        ],
-        executablePath,
-        timeout: TIMEOUT_MS
-      });
+          args: [
+            // Start with @sparticuz/chromium defaults + memory-saving args for serverless
+            ...(isServerless ? [...chromium.args, ...SERVERLESS_BROWSER_ARGS] : []),
+            '--disable-blink-features=AutomationControlled',
+            '--window-size=1920,1080',
+            '--disable-web-security',
+          ],
+          executablePath,
+          timeout: TIMEOUT_MS
+        });
       } catch (launchError) {
         if (!isServerless && !localExecutablePath) {
           console.error(
