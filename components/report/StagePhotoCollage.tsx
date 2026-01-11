@@ -6,6 +6,7 @@ import Image from "next/image";
 
 interface StagePhotoCollageProps {
   placeId: string;
+  onComplete?: () => void;
 }
 
 interface Photo {
@@ -152,6 +153,7 @@ function calculateCenteringOffset(
 
 export default function StagePhotoCollage({
   placeId,
+  onComplete,
 }: StagePhotoCollageProps) {
   const [data, setData] = useState<PhotosData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -273,6 +275,27 @@ export default function StagePhotoCollage({
       return () => clearTimeout(timer);
     }
   }, [loadedImages, visibleCount, loading, error, data]);
+
+  // Auto-advance to next stage after all images have loaded and 3 seconds have passed
+  useEffect(() => {
+    if (loading || error || !data || data.photos.length === 0 || !onComplete) return;
+    
+    const photosToShow = data.photos.slice(0, MAX_PHOTOS);
+    const totalPhotos = photosToShow.length;
+    
+    // Check if all images are visible and the last one has loaded
+    const allVisible = visibleCount === totalPhotos;
+    const lastImageLoaded = totalPhotos > 0 && loadedImages.has(totalPhotos - 1);
+    
+    if (allVisible && lastImageLoaded) {
+      // Wait 3 seconds after the last image loads, then auto-advance
+      const timer = setTimeout(() => {
+        onComplete();
+      }, 3000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [visibleCount, loadedImages, loading, error, data, onComplete]);
 
   if (loading) {
     return (

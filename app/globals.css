@@ -186,3 +186,26 @@ body {
   }
 }
 
+/* Browser window entrance animation */
+@keyframes browserIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.browser-in {
+  animation: browserIn 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-in {
+    animation: none;
+    opacity: 1;
+  }
+}
+

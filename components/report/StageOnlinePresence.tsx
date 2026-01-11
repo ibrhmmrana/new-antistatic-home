@@ -43,6 +43,7 @@ export default function StageOnlinePresence({
   const [data, setData] = useState<OnlinePresenceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [screenshotError, setScreenshotError] = useState(false);
 
   // Use initialData from parent if available (primary source - avoids serverless cache issues)
   useEffect(() => {
@@ -134,12 +135,26 @@ export default function StageOnlinePresence({
             });
             if (screenshotResponse.ok) {
               const screenshotData = await screenshotResponse.json();
-              websiteScreenshot = screenshotData.screenshot || null;
-              console.log('[StageOnlinePresence] Direct screenshot capture:', !!websiteScreenshot);
+              if (screenshotData.success && screenshotData.screenshot) {
+                websiteScreenshot = screenshotData.screenshot;
+                console.log('[StageOnlinePresence] Direct screenshot capture:', !!websiteScreenshot);
+              } else {
+                // Screenshot capture failed
+                console.warn('[StageOnlinePresence] Screenshot capture returned failure:', screenshotData.error);
+                setScreenshotError(true);
+              }
+            } else {
+              // HTTP error
+              console.warn('[StageOnlinePresence] Screenshot capture HTTP error:', screenshotResponse.status);
+              setScreenshotError(true);
             }
           } catch (screenshotErr) {
             console.error('[StageOnlinePresence] Direct screenshot capture failed:', screenshotErr);
+            setScreenshotError(true);
           }
+        } else if (websiteUrl && !websiteScreenshot && !parsed.hasWebsiteScreenshot) {
+          // No screenshot was ever captured, mark as error
+          setScreenshotError(true);
         }
 
         // 3. Format and set data
@@ -181,40 +196,75 @@ export default function StageOnlinePresence({
   }, [scanId, businessName, address, loading, data, initialData]);
 
   // Website Screenshot Component with browser chrome (Windows style)
-  const WebsiteScreenshot = ({ screenshot, url }: { screenshot: string | null; url?: string | null }) => (
-    <div className="relative">
-      <div className="bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden">
-        {/* Browser top bar */}
-        <div className="flex items-center justify-between bg-gray-100 px-3 py-2 border-b border-gray-200">
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
-            <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
-            <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
-          </div>
-          <div className="flex-1 mx-3">
-            <div className="h-6 bg-white border border-gray-300 rounded px-2 text-[10px] text-gray-500 flex items-center truncate">
-              {url || 'Loading...'}
+  const WebsiteScreenshot = ({ 
+    screenshot, 
+    url, 
+    hasError 
+  }: { 
+    screenshot: string | null; 
+    url?: string | null;
+    hasError?: boolean;
+  }) => {
+    const [isVisible, setIsVisible] = useState(false);
+    
+    // Trigger animation when screenshot is available or error state is set
+    useEffect(() => {
+      if (screenshot || hasError) {
+        // Small delay to ensure smooth animation
+        const timer = setTimeout(() => setIsVisible(true), 100);
+        return () => clearTimeout(timer);
+      }
+    }, [screenshot, hasError]);
+    
+    return (
+      <div className={`relative ${isVisible ? 'browser-in' : 'opacity-0'}`}>
+        <div className="bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden">
+          {/* Browser top bar */}
+          <div className="flex items-center justify-between bg-gray-100 px-3 py-2 border-b border-gray-200">
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+              <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+              <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
             </div>
-          </div>
-          <div className="w-8" />
-        </div>
-        {/* Page area */}
-        <div className="bg-white overflow-hidden" style={{ maxHeight: '400px' }}>
-          {screenshot ? (
-            <img
-              src={screenshot}
-              alt="Website screenshot"
-              className="w-full h-auto object-top"
-            />
-          ) : (
-            <div className="w-full h-64 bg-gray-50 flex items-center justify-center">
-              <div className="text-gray-400 text-sm">Loading website...</div>
+            <div className="flex-1 mx-3">
+              <div className="h-6 bg-white border border-gray-300 rounded px-2 text-[10px] text-gray-500 flex items-center truncate">
+                {url || 'Loading...'}
+              </div>
             </div>
-          )}
+            <div className="w-8" />
+          </div>
+          {/* Page area */}
+          <div className="bg-white overflow-hidden" style={{ maxHeight: '400px' }}>
+            {screenshot ? (
+              <img
+                src={screenshot}
+                alt="Website screenshot"
+                className="w-full h-auto object-top"
+              />
+            ) : hasError ? (
+              <div className="w-full h-64 bg-gray-50 flex flex-col items-center justify-center">
+                <div className="text-gray-400 text-sm mb-2">Unable to capture screenshot</div>
+                {url && (
+                  <a 
+                    href={url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-700 text-xs underline"
+                  >
+                    Visit website →
+                  </a>
+                )}
+              </div>
+            ) : (
+              <div className="w-full h-64 bg-gray-50 flex items-center justify-center">
+                <div className="text-gray-400 text-sm">Loading website...</div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Social Media Screenshot inside a refined iPhone-style mock
   const SocialScreenshot = ({ screenshot, platform }: { screenshot: string | null; platform: 'instagram' | 'facebook' }) => (
@@ -287,7 +337,11 @@ export default function StageOnlinePresence({
         <div className="relative flex items-center justify-center" style={{ minHeight: '520px' }}>
           {/* Website Screenshot - Center */}
           <div className="relative z-0 w-full max-w-4xl mx-auto transition-all duration-700 transform">
-            <WebsiteScreenshot screenshot={data?.websiteScreenshot || null} url={data?.websiteUrl} />
+            <WebsiteScreenshot 
+              screenshot={data?.websiteScreenshot || null} 
+              url={data?.websiteUrl} 
+              hasError={screenshotError && !data?.websiteScreenshot}
+            />
           </div>
 
           {/* Instagram Screenshot - Left */}

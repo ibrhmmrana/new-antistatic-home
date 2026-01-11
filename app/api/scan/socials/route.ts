@@ -128,14 +128,16 @@ async function captureSocialScreenshot(
 
     if (response.ok) {
       const data = await response.json();
+      // Check if screenshot capture was successful
+      const hasScreenshot = data.success && data.screenshot;
       if (platform === 'website') {
-        return { websiteScreenshot: data.screenshot || null };
+        return { websiteScreenshot: hasScreenshot ? data.screenshot : null };
       } else {
         return {
           platform,
           url,
-          screenshot: data.screenshot || null,
-          status: data.success ? 'success' : 'error',
+          screenshot: hasScreenshot ? data.screenshot : null,
+          status: hasScreenshot ? 'success' : 'error',
         };
       }
     } else {

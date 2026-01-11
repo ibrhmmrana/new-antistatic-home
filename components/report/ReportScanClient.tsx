@@ -81,20 +81,40 @@ export default function ReportScanClient({
           
           // Store the screenshot in React state so it can be passed to StageOnlinePresence
           // This avoids relying on the volatile serverless API cache
-          if (result.screenshot) {
+          if (result.success && result.screenshot) {
             console.log('[WEBSITE SCREENSHOT] ✅ Captured, storing in React state');
             setOnlinePresenceData(prev => ({
               websiteUrl: websiteUrl,
               websiteScreenshot: result.screenshot,
               socialLinks: prev?.socialLinks || [],
             }));
+          } else {
+            // Screenshot capture failed, but still store URL for fallback UI
+            console.warn('[WEBSITE SCREENSHOT] ❌ Capture failed:', result.error || 'Unknown error');
+            setOnlinePresenceData(prev => ({
+              websiteUrl: websiteUrl,
+              websiteScreenshot: null, // Explicitly null to trigger fallback UI
+              socialLinks: prev?.socialLinks || [],
+            }));
           }
         } else {
           console.error('Failed to capture website screenshot:', await response.text());
+          // Still store URL for fallback UI
+          setOnlinePresenceData(prev => ({
+            websiteUrl: websiteUrl,
+            websiteScreenshot: null,
+            socialLinks: prev?.socialLinks || [],
+          }));
           websiteScreenshotTriggeredRef.current = false; // Reset on failure to allow retry
         }
       } catch (error) {
         console.error('Error capturing website screenshot:', error);
+        // Still store URL for fallback UI
+        setOnlinePresenceData(prev => ({
+          websiteUrl: websiteUrl,
+          websiteScreenshot: null,
+          socialLinks: prev?.socialLinks || [],
+        }));
         websiteScreenshotTriggeredRef.current = false; // Reset on failure to allow retry
       }
     };
@@ -369,7 +389,15 @@ export default function ReportScanClient({
                 // Photo quality and quantity step
                 <div className="absolute inset-0">
                   <ScanLineOverlay />
-                  <StagePhotoCollage placeId={placeId} />
+                  <StagePhotoCollage 
+                    placeId={placeId}
+                    onComplete={() => {
+                      // Automatically move to next stage after all photos load and 3 seconds pass
+                      if (currentStep === 3) {
+                        handleNext();
+                      }
+                    }}
+                  />
                 </div>
               ) : currentStep === 4 ? (
                 // Step 4: Online presence analysis
