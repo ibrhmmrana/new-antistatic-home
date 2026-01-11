@@ -723,77 +723,67 @@ async function extractSocialLinksFromGBP(
     // Wait for GBP panel to render
     await randomDelay(1500, 2500);
 
-    // Try multiple strategies to find the GBP panel
-    console.log('[DEBUG] Looking for GBP panel...');
-    
-    // Strategy 1: Look for role="complementary" (knowledge panel)
-    let gbpPanel = page.locator('[role="complementary"]').first();
-    let panelFound = await gbpPanel.count() > 0;
-    
-    // Strategy 2: Look for common GBP panel classes/attributes
-    if (!panelFound) {
-      gbpPanel = page.locator('.kp-blk, .kp-wholepage, [data-ved*="Cg"], [jsname="kno-fv"]').first();
-      panelFound = await gbpPanel.count() > 0;
-      console.log(`[DEBUG] Strategy 2 - Panel found: ${panelFound}`);
-    }
-
-    // Strategy 3: Look for business name in a prominent position (usually in GBP)
-    if (!panelFound) {
-      const businessNameLocator = page.locator(`text=/^${businessName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$/i`).first();
-      if (await businessNameLocator.count() > 0) {
-        // Find parent container that likely contains the GBP
-        gbpPanel = businessNameLocator.locator('xpath=ancestor::*[@role="complementary" or contains(@class, "kp-") or contains(@data-ved, "")][1]').first();
-        panelFound = await gbpPanel.count() > 0;
-        console.log(`[DEBUG] Strategy 3 - Panel found: ${panelFound}`);
-      }
-    }
-
-    if (!panelFound) {
-      console.log(`[DEBUG] GBP panel not found. Trying to find Profiles section directly on page...`);
-      // If panel not found, try to find Profiles section anywhere on the page
-      const profilesOnPage = page.locator('text=/Profiles/i');
-      if (await profilesOnPage.count() > 0) {
-        console.log(`[DEBUG] Found Profiles section without GBP panel`);
-        // Continue with extraction from page
-      } else {
-        console.log(`[DEBUG] No Profiles section found. Returning empty result.`);
-        return { socialLinks: [], websiteUrl: null };
-      }
-    }
-
-    // Look for "Profiles" section - try multiple approaches
+    // Look for the Profiles section using the exact structure from Google
     console.log('[DEBUG] Looking for Profiles section...');
-    let profilesSection = page.locator('text=/^Profiles$/i, text=/Profiles/i').first();
-    let profilesFound = await profilesSection.count() > 0;
-
-    // If Profiles not found, try looking for social media icons/links directly
+    
+    // Strategy 1: Look for the Profiles container by data-attrid attribute
+    let profilesContainer = page.locator('div[role="presentation"][data-attrid="kc:/common/topic:social media presence"]').first();
+    let profilesFound = await profilesContainer.count() > 0;
+    
+    // Strategy 2: Look for the span with class "kplpt" containing "Profiles"
     if (!profilesFound) {
-      console.log('[DEBUG] Profiles text not found. Searching for social links directly...');
-    } else {
-      console.log('[DEBUG] Profiles section found!');
+      const profilesHeading = page.locator('span.kplpt:has-text("Profiles")').first();
+      if (await profilesHeading.count() > 0) {
+        // Find the parent container with role="presentation"
+        profilesContainer = profilesHeading.locator('xpath=ancestor::div[@role="presentation"][1]').first();
+        profilesFound = await profilesContainer.count() > 0;
+        console.log(`[DEBUG] Strategy 2 - Profiles container found: ${profilesFound}`);
+      }
+    }
+    
+    // Strategy 3: Look for the Profiles heading by class
+    if (!profilesFound) {
+      const profilesHeading = page.locator('div.sq4Bpf.Ss2Faf.zbA8Me.q8U8x:has(span.kplpt:has-text("Profiles"))').first();
+      if (await profilesHeading.count() > 0) {
+        // Find the parent container
+        profilesContainer = profilesHeading.locator('xpath=ancestor::div[@role="presentation"][1]').first();
+        profilesFound = await profilesContainer.count() > 0;
+        console.log(`[DEBUG] Strategy 3 - Profiles container found: ${profilesFound}`);
+      }
     }
 
-    // Collect all potential social media links from the page
-    // Google often wraps links in redirect URLs, so we need to handle that
+    if (!profilesFound) {
+      console.log(`[DEBUG] Profiles section not found. Returning empty result.`);
+      return { socialLinks: [], websiteUrl: null };
+    }
+    
+    console.log('[DEBUG] Profiles section found!');
+
+    // Extract social links from the Profiles container
+    // Links are in div.PZPZlf.dRrfkf.kno-vrt-t within div.OOijTb.P6Tjc.gDQYEd.Dy8CGd.XWkUDf
+    console.log('[DEBUG] Extracting social links from Profiles container...');
     const socialLinks: { platform: string; url: string }[] = [];
     const seenUrls = new Set<string>();
 
-    // Strategy 1: Find all links that contain social media domains (only Instagram and Facebook)
-    const socialLinkSelectors = [
-      'a[href*="instagram.com"]',
-      'a[href*="facebook.com"]',
-    ];
-
-    for (const selector of socialLinkSelectors) {
-      const links = await page.locator(selector).all();
-      console.log(`[DEBUG] Found ${links.length} links matching ${selector}`);
+    // Find the links container within the Profiles section
+    const linksContainer = profilesContainer.locator('div.OOijTb.P6Tjc.gDQYEd.Dy8CGd.XWkUDf').first();
+    const hasLinksContainer = await linksContainer.count() > 0;
+    
+    if (hasLinksContainer) {
+      // Find all social link divs within the container
+      const linkDivs = await linksContainer.locator('div.PZPZlf.dRrfkf.kno-vrt-t').all();
+      console.log(`[DEBUG] Found ${linkDivs.length} social link divs in Profiles container`);
       
-      for (const link of links) {
+      for (const linkDiv of linkDivs) {
         try {
+          // Find the anchor tag within this div
+          const link = linkDiv.locator('a[href]').first();
+          if (await link.count() === 0) continue;
+          
           let href = await link.getAttribute('href');
           if (!href) continue;
 
-          // Handle Google's redirect URLs (e.g., /url?q=...)
+          // Handle Google's redirect URLs (e.g., /url?q=... or ping attribute)
           if (href.startsWith('/url?q=')) {
             const urlMatch = href.match(/\/url\?q=([^&]+)/);
             if (urlMatch) {
@@ -807,6 +797,15 @@ async function extractSocialLinksFromGBP(
               href = decodeURIComponent(qParam);
             }
           }
+          
+          // Also check ping attribute which sometimes contains the real URL
+          const ping = await link.getAttribute('ping');
+          if (ping) {
+            const pingMatch = ping.match(/url=([^&]+)/);
+            if (pingMatch) {
+              href = decodeURIComponent(pingMatch[1]);
+            }
+          }
 
           // Resolve relative URLs
           if (!href.startsWith('http')) {
@@ -817,60 +816,62 @@ async function extractSocialLinksFromGBP(
             }
           }
 
-          // Extract platform and validate
+          // Extract platform and validate (only Instagram and Facebook)
           const platform = extractPlatformFromUrl(href);
-          if (platform && !seenUrls.has(href)) {
+          if (platform && (platform === 'instagram' || platform === 'facebook') && !seenUrls.has(href)) {
             seenUrls.add(href);
             socialLinks.push({ platform, url: href });
             console.log(`[DEBUG] Found ${platform}: ${href}`);
           }
         } catch (error) {
-          // Skip problematic links
+          console.log(`[DEBUG] Error extracting link from div:`, error);
           continue;
         }
       }
-    }
-
-    // Strategy 2: If Profiles section was found, look for links near it
-    if (profilesFound && socialLinks.length === 0) {
-      console.log('[DEBUG] Profiles found but no links yet. Searching near Profiles section...');
+    } else {
+      // Fallback: search for links directly in the Profiles container
+      console.log('[DEBUG] Links container not found, searching for links directly in Profiles section...');
+      const allLinks = await profilesContainer.locator('a[href*="instagram.com"], a[href*="facebook.com"]').all();
+      console.log(`[DEBUG] Found ${allLinks.length} social links in Profiles section`);
       
-      // Find the Profiles container and look for links within it
-      const profilesContainer = profilesSection.locator('xpath=ancestor::*[contains(@class, "section") or contains(@data-ved, "")][1]').first();
-      if (await profilesContainer.count() > 0) {
-        const containerLinks = await profilesContainer.locator('a[href]').all();
-        console.log(`[DEBUG] Found ${containerLinks.length} links in Profiles container`);
-        
-        for (const link of containerLinks) {
-          try {
-            let href = await link.getAttribute('href');
-            if (!href) continue;
+      for (const link of allLinks) {
+        try {
+          let href = await link.getAttribute('href');
+          if (!href) continue;
 
-            // Handle redirects
-            if (href.startsWith('/url?q=')) {
-              const urlMatch = href.match(/\/url\?q=([^&]+)/);
-              if (urlMatch) {
-                href = decodeURIComponent(urlMatch[1]);
-              }
+          // Handle redirects
+          if (href.startsWith('/url?q=')) {
+            const urlMatch = href.match(/\/url\?q=([^&]+)/);
+            if (urlMatch) {
+              href = decodeURIComponent(urlMatch[1]);
             }
-
-            if (!href.startsWith('http')) {
-              try {
-                href = new URL(href, 'https://www.google.com').toString();
-              } catch {
-                continue;
-              }
-            }
-
-            const platform = extractPlatformFromUrl(href);
-            if (platform && !seenUrls.has(href)) {
-              seenUrls.add(href);
-              socialLinks.push({ platform, url: href });
-              console.log(`[DEBUG] Found ${platform} near Profiles: ${href}`);
-            }
-          } catch (error) {
-            continue;
           }
+          
+          // Check ping attribute
+          const ping = await link.getAttribute('ping');
+          if (ping) {
+            const pingMatch = ping.match(/url=([^&]+)/);
+            if (pingMatch) {
+              href = decodeURIComponent(pingMatch[1]);
+            }
+          }
+
+          if (!href.startsWith('http')) {
+            try {
+              href = new URL(href, 'https://www.google.com').toString();
+            } catch {
+              continue;
+            }
+          }
+
+          const platform = extractPlatformFromUrl(href);
+          if (platform && (platform === 'instagram' || platform === 'facebook') && !seenUrls.has(href)) {
+            seenUrls.add(href);
+            socialLinks.push({ platform, url: href });
+            console.log(`[DEBUG] Found ${platform}: ${href}`);
+          }
+        } catch (error) {
+          continue;
         }
       }
     }
@@ -932,38 +933,41 @@ async function extractSocialLinksFromGBP(
         }
       }
 
-      // Alternative: Look for website in the GBP panel by checking for common patterns
-      if (!websiteUrl && panelFound) {
-        const allLinks = await gbpPanel.locator('a[href^="http"]').all();
-        for (const link of allLinks) {
-          try {
-            let href = await link.getAttribute('href');
-            if (!href) continue;
+      // Alternative: Look for website in the knowledge panel (complementary role)
+      if (!websiteUrl) {
+        const knowledgePanel = page.locator('[role="complementary"]').first();
+        if (await knowledgePanel.count() > 0) {
+          const allLinks = await knowledgePanel.locator('a[href^="http"]').all();
+          for (const link of allLinks) {
+            try {
+              let href = await link.getAttribute('href');
+              if (!href) continue;
 
-            // Handle redirects
-            if (href.startsWith('/url?q=')) {
-              const urlMatch = href.match(/\/url\?q=([^&]+)/);
-              if (urlMatch) {
-                href = decodeURIComponent(urlMatch[1]);
+              // Handle redirects
+              if (href.startsWith('/url?q=')) {
+                const urlMatch = href.match(/\/url\?q=([^&]+)/);
+                if (urlMatch) {
+                  href = decodeURIComponent(urlMatch[1]);
+                }
               }
-            }
 
-            // Check if it's a website (not social media, not Google)
-            if (href.startsWith('http') && 
-                !href.includes('google.com') &&
-                !href.includes('instagram.com') && 
-                !href.includes('facebook.com') && 
-                !href.includes('twitter.com') && 
-                !href.includes('x.com') &&
-                !href.includes('linkedin.com') &&
-                !href.includes('youtube.com') &&
-                !href.includes('maps.google.com')) {
-              websiteUrl = href;
-              console.log(`[DEBUG] Found website URL (alternative method): ${websiteUrl}`);
-              break;
+              // Check if it's a website (not social media, not Google)
+              if (href.startsWith('http') && 
+                  !href.includes('google.com') &&
+                  !href.includes('instagram.com') && 
+                  !href.includes('facebook.com') && 
+                  !href.includes('twitter.com') && 
+                  !href.includes('x.com') &&
+                  !href.includes('linkedin.com') &&
+                  !href.includes('youtube.com') &&
+                  !href.includes('maps.google.com')) {
+                websiteUrl = href;
+                console.log(`[DEBUG] Found website URL (alternative method): ${websiteUrl}`);
+                break;
+              }
+            } catch {
+              continue;
             }
-          } catch {
-            continue;
           }
         }
       }
