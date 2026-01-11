@@ -389,25 +389,13 @@ async function removeFacebookLoginPrompt(page: Page): Promise<void> {
 async function handleInstagramLoginIfNeeded(page: Page): Promise<boolean> {
   console.log(`[SCREENSHOT] Checking for Instagram login page...`);
   
-  // Check for login form indicators
+  // Check for login form indicators using the exact selectors
   const loginDetected = await page.evaluate(() => {
-    const usernameInput = document.querySelector('input[name="username"]') as HTMLInputElement;
-    const passwordInput = document.querySelector('input[name="password"]') as HTMLInputElement;
+    const usernameInput = document.querySelector('input[name="username"][aria-label*="Phone number, username, or email"]') as HTMLInputElement;
+    const passwordInput = document.querySelector('input[name="password"][aria-label="Password"]') as HTMLInputElement;
     
-    // Check if both inputs exist and have placeholder text indicating login
-    if (usernameInput && passwordInput) {
-      const usernamePlaceholder = usernameInput.placeholder || usernameInput.getAttribute('aria-label') || '';
-      const passwordPlaceholder = passwordInput.placeholder || passwordInput.getAttribute('aria-label') || '';
-      
-      const isLoginPage = 
-        (usernamePlaceholder.toLowerCase().includes('phone') || 
-         usernamePlaceholder.toLowerCase().includes('username') ||
-         usernamePlaceholder.toLowerCase().includes('email')) &&
-        passwordPlaceholder.toLowerCase().includes('password');
-      
-      return isLoginPage;
-    }
-    return false;
+    // Check if both inputs exist
+    return !!(usernameInput && passwordInput);
   });
   
   if (!loginDetected) {
@@ -430,26 +418,35 @@ async function handleInstagramLoginIfNeeded(page: Page): Promise<boolean> {
   console.log(`[SCREENSHOT] Credentials found, attempting login...`);
   
   try {
-    // Fill username
-    const usernameInput = page.locator('input[name="username"]');
+    // Fill username using exact selector
+    const usernameInput = page.locator('input[name="username"][aria-label*="Phone number, username, or email"]');
     await usernameInput.fill(username);
     console.log(`[SCREENSHOT] Username filled`);
     
     // Small delay between fields (human-like)
     await page.waitForTimeout(500);
     
-    // Fill password
-    const passwordInput = page.locator('input[name="password"]');
+    // Fill password using exact selector
+    const passwordInput = page.locator('input[name="password"][aria-label="Password"]');
     await passwordInput.fill(password);
     console.log(`[SCREENSHOT] Password filled`);
     
     // Small delay before clicking login
     await page.waitForTimeout(500);
     
-    // Click login button
-    const loginButton = page.locator('button[type="submit"]').first();
+    // Click login button using exact selector
+    // Button has type="submit" and contains "Log in" text in a child div
+    const loginButton = page.locator('button[type="submit"]').filter({ hasText: 'Log in' });
     await loginButton.click();
     console.log(`[SCREENSHOT] Login button clicked`);
+    
+    // ============================================
+    // DEBUG PAUSE: After clicking login button
+    // ============================================
+    console.log(`[SCREENSHOT] 🛑 DEBUG PAUSE - After clicking login button`);
+    await page.pause();
+    console.log(`[SCREENSHOT] ▶️ Resuming after pause...`);
+    // ============================================
     
     // Wait for navigation/response
     await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
@@ -1193,15 +1190,6 @@ async function captureScreenshot(
         await page.waitForTimeout(2000);
         
         console.log(`[SCREENSHOT] Current URL: ${page.url()}`);
-        
-        // ============================================
-        // TEMPORARY DEBUG: Pause to inspect page state
-        // REMOVE THIS AFTER DEBUGGING
-        // ============================================
-        console.log(`[SCREENSHOT] 🛑 DEBUG PAUSE - After Instagram navigation`);
-        await page.pause();
-        console.log(`[SCREENSHOT] ▶️ Resuming after pause...`);
-        // ============================================
         
         // Check if we're on a login page and handle it
         const loggedIn = await handleInstagramLoginIfNeeded(page);
