@@ -229,6 +229,66 @@ async function dismissSocialMediaPopups(page: Page, platform: string): Promise<v
 async function removeFacebookLoginPrompt(page: Page): Promise<void> {
   console.log(`[SCREENSHOT] Checking for Facebook login/signup prompt...`);
   
+  // Strategy 0 (MOST AGGRESSIVE): Use JavaScript to find and remove login prompts directly
+  // This catches all variants of the login/signup prompt
+  try {
+    const removed = await page.evaluate(() => {
+      let removedCount = 0;
+      
+      // Find all "Log in" links by aria-label
+      const loginLinks = Array.from(document.querySelectorAll('a[aria-label="Log in"]'));
+      
+      for (const loginLink of loginLinks) {
+        // Walk up the DOM to find the outermost container with class "x78zum5"
+        let current = loginLink.parentElement;
+        let lastMatchingContainer: HTMLElement | null = null;
+        
+        while (current && current !== document.body) {
+          // Check if this element has the characteristic Facebook container classes
+          if (current.classList.contains('x78zum5') && current.classList.contains('xdt5ytf')) {
+            lastMatchingContainer = current as HTMLElement;
+          }
+          current = current.parentElement;
+        }
+        
+        // Remove the outermost matching container
+        if (lastMatchingContainer) {
+          lastMatchingContainer.remove();
+          removedCount++;
+        }
+      }
+      
+      // Also look for "Create new account" links and remove their containers
+      const signupLinks = Array.from(document.querySelectorAll('a[aria-label="Create new account"]'));
+      for (const signupLink of signupLinks) {
+        let current = signupLink.parentElement;
+        let lastMatchingContainer: HTMLElement | null = null;
+        
+        while (current && current !== document.body) {
+          if (current.classList.contains('x78zum5') && current.classList.contains('xdt5ytf')) {
+            lastMatchingContainer = current as HTMLElement;
+          }
+          current = current.parentElement;
+        }
+        
+        if (lastMatchingContainer) {
+          lastMatchingContainer.remove();
+          removedCount++;
+        }
+      }
+      
+      return removedCount;
+    });
+    
+    if (removed > 0) {
+      console.log(`[SCREENSHOT] ✅ Removed ${removed} Facebook login prompt container(s) via JS evaluation`);
+      await page.waitForTimeout(300);
+      return;
+    }
+  } catch (error) {
+    console.log(`[SCREENSHOT] JS evaluation failed, trying other methods...`);
+  }
+  
   // Multiple strategies to find and remove the login prompt container
   // The container has specific classes and contains the text "Log in or sign up for Facebook to connect with friends, family and people you know."
   
@@ -552,14 +612,17 @@ async function captureScreenshot(
         ? await chromium.executablePath()
         : (localExecutablePath || undefined);
 
-      // Launch browser with UNDETECTABLE headless mode
-      // Note: Playwright's headless: true uses the new headless mode by default (more stealthy than old headless)
+      // Launch browser
+      // DEBUG: Set headless: false locally to see what's happening
+      const useHeadless = isServerless ? chromium.headless : false;
+      console.log(`[SCREENSHOT] Launching browser - headless: ${useHeadless}, isServerless: ${isServerless}`);
+      
       try {
         browser = await pwChromium.launch({
-          headless: chromium.headless,
+          headless: useHeadless,
         args: [
           // Start with @sparticuz/chromium defaults (serverless-safe). Keep our extras minimal to avoid conflicts.
-          ...chromium.args,
+          ...(isServerless ? chromium.args : []),
           '--disable-blink-features=AutomationControlled',
           // Window size arguments (must match viewport)
           '--window-size=1920,1080',
