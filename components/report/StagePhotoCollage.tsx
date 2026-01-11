@@ -348,7 +348,7 @@ export default function StagePhotoCollage({
           return (
             <div
               key={photo.ref}
-              className="absolute transition-all duration-500 ease-out"
+              className="absolute transition-[opacity,transform] duration-500 ease-out will-change-[opacity,transform]"
               style={{
                 left: `${slot.leftPct}%`,
                 top: `${slot.topPct}%`,
@@ -379,17 +379,22 @@ export default function StagePhotoCollage({
                       src={photoUrl}
                       alt={`Photo ${index + 1} of ${data.name}`}
                       fill
-                      className="object-cover"
+                className="object-cover"
                       unoptimized
+                      priority={index < 3} // Prioritize first 3 images
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                       onLoad={() => {
                         // Mark this image as loaded - use revealPosition to track by reveal order
                         const revealPosition = revealOrder.get(index) ?? index;
                         setLoadedImages(prev => new Set(prev).add(revealPosition));
                       }}
                       onError={(e) => {
+                        console.error(`Failed to load photo ${index + 1}:`, photoUrl);
                         // Hide broken images, but still mark as "loaded" so animation continues
                         const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
+                        if (target) {
+                          target.style.display = 'none';
+                        }
                         const revealPosition = revealOrder.get(index) ?? index;
                         setLoadedImages(prev => new Set(prev).add(revealPosition));
                       }}

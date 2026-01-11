@@ -78,7 +78,7 @@ export default function BusinessSearch() {
     }
   };
 
-  const handleSelect = (prediction: Prediction) => {
+  const handleSelect = async (prediction: Prediction) => {
     setSelectedPlace(prediction);
     setInputValue(prediction.primary_text);
     setPredictions([]);
@@ -87,8 +87,11 @@ export default function BusinessSearch() {
     // Prevent autocomplete from re-opening after selection
     inputRef.current?.blur();
 
-    // Navigate immediately when business is selected
+    // Generate scan ID
     const scanId = generateScanId();
+    
+    // Navigate immediately when business is selected
+    // Scraper will be triggered when report page loads
     const params = new URLSearchParams({
       placeId: prediction.place_id,
       name: prediction.primary_text,

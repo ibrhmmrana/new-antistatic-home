@@ -9,6 +9,9 @@ const nextConfig = {
         pathname: '/**',
       },
     ],
+    // Allow images from local API routes
+    domains: ['localhost'],
+    unoptimized: false,
   },
 };
 

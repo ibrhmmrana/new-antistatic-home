@@ -10,10 +10,13 @@
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
+    "chromedriver": "^143.0.4",
     "lucide-react": "^0.344.0",
     "next": "^14.2.0",
+    "playwright": "^1.57.0",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "react-dom": "^18.3.0",
+    "selenium-webdriver": "^4.15.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Loader2, Check, Circle } from "lucide-react";
 import StageCompetitorMap from "./StageCompetitorMap";
 import StageGoogleBusinessProfile from "./StageGoogleBusinessProfile";
 import StageReviewSentiment from "./StageReviewSentiment";
 import StagePhotoCollage from "./StagePhotoCollage";
+import StageOnlinePresence from "./StageOnlinePresence";
 import ScanLineOverlay from "./ScanLineOverlay";
 
 interface ReportScanClientProps {
@@ -27,28 +28,196 @@ export default function ReportScanClient({
 }: ReportScanClientProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null);
+  const scraperTriggeredRef = useRef(false); // Prevent duplicate scraper triggers
 
-  // Fetch place details on mount
+  const websiteScreenshotTriggeredRef = useRef(false); // Prevent duplicate website screenshot triggers
+
+  // Fetch place details on mount and trigger website screenshot immediately
   useEffect(() => {
+    // Function to capture website screenshot immediately
+    const captureWebsiteScreenshot = async (websiteUrl: string) => {
+      // Prevent duplicate execution
+      if (websiteScreenshotTriggeredRef.current) {
+        console.log('[WEBSITE SCREENSHOT] Already triggered, skipping...');
+        return;
+      }
+      
+      // Check if already captured
+      const existingScreenshot = localStorage.getItem(`websiteScreenshot_${scanId}`);
+      if (existingScreenshot) {
+        console.log('[WEBSITE SCREENSHOT] Already exists in localStorage, skipping...');
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:45',message:'Website screenshot already exists, skipping',data:{scanId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+        // #endregion
+        return;
+      }
+      
+      websiteScreenshotTriggeredRef.current = true; // Mark as triggered
+      
+      try {
+        console.log(`[WEBSITE SCREENSHOT] Starting immediate capture for: ${websiteUrl}`);
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:55',message:'Triggering immediate website screenshot',data:{scanId,websiteUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+        // #endregion
+        
+        const response = await fetch('/api/scan/socials/screenshot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform: 'website',
+            url: websiteUrl,
+            viewport: 'desktop',
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:69',message:'Website screenshot captured',data:{scanId,hasScreenshot:!!result.screenshot},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+          // #endregion
+          
+          // Do NOT store the screenshot locally (avoids quota errors).
+          // It remains available via the API cache when StageOnlinePresence fetches.
+        } else {
+          console.error('Failed to capture website screenshot:', await response.text());
+          websiteScreenshotTriggeredRef.current = false; // Reset on failure to allow retry
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:87',message:'Website screenshot capture failed',data:{scanId,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+          // #endregion
+        }
+      } catch (error) {
+        console.error('Error capturing website screenshot:', error);
+        websiteScreenshotTriggeredRef.current = false; // Reset on failure to allow retry
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:91',message:'Exception in website screenshot capture',data:{scanId,error:error instanceof Error ? error.message : 'Unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+        // #endregion
+      }
+    };
+
     const fetchDetails = async () => {
       try {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:111',message:'Fetching place details',data:{scanId,placeId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
+        // #endregion
         const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
         if (response.ok) {
           const data = await response.json();
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:116',message:'Place details fetched',data:{scanId,hasWebsite:!!data.website,website:data.website},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
+          // #endregion
           setPlaceDetails(data);
+          
+          // Immediately capture website screenshot if website URL is available
+          if (data.website) {
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:121',message:'Calling captureWebsiteScreenshot',data:{scanId,website:data.website},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
+            // #endregion
+            captureWebsiteScreenshot(data.website);
+          } else {
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:124',message:'No website URL in place details',data:{scanId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
+            // #endregion
+          }
+        } else {
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:127',message:'Failed to fetch place details',data:{scanId,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
+          // #endregion
         }
       } catch (error) {
         console.error("Failed to fetch place details:", error);
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:131',message:'Exception fetching place details',data:{scanId,error:error instanceof Error ? error.message : 'Unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
+        // #endregion
       }
     };
 
     fetchDetails();
-  }, [placeId]);
+
+    // Trigger scraper API call immediately when report page loads
+    // This runs in the background: extracts links, then captures all screenshots in parallel
+    // Results are stored and available when user reaches stage 4
+    const triggerScraper = async () => {
+      // Wait for placeDetails to be fetched so we can pass the website URL
+      // If placeDetails is not yet available, we'll fetch it here
+      let websiteUrl: string | null = null;
+      if (placeDetails?.website) {
+        websiteUrl = placeDetails.website;
+      } else {
+        // Fetch place details if not already available
+        try {
+          const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
+          if (detailsResponse.ok) {
+            const detailsData = await detailsResponse.json();
+            websiteUrl = detailsData.website || null;
+          }
+        } catch (error) {
+          console.warn('Failed to fetch website URL from GBP API:', error);
+        }
+      }
+
+      try {
+        const response = await fetch('/api/scan/socials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            businessName: name,
+            address: addr,
+            scanId,
+            websiteUrl, // Pass website URL from GBP API
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:65',message:'API response received in ReportScanClient',data:{scanId,hasWebsiteScreenshot:!!result.websiteScreenshot,socialLinksCount:result.socialLinks?.length,socialLinksWithScreenshots:result.socialLinks?.filter((l:any)=>l.screenshot)?.length,resultKeys:Object.keys(result)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+          // #endregion
+          // Store metadata + URLs to screenshots (NOT the actual base64 data - too large for localStorage)
+          const dataToStore = {
+            websiteUrl: result.websiteUrl,
+            hasWebsiteScreenshot: !!result.websiteScreenshot,
+            socialLinks: (result.socialLinks || []).map((link: any) => ({
+              platform: link.platform,
+              url: link.url,
+              hasScreenshot: !!link.screenshot,
+            })),
+            timestamp: Date.now(),
+            completed: true, // Flag to indicate scraper has completed
+            // Store actual screenshot data in a separate key to check without loading everything
+            screenshotsReady: !!(result.websiteScreenshot || (result.socialLinks && result.socialLinks.some((l: any) => l.screenshot))),
+          };
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:75',message:'Storing metadata in localStorage (screenshots only in API cache)',data:{scanId,dataToStoreKeys:Object.keys(dataToStore),socialLinksCount:dataToStore.socialLinks.length,hasWebsiteScreenshot:dataToStore.hasWebsiteScreenshot,screenshotsReady:dataToStore.screenshotsReady},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+          // #endregion
+          try {
+            localStorage.setItem(`onlinePresence_${scanId}`, JSON.stringify(dataToStore));
+          } catch (error) {
+            // If localStorage fails, log but don't block - API cache will still work
+            console.warn('Failed to store in localStorage (quota exceeded?):', error);
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/e3df070f-faca-4b3e-b1d2-b9a4f782fea3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/report/ReportScanClient.tsx:83',message:'localStorage setItem failed',data:{scanId,error:error instanceof Error ? error.message : 'Unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+            // #endregion
+          }
+        }
+      } catch (err) {
+        console.error('Error triggering scraper:', err);
+        // Don't block UI if scraper fails
+      }
+    };
+
+    // Only trigger if we don't already have results AND haven't triggered yet
+    const existingData = localStorage.getItem(`onlinePresence_${scanId}`);
+    if (!existingData && !scraperTriggeredRef.current) {
+      scraperTriggeredRef.current = true; // Mark as triggered
+      triggerScraper();
+    }
+  }, [placeId, name, addr, scanId]);
 
   // Manual navigation handlers - NO automatic progression
   // Steps only change when user clicks Previous/Next buttons or clicks on a step item
   const handleNext = () => {
-    if (currentStep < 5) {
+    if (currentStep < 4) {
       setCurrentStep((prev) => prev + 1);
     }
   };
@@ -65,23 +234,12 @@ export default function ReportScanClient({
 
 
   // Build step list
-  const websiteUrl = placeDetails?.website
-    ? (() => {
-        try {
-          return new URL(placeDetails.website).hostname.replace("www.", "");
-        } catch {
-          return "Website scan";
-        }
-      })()
-    : "Website scan";
-
   const steps = [
     { id: 0, label: `${name} & competitors` },
     { id: 1, label: "Google business profile" },
     { id: 2, label: "Google review sentiment" },
     { id: 3, label: "Photo quality and quantity" },
-    { id: 4, label: websiteUrl },
-    { id: 5, label: "Mobile experience" },
+    { id: 4, label: "Online presence analysis" },
   ];
 
   const getStepIcon = (stepId: number) => {
@@ -149,13 +307,13 @@ export default function ReportScanClient({
               Previous
             </button>
             <span className="text-xs text-gray-500">
-              Step {currentStep + 1} of 6
+              Step {currentStep + 1} of 5
             </span>
             <button
               onClick={handleNext}
-              disabled={currentStep === 5}
+              disabled={currentStep === 4}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                currentStep === 5
+                currentStep === 4
                   ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                   : "bg-blue-600 text-white hover:bg-blue-700"
               }`}
@@ -218,67 +376,28 @@ export default function ReportScanClient({
                   <ScanLineOverlay />
                   <StagePhotoCollage placeId={placeId} />
                 </div>
+              ) : currentStep === 4 ? (
+                // Step 4: Online presence analysis
+                <div className="absolute inset-0">
+                  <ScanLineOverlay />
+                  <StageOnlinePresence 
+                    businessName={name}
+                    address={addr}
+                    scanId={scanId}
+                  />
+                </div>
               ) : (
                 <div className="p-6 h-full">
                   <div className="max-w-4xl mx-auto h-full">
-                    {currentStep >= 4 && currentStep < 5 && (
-                      // Steps 4: Generic placeholder
-                      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 h-full flex items-center justify-center">
-                        <div className="text-center">
-                          <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
-                          <p className="text-gray-600 text-sm">{steps[currentStep]?.label}</p>
-                        </div>
-                      </div>
-                    )}
-
-                {currentStep === 4 && (
-                  // Step 5: Desktop browser frame
-                  <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6 h-full flex flex-col">
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="flex gap-1.5">
-                        <div className="w-3 h-3 rounded-full bg-red-400" />
-                        <div className="w-3 h-3 rounded-full bg-yellow-400" />
-                        <div className="w-3 h-3 rounded-full bg-green-400" />
-                      </div>
-                      <div className="flex-1 h-8 bg-gray-100 rounded-md flex items-center px-3">
-                        <div className="w-4 h-4 bg-gray-300 rounded mr-2 animate-pulse" />
-                        <div className="flex-1 h-3 bg-gray-200 rounded animate-pulse" />
-                      </div>
-                    </div>
-                    <div className="flex-1 bg-gray-50 rounded-lg border border-gray-200 p-6 space-y-4">
-                      {[1, 2, 3].map((i) => (
-                        <div key={i} className="space-y-2">
-                          <div className="h-4 bg-gray-200 rounded w-3/4 animate-pulse" />
-                          <div className="h-3 bg-gray-200 rounded w-full animate-pulse" />
-                          <div className="h-3 bg-gray-200 rounded w-5/6 animate-pulse" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {currentStep === 5 && (
-                  // Step 6: Mobile phone frame
-                  <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 h-full flex items-center justify-center">
-                    <div className="w-64 h-[500px] bg-gray-900 rounded-[2.5rem] p-2 shadow-2xl">
-                      <div className="w-full h-full bg-white rounded-[2rem] overflow-hidden flex flex-col">
-                        {/* Phone notch */}
-                        <div className="h-8 bg-gray-900 rounded-t-[2rem]" />
-                        <div className="flex-1 bg-gray-50 p-4 space-y-3">
-                          {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className="space-y-2">
-                              <div className="h-3 bg-gray-200 rounded w-2/3 animate-pulse" />
-                              <div className="h-2 bg-gray-200 rounded w-full animate-pulse" />
-                            </div>
-                          ))}
-                        </div>
+                    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
+                        <p className="text-gray-600 text-sm">{steps[currentStep]?.label}</p>
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
+                </div>
+              )}
         </div>
       </div>
     </div>

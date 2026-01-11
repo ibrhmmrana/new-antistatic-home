@@ -70,55 +70,16 @@ export default function StageCompetitorMap({
     libraries,
   });
 
-  // Throttled fitBounds - only call every 2 markers or after last marker
-  const throttledFitBounds = useCallback(
-    (
-      mapInstance: google.maps.Map,
-      bounds: google.maps.LatLngBounds,
-      isLast: boolean = false
-    ) => {
-      if (fitBoundsTimeoutRef.current) {
-        clearTimeout(fitBoundsTimeoutRef.current);
-      }
-
-      // Call immediately if it's the last marker, otherwise throttle
-      if (isLast) {
-        fitBoundsCounterRef.current = 0;
-        mapInstance.fitBounds(bounds, {
-          top: 80,
-          right: 80,
-          bottom: 80,
-          left: 80,
-        });
-
-        setTimeout(() => {
-          const currentZoom = mapInstance.getZoom();
-          if (currentZoom && currentZoom < 14) {
-            mapInstance.setZoom(14);
-          }
-        }, 100);
-      } else {
-        fitBoundsCounterRef.current += 1;
-        if (fitBoundsCounterRef.current >= 2) {
-          fitBoundsCounterRef.current = 0;
-          mapInstance.fitBounds(bounds, {
-            top: 80,
-            right: 80,
-            bottom: 80,
-            left: 80,
-          });
-
-          setTimeout(() => {
-            const currentZoom = mapInstance.getZoom();
-            if (currentZoom && currentZoom < 14) {
-              mapInstance.setZoom(14);
-            }
-          }, 100);
-        }
-      }
-    },
-    []
-  );
+  // Always fit bounds with padding; ensure min zoom to keep markers visible
+  const applyFitBounds = useCallback((mapInstance: google.maps.Map, bounds: google.maps.LatLngBounds) => {
+    mapInstance.fitBounds(bounds, {
+      top: 80,
+      right: 80,
+      bottom: 80,
+      left: 80,
+    });
+    // Do not override zoom after fitBounds to ensure both business and distant competitors stay visible
+  }, []);
 
   // Initialize map
   const onMapLoad = useCallback((mapInstance: google.maps.Map) => {
@@ -291,13 +252,11 @@ export default function StageCompetitorMap({
       status !== "plotting" ||
       competitorsVisible.length >= data.competitors.length
     ) {
-      if (
-        competitorsVisible.length === data?.competitors.length
-      ) {
+      if (competitorsVisible.length === data?.competitors.length) {
         setStatus("complete");
-        // Final fitBounds
+        // Final fitBounds to keep all markers (business + competitors) visible
         if (boundsRef.current && map) {
-          throttledFitBounds(map, boundsRef.current, true);
+          applyFitBounds(map, boundsRef.current);
         }
         // Call onComplete callback after a short delay (handles both cases: with/without competitors)
         // Note: If there are competitors, onComplete will also be called when last pin drops
@@ -316,7 +275,8 @@ export default function StageCompetitorMap({
     const competitor = data.competitors[currentIndex];
     if (!competitor) return;
 
-    const dropDelay = 1000 + Math.random() * 500; // 1000-1500ms (slower)
+    // Slow down competitor appearance cadence: 1600-2400ms
+    const dropDelay = 1600 + Math.random() * 800;
 
     const timer = setTimeout(() => {
       setCompetitorsVisible((prev) => {
@@ -327,7 +287,9 @@ export default function StageCompetitorMap({
           position: competitor.location,
           map,
           title: competitor.name,
-          animation: google.maps.Animation.DROP,
+          // Remove drop animation; use fade-in via opacity
+          animation: undefined,
+          opacity: 0,
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
             scale: 10,
@@ -337,6 +299,10 @@ export default function StageCompetitorMap({
             strokeWeight: 2,
           },
         });
+        // Fade-in effect
+        setTimeout(() => {
+          marker.setOpacity(1);
+        }, 50);
 
         competitorMarkersRef.current.push(marker);
 
@@ -442,11 +408,12 @@ export default function StageCompetitorMap({
         badgeOverlay.setMap(map);
         competitorInfoWindowsRef.current.push(badgeOverlay as any);
 
-        // Extend bounds
+        // Extend bounds; keep both business and competitors in frame via fitBounds only (no extra panning)
         if (boundsRef.current && map) {
           boundsRef.current.extend(competitor.location);
           const isLast = updated.length === data.competitors.length;
-          throttledFitBounds(map, boundsRef.current, isLast);
+          // Fit to all markers (keeps business + competitors)
+          applyFitBounds(map, boundsRef.current);
           
           // If this is the last competitor, call onComplete after a short delay
           if (isLast && !onCompleteCalledRef.current) {
@@ -462,7 +429,7 @@ export default function StageCompetitorMap({
     }, dropDelay);
 
     return () => clearTimeout(timer);
-  }, [data, map, status, competitorsVisible, throttledFitBounds, onComplete]);
+  }, [data, map, status, competitorsVisible, applyFitBounds, onComplete]);
 
   // Cleanup on unmount
   useEffect(() => {

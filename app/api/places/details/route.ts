@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
       "geometry/location",
       "editorial_summary",
       "formatted_address",
+      "website", // CRITICAL: Add website field to get business website URL
       "url",
     ].join(",");
 
