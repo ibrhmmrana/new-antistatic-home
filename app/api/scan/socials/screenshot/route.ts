@@ -383,6 +383,124 @@ async function removeFacebookLoginPrompt(page: Page): Promise<void> {
 }
 
 /**
+ * Detects if we're on an Instagram login page and logs in if credentials are available
+ * Returns true if login was performed, false otherwise
+ */
+async function handleInstagramLoginIfNeeded(page: Page): Promise<boolean> {
+  console.log(`[SCREENSHOT] Checking for Instagram login page...`);
+  
+  // Check for login form indicators
+  const loginDetected = await page.evaluate(() => {
+    const usernameInput = document.querySelector('input[name="username"]') as HTMLInputElement;
+    const passwordInput = document.querySelector('input[name="password"]') as HTMLInputElement;
+    
+    // Check if both inputs exist and have placeholder text indicating login
+    if (usernameInput && passwordInput) {
+      const usernamePlaceholder = usernameInput.placeholder || usernameInput.getAttribute('aria-label') || '';
+      const passwordPlaceholder = passwordInput.placeholder || passwordInput.getAttribute('aria-label') || '';
+      
+      const isLoginPage = 
+        (usernamePlaceholder.toLowerCase().includes('phone') || 
+         usernamePlaceholder.toLowerCase().includes('username') ||
+         usernamePlaceholder.toLowerCase().includes('email')) &&
+        passwordPlaceholder.toLowerCase().includes('password');
+      
+      return isLoginPage;
+    }
+    return false;
+  });
+  
+  if (!loginDetected) {
+    console.log(`[SCREENSHOT] No login page detected, continuing...`);
+    return false;
+  }
+  
+  console.log(`[SCREENSHOT] 🔐 Login page detected!`);
+  
+  // Get credentials from environment
+  const username = process.env.INSTAGRAM_USERNAME;
+  const password = process.env.INSTAGRAM_PASSWORD;
+  
+  if (!username || !password) {
+    console.log(`[SCREENSHOT] ⚠️ INSTAGRAM_USERNAME or INSTAGRAM_PASSWORD not set in environment`);
+    console.log(`[SCREENSHOT] Cannot log in - proceeding without login`);
+    return false;
+  }
+  
+  console.log(`[SCREENSHOT] Credentials found, attempting login...`);
+  
+  try {
+    // Fill username
+    const usernameInput = page.locator('input[name="username"]');
+    await usernameInput.fill(username);
+    console.log(`[SCREENSHOT] Username filled`);
+    
+    // Small delay between fields (human-like)
+    await page.waitForTimeout(500);
+    
+    // Fill password
+    const passwordInput = page.locator('input[name="password"]');
+    await passwordInput.fill(password);
+    console.log(`[SCREENSHOT] Password filled`);
+    
+    // Small delay before clicking login
+    await page.waitForTimeout(500);
+    
+    // Click login button
+    const loginButton = page.locator('button[type="submit"]').first();
+    await loginButton.click();
+    console.log(`[SCREENSHOT] Login button clicked`);
+    
+    // Wait for navigation/response
+    await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
+    await page.waitForTimeout(3000);
+    
+    // Check if we're still on login page (login might have failed)
+    const stillOnLogin = await page.evaluate(() => {
+      return !!document.querySelector('input[name="username"]') && 
+             !!document.querySelector('input[name="password"]');
+    });
+    
+    if (stillOnLogin) {
+      console.log(`[SCREENSHOT] ⚠️ Still on login page - login may have failed`);
+      return false;
+    }
+    
+    console.log(`[SCREENSHOT] ✅ Login appears successful!`);
+    console.log(`[SCREENSHOT] Current URL after login: ${page.url()}`);
+    
+    // Handle "Save Login Info" popup if it appears
+    try {
+      const notNowButton = page.locator('button:has-text("Not Now"), button:has-text("Not now")').first();
+      if (await notNowButton.isVisible({ timeout: 2000 })) {
+        await notNowButton.click();
+        console.log(`[SCREENSHOT] Dismissed "Save Login Info" popup`);
+        await page.waitForTimeout(500);
+      }
+    } catch (e) {
+      // No popup, continue
+    }
+    
+    // Handle "Turn on Notifications" popup if it appears
+    try {
+      const notNowNotif = page.locator('button:has-text("Not Now"), button:has-text("Not now")').first();
+      if (await notNowNotif.isVisible({ timeout: 2000 })) {
+        await notNowNotif.click();
+        console.log(`[SCREENSHOT] Dismissed notifications popup`);
+        await page.waitForTimeout(500);
+      }
+    } catch (e) {
+      // No popup, continue
+    }
+    
+    return true;
+  } catch (error) {
+    console.error(`[SCREENSHOT] Login error:`, error);
+    return false;
+  }
+}
+
+/**
  * Debug logging for Instagram screenshot diagnostics
  */
 async function logInstagramPageState(page: Page, label: string): Promise<void> {
@@ -975,7 +1093,8 @@ async function captureScreenshot(
         : (localExecutablePath || undefined);
 
       // Launch browser
-      const useHeadless = chromium.headless;
+      // DEBUG: Set headless: false locally to see what's happening
+      const useHeadless = isServerless ? chromium.headless : false;
       console.log(`[SCREENSHOT] Launching browser - headless: ${useHeadless}, isServerless: ${isServerless}`);
       
       try {
@@ -1061,98 +1180,46 @@ async function captureScreenshot(
       console.log(`[SCREENSHOT] Original URL was: ${url}`);
       const startTime = Date.now();
       
-      // INSTAGRAM ONLY: Navigate via Google to avoid login screen
+      // INSTAGRAM: Navigate directly and handle login if needed
       if (platform === 'instagram') {
-        console.log(`[SCREENSHOT] 🔍 Instagram detected - using Google search approach to bypass login`);
+        console.log(`[SCREENSHOT] 🔍 Instagram detected - navigating directly to profile`);
         
-        // Extract username from Instagram URL
-        // URLs can be: https://www.instagram.com/username/ or https://instagram.com/username
-        const instagramUrlMatch = normalizedUrl.match(/instagram\.com\/([^\/\?]+)/);
-        if (!instagramUrlMatch || !instagramUrlMatch[1]) {
-          return {
-            success: false,
-            error: `Could not extract Instagram username from URL: ${normalizedUrl}`
-          };
-        }
-        const username = instagramUrlMatch[1];
-        console.log(`[SCREENSHOT] Extracted Instagram username: ${username}`);
-        
-        // Step 1: Navigate to Google
-        console.log(`[SCREENSHOT] Step 1: Navigating to Google...`);
-        await page.goto('https://www.google.com', {
+        // Navigate directly to Instagram URL
+        console.log(`[SCREENSHOT] Navigating to: ${normalizedUrl}`);
+        await page.goto(normalizedUrl, {
           waitUntil: 'domcontentloaded',
           timeout: TIMEOUT_MS
         });
-        await page.waitForTimeout(1000);
-        
-        // Step 2: Search for the Instagram profile
-        const searchQuery = `site:instagram.com "${username}"`;
-        console.log(`[SCREENSHOT] Step 2: Searching for: ${searchQuery}`);
-        
-        // Find the search input and type the query
-        const searchInput = page.locator('textarea[name="q"], input[name="q"]').first();
-        await searchInput.fill(searchQuery);
-        await page.keyboard.press('Enter');
-        
-        // Wait for search results to load
-        await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
         await page.waitForTimeout(2000);
         
-        console.log(`[SCREENSHOT] Google search executed, current URL: ${page.url()}`);
+        console.log(`[SCREENSHOT] Current URL: ${page.url()}`);
         
-        // Step 2.5: Dismiss Google "Not now" popup if present
-        try {
-          const notNowButton = page.locator('g-raised-button:has-text("Not now"), div.sjVJQd:has-text("Not now")').first();
-          const popupVisible = await notNowButton.isVisible({ timeout: 2000 }).catch(() => false);
-          
-          if (popupVisible) {
-            console.log(`[SCREENSHOT] Found "Not now" popup, dismissing...`);
-            await notNowButton.click();
-            await page.waitForTimeout(500);
-            console.log(`[SCREENSHOT] Popup dismissed`);
-          }
-        } catch (e) {
-          console.log(`[SCREENSHOT] No "Not now" popup found or already dismissed`);
+        // ============================================
+        // TEMPORARY DEBUG: Pause to inspect page state
+        // REMOVE THIS AFTER DEBUGGING
+        // ============================================
+        console.log(`[SCREENSHOT] 🛑 DEBUG PAUSE - After Instagram navigation`);
+        await page.pause();
+        console.log(`[SCREENSHOT] ▶️ Resuming after pause...`);
+        // ============================================
+        
+        // Check if we're on a login page and handle it
+        const loggedIn = await handleInstagramLoginIfNeeded(page);
+        
+        if (loggedIn) {
+          // After login, navigate to the profile URL again
+          console.log(`[SCREENSHOT] Navigating to profile after login: ${normalizedUrl}`);
+          await page.goto(normalizedUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: TIMEOUT_MS
+          });
+          await page.waitForTimeout(2000);
         }
         
-        // Step 3: Click the first Instagram result
-        // Google results have links in <a> tags with href containing instagram.com
-        console.log(`[SCREENSHOT] Step 3: Looking for first Instagram result...`);
-        const instagramResult = page.locator(`a[href*="instagram.com/${username}"]`).first();
-        const resultExists = await instagramResult.count() > 0;
+        // Remove Instagram popup overlays
+        console.log(`[SCREENSHOT] Removing Instagram popup overlays...`);
+        await removeInstagramOverlaysViaGoogle(page);
         
-        if (resultExists) {
-          console.log(`[SCREENSHOT] Found Instagram result, clicking...`);
-          await instagramResult.click();
-          await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
-          await page.waitForTimeout(3000);
-          console.log(`[SCREENSHOT] Navigated to Instagram via Google, current URL: ${page.url()}`);
-          
-          // Step 4: Remove Instagram popup overlays before screenshot
-          console.log(`[SCREENSHOT] Step 4: Removing Instagram popup overlays...`);
-          await removeInstagramOverlaysViaGoogle(page);
-          
-        } else {
-          console.log(`[SCREENSHOT] No direct Instagram result found, trying generic first result...`);
-          // Fallback: click the first search result link
-          const firstResult = page.locator('#search a[href*="instagram.com"]').first();
-          if (await firstResult.count() > 0) {
-            await firstResult.click();
-            await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
-            await page.waitForTimeout(3000);
-            console.log(`[SCREENSHOT] Navigated via fallback, current URL: ${page.url()}`);
-            
-            // Step 4: Remove Instagram popup overlays before screenshot
-            console.log(`[SCREENSHOT] Step 4: Removing Instagram popup overlays...`);
-            await removeInstagramOverlaysViaGoogle(page);
-            
-          } else {
-            return {
-              success: false,
-              error: `Could not find Instagram profile in Google search results for: ${username}`
-            };
-          }
-        }
       } else {
         // FACEBOOK and WEBSITE: Direct navigation (unchanged)
         try {
