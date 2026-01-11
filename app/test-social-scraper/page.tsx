@@ -22,6 +22,7 @@ interface ExtractionResult {
   websiteScreenshot?: string | null;
   count: number;
   rawCount?: number;
+  error?: string;
 }
 
 export default function TestSocialScraper() {
