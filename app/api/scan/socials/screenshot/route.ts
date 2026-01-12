@@ -643,20 +643,91 @@ async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promi
   console.log(`[SCREENSHOT] Credentials found (username: ${username.substring(0, 3)}...), filling form...`);
   
   try {
-    // Wait for inputs to be visible and ready
+    // Wait for page to be fully interactive - Instagram's login page loads dynamically
+    console.log(`[SCREENSHOT] Waiting for page to be interactive...`);
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
+      console.log(`[SCREENSHOT] Network idle timeout, proceeding anyway`);
+    });
+    await page.waitForTimeout(3000); // Extra wait for React components to render
+    
+    // Wait for login form container to appear (indicates form is ready)
+    console.log(`[SCREENSHOT] Waiting for login form container...`);
+    try {
+      // Instagram login forms are usually in a main or form element
+      await page.waitForSelector('main, form, [role="main"]', { timeout: 10000 }).catch(() => {
+        console.log(`[SCREENSHOT] Form container not found, proceeding anyway`);
+      });
+    } catch {
+      // Continue even if form container not found
+    }
+    
+    // Additional wait for form inputs to render
+    await page.waitForTimeout(1000);
+    
+    // Verify we're still on login page (Instagram might have redirected)
+    const currentUrl = page.url();
+    const currentState = classifyInstagramPageState(currentUrl);
+    if (currentState !== 'LOGIN') {
+      console.log(`[SCREENSHOT] ⚠️ Page state changed from LOGIN to ${currentState} at ${currentUrl}`);
+      if (currentState === 'PROFILE') {
+        // Somehow we're already on profile - great!
+        return { status: 'success', pageState: currentState };
+      }
+      if (currentState === 'CHALLENGE') {
+        const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+        return { 
+          status: 'challenge_required', 
+          pageState: currentState,
+          debugScreenshot,
+          error: `Redirected to challenge page: ${currentUrl}`
+        };
+      }
+      // Unknown state - log and continue
+      console.log(`[SCREENSHOT] ⚠️ Unexpected state ${currentState}, attempting login anyway`);
+    }
+    
+    // Wait for inputs to be visible and ready - try multiple selector strategies
     console.log(`[SCREENSHOT] Waiting for username input...`);
     let usernameInput = page.locator('input[name="username"]').first();
-    await usernameInput.waitFor({ state: 'visible', timeout: 10000 });
+    
+    // Try alternative selectors if primary fails
+    if (await usernameInput.count() === 0) {
+      console.log(`[SCREENSHOT] Primary username selector not found, trying alternatives...`);
+      usernameInput = page.locator('input[type="text"][aria-label*="username" i], input[type="text"][aria-label*="phone" i], input[type="text"][aria-label*="email" i]').first();
+    }
+    if (await usernameInput.count() === 0) {
+      usernameInput = page.locator('input[autocomplete="username"], input[placeholder*="username" i], input[placeholder*="phone" i]').first();
+    }
+    if (await usernameInput.count() === 0) {
+      // Last resort: any text input that might be username
+      usernameInput = page.locator('input[type="text"]').first();
+    }
+    
+    await usernameInput.waitFor({ state: 'visible', timeout: 15000 });
+    await usernameInput.click(); // Click to focus
+    await page.waitForTimeout(300);
     await usernameInput.fill(username);
     console.log(`[SCREENSHOT] ✅ Username filled`);
     
     // Small delay between fields (human-like)
     await page.waitForTimeout(500);
     
-    // Fill password
+    // Fill password - try multiple selector strategies
     console.log(`[SCREENSHOT] Waiting for password input...`);
     let passwordInput = page.locator('input[name="password"]').first();
-    await passwordInput.waitFor({ state: 'visible', timeout: 5000 });
+    
+    // Try alternative selectors if primary fails
+    if (await passwordInput.count() === 0) {
+      console.log(`[SCREENSHOT] Primary password selector not found, trying alternatives...`);
+      passwordInput = page.locator('input[type="password"]').first();
+    }
+    if (await passwordInput.count() === 0) {
+      passwordInput = page.locator('input[autocomplete="current-password"], input[aria-label*="password" i]').first();
+    }
+    
+    await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
+    await passwordInput.click(); // Click to focus
+    await page.waitForTimeout(300);
     await passwordInput.fill(password);
     console.log(`[SCREENSHOT] ✅ Password filled`);
     
@@ -673,8 +744,15 @@ async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promi
     if (await loginButton.count() === 0) {
       loginButton = page.locator('button[type="submit"]').first();
     }
+    if (await loginButton.count() === 0) {
+      loginButton = page.locator('button:has-text("Log in"), button:has-text("Log In")').first();
+    }
+    if (await loginButton.count() === 0) {
+      // Last resort: any button or clickable div
+      loginButton = page.locator('div[role="button"]').first();
+    }
     
-    await loginButton.waitFor({ state: 'visible', timeout: 5000 });
+    await loginButton.waitFor({ state: 'visible', timeout: 10000 });
     
     // Extract target username from profile URL for state matching
     const targetUsernameMatch = targetProfileUrl.match(/instagram\.com\/([a-zA-Z0-9_.]+)/);
@@ -779,12 +857,32 @@ async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promi
     
   } catch (error) {
     console.error(`[SCREENSHOT] Login error:`, error);
+    
+    // Log additional debugging info
+    try {
+      const currentUrl = page.url();
+      console.log(`[SCREENSHOT] Error occurred at URL: ${currentUrl}`);
+      
+      // Count what elements are actually on the page
+      const inputCount = await page.locator('input').count();
+      const buttonCount = await page.locator('button').count();
+      const clickableDivCount = await page.locator('div[role="button"]').count();
+      console.log(`[SCREENSHOT] Page elements at error: ${inputCount} inputs, ${buttonCount} buttons, ${clickableDivCount} clickable divs`);
+      
+      // Try to get page title
+      const title = await page.title().catch(() => 'unknown');
+      console.log(`[SCREENSHOT] Page title: ${title}`);
+    } catch (debugError) {
+      console.log(`[SCREENSHOT] Could not gather debug info: ${debugError}`);
+    }
+    
     const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return { 
       status: 'login_failed', 
       pageState,
       debugScreenshot,
-      error: `Login exception: ${error}`
+      error: `Login exception: ${errorMessage}`
     };
   }
 }
