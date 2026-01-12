@@ -267,17 +267,22 @@ export default function StageOnlinePresence({
   };
 
   // Social Media Screenshot inside a refined iPhone-style mock (White version)
-  const SocialScreenshot = ({ screenshot, platform }: { screenshot: string | null; platform: 'instagram' | 'facebook' }) => {
+  const SocialScreenshot = ({ screenshot, platform, url, hasError }: { screenshot: string | null; platform: 'instagram' | 'facebook'; url?: string; hasError?: boolean }) => {
     const [isVisible, setIsVisible] = useState(false);
     
-    // Trigger animation when screenshot is available
+    // Trigger animation when screenshot is available or error state
     useEffect(() => {
-      if (screenshot) {
+      if (screenshot || hasError) {
         // Small delay to ensure smooth animation
         const timer = setTimeout(() => setIsVisible(true), 100);
         return () => clearTimeout(timer);
       }
-    }, [screenshot]);
+    }, [screenshot, hasError]);
+    
+    const platformColors = {
+      instagram: 'from-pink-500 via-purple-500 to-indigo-500',
+      facebook: 'from-blue-600 to-blue-700',
+    };
     
     return (
       <div className={`relative ${isVisible ? 'browser-in' : 'opacity-0'}`}>
@@ -299,6 +304,31 @@ export default function StageOnlinePresence({
                 alt={`${platform} screenshot`}
                 className="w-full h-full object-cover"
               />
+            ) : hasError ? (
+              <div className="w-full h-full bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col items-center justify-center p-4">
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${platformColors[platform]} flex items-center justify-center mb-3`}>
+                  {platform === 'instagram' ? (
+                    <svg className="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="text-gray-500 text-xs text-center mb-2">Preview unavailable</div>
+                {url && (
+                  <a 
+                    href={url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className={`text-xs bg-gradient-to-r ${platformColors[platform]} text-white px-3 py-1.5 rounded-full hover:opacity-90 transition-opacity`}
+                  >
+                    View on {platform.charAt(0).toUpperCase() + platform.slice(1)}
+                  </a>
+                )}
+              </div>
             ) : (
               <div className="w-full h-full bg-gray-50 flex items-center justify-center">
                 <div className="text-gray-400 text-xs">Loading {platform}...</div>
@@ -343,12 +373,16 @@ export default function StageOnlinePresence({
   const instagramLink = data?.socialLinks.find(link => link.platform === 'instagram');
   const facebookLink = data?.socialLinks.find(link => link.platform === 'facebook');
   
-  // Determine which screenshots we have
+  // Determine which social links we have (show if URL exists, even without screenshot)
   const hasWebsite = !!(data?.websiteScreenshot || data?.websiteUrl);
-  const hasInstagram = !!(instagramLink?.screenshot);
-  const hasFacebook = !!(facebookLink?.screenshot);
+  const hasInstagram = !!(instagramLink?.url); // Changed: show if URL exists
+  const hasFacebook = !!(facebookLink?.url); // Changed: show if URL exists
   
-  // Count available screenshots
+  // Track if screenshots failed (URL exists but no screenshot)
+  const instagramScreenshotFailed = !!(instagramLink?.url && !instagramLink?.screenshot);
+  const facebookScreenshotFailed = !!(facebookLink?.url && !facebookLink?.screenshot);
+  
+  // Count available items (website or social links with URL)
   const screenshotCount = [hasWebsite, hasInstagram, hasFacebook].filter(Boolean).length;
   
   // Layout configurations based on available screenshots
@@ -376,11 +410,11 @@ export default function StageOnlinePresence({
           </div>
           {/* Instagram - Left */}
           <div className="absolute left-0 top-[75%] -translate-y-1/2 z-10 w-52 md:w-64 transform -rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
-            <SocialScreenshot screenshot={instagramLink.screenshot} platform="instagram" />
+            <SocialScreenshot screenshot={instagramLink!.screenshot} platform="instagram" url={instagramLink!.url} hasError={instagramScreenshotFailed} />
           </div>
           {/* Facebook - Right */}
           <div className="absolute right-0 top-[75%] -translate-y-1/2 z-10 w-52 md:w-64 transform rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
-            <SocialScreenshot screenshot={facebookLink.screenshot} platform="facebook" />
+            <SocialScreenshot screenshot={facebookLink!.screenshot} platform="facebook" url={facebookLink!.url} hasError={facebookScreenshotFailed} />
           </div>
         </div>
       );
@@ -391,13 +425,14 @@ export default function StageOnlinePresence({
       const socialLink = hasInstagram ? instagramLink : facebookLink;
       const platform = hasInstagram ? 'instagram' : 'facebook';
       const isInstagram = hasInstagram;
+      const socialScreenshotFailed = isInstagram ? instagramScreenshotFailed : facebookScreenshotFailed;
       
       return (
         <div className="flex items-center justify-center gap-8 md:gap-12" style={{ minHeight: '520px' }}>
           {/* Social on left if Instagram, right if Facebook */}
           {isInstagram && (
             <div className="w-56 md:w-72 transform -rotate-3 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer flex-shrink-0">
-              <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} />
+              <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} url={socialLink!.url} hasError={socialScreenshotFailed} />
             </div>
           )}
           {/* Website - Center */}
@@ -411,7 +446,7 @@ export default function StageOnlinePresence({
           {/* Facebook on right */}
           {!isInstagram && (
             <div className="w-56 md:w-72 transform rotate-3 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer flex-shrink-0">
-              <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} />
+              <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} url={socialLink!.url} hasError={socialScreenshotFailed} />
             </div>
           )}
         </div>
@@ -424,11 +459,11 @@ export default function StageOnlinePresence({
         <div className="flex items-center justify-center gap-6 md:gap-12" style={{ minHeight: '520px' }}>
           {/* Instagram - Left */}
           <div className="w-56 md:w-72 transform -rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
-            <SocialScreenshot screenshot={instagramLink.screenshot} platform="instagram" />
+            <SocialScreenshot screenshot={instagramLink!.screenshot} platform="instagram" url={instagramLink!.url} hasError={instagramScreenshotFailed} />
           </div>
           {/* Facebook - Right */}
           <div className="w-56 md:w-72 transform rotate-6 transition-all duration-500 hover:rotate-0 hover:scale-105 cursor-pointer">
-            <SocialScreenshot screenshot={facebookLink.screenshot} platform="facebook" />
+            <SocialScreenshot screenshot={facebookLink!.screenshot} platform="facebook" url={facebookLink!.url} hasError={facebookScreenshotFailed} />
           </div>
         </div>
       );
@@ -453,11 +488,12 @@ export default function StageOnlinePresence({
     if (!hasWebsite && ((hasInstagram && !hasFacebook) || (!hasInstagram && hasFacebook))) {
       const socialLink = hasInstagram ? instagramLink : facebookLink;
       const platform = hasInstagram ? 'instagram' : 'facebook';
+      const socialScreenshotFailed = hasInstagram ? instagramScreenshotFailed : facebookScreenshotFailed;
       
       return (
         <div className="flex items-center justify-center" style={{ minHeight: '520px' }}>
           <div className="w-64 md:w-80 transition-all duration-500 hover:scale-105 cursor-pointer">
-            <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} />
+            <SocialScreenshot screenshot={socialLink!.screenshot} platform={platform as 'instagram' | 'facebook'} url={socialLink!.url} hasError={socialScreenshotFailed} />
           </div>
         </div>
       );
