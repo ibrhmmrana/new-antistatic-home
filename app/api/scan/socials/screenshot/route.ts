@@ -1737,12 +1737,53 @@ async function captureScreenshot(
           }
           
           if (loginResult.status === 'login_failed') {
-            console.log(`[SCREENSHOT] ❌ Login FAILED - cannot proceed`);
-            return {
-              success: false,
-              error: `Instagram login failed: ${loginResult.error}`,
-              screenshot: loginResult.debugScreenshot
-            };
+            console.log(`[SCREENSHOT] ❌ Login FAILED - attempting unauthenticated access as fallback`);
+            
+            // Check if the error indicates Instagram is blocking automation
+            const isBlocked = loginResult.error?.includes('blocking automation') || 
+                             loginResult.error?.includes('page is empty');
+            
+            if (isBlocked) {
+              console.log(`[SCREENSHOT] Instagram appears to be blocking automation - trying direct profile navigation without login`);
+              
+              // Try navigating directly to profile - sometimes Instagram shows limited content without login
+              try {
+                await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+                await page.waitForTimeout(3000);
+                
+                const fallbackUrl = page.url();
+                const fallbackState = classifyInstagramPageState(fallbackUrl);
+                console.log(`[SCREENSHOT] Fallback navigation - URL: ${fallbackUrl}, State: ${fallbackState}`);
+                
+                // If we're on profile or unknown (might have some content), try to screenshot
+                if (fallbackState === 'PROFILE' || fallbackState === 'UNKNOWN') {
+                  console.log(`[SCREENSHOT] ⚠️ Proceeding with unauthenticated screenshot (may show limited content)`);
+                  // Continue with screenshot attempt below
+                  pageState = fallbackState;
+                } else {
+                  // Still on login/challenge - can't proceed
+                  return {
+                    success: false,
+                    error: `Instagram is blocking automation. Login page is empty. ${loginResult.error}`,
+                    screenshot: loginResult.debugScreenshot
+                  };
+                }
+              } catch (navError) {
+                console.log(`[SCREENSHOT] Fallback navigation also failed: ${navError}`);
+                return {
+                  success: false,
+                  error: `Instagram is blocking automation. Login page is empty. ${loginResult.error}`,
+                  screenshot: loginResult.debugScreenshot
+                };
+              }
+            } else {
+              // Other login failure (not blocking) - return error
+              return {
+                success: false,
+                error: `Instagram login failed: ${loginResult.error}`,
+                screenshot: loginResult.debugScreenshot
+              };
+            }
           }
           
           if (loginResult.status === 'no_credentials') {
@@ -1772,7 +1813,8 @@ async function captureScreenshot(
           console.log(`[SCREENSHOT] 🔄 Final URL: ${finalUrl}`);
           console.log(`[SCREENSHOT] 🔄 Final state: ${pageState}`);
           
-          if (pageState !== 'PROFILE') {
+          // If still on LOGIN or CHALLENGE, we can't proceed
+          if (pageState === 'LOGIN' || pageState === 'CHALLENGE') {
             const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
             return {
               success: false,
@@ -1780,10 +1822,19 @@ async function captureScreenshot(
               screenshot: debugScreenshot
             };
           }
+          
+          // If UNKNOWN state, we'll still try to screenshot (might have some content)
+          if (pageState === 'UNKNOWN') {
+            console.log(`[SCREENSHOT] ⚠️ UNKNOWN state - attempting screenshot anyway (may show limited content)`);
+          }
         }
         
-        // NOW we are confirmed on PROFILE page - proceed with overlay removal and grid checks
-        console.log(`[SCREENSHOT] ✅ Confirmed on PROFILE page, proceeding with screenshot preparation...`);
+        // Proceed with screenshot preparation (PROFILE or UNKNOWN state)
+        if (pageState === 'PROFILE') {
+          console.log(`[SCREENSHOT] ✅ Confirmed on PROFILE page, proceeding with screenshot preparation...`);
+        } else {
+          console.log(`[SCREENSHOT] ⚠️ Proceeding with screenshot in ${pageState} state (may show limited content)`);
+        }
         
         // Remove Instagram popup overlays - wrapped in try-catch to handle navigation/redirect
         try {
