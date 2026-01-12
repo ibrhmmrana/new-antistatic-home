@@ -1026,98 +1026,121 @@ async function neutralizeInstagramOverlays(page: Page): Promise<void> {
     console.log(`[SCREENSHOT] Escape key failed, continuing`);
   }
   
-  // Try clicking close buttons if present
-  const closeButtonClicked = await page.evaluate(() => {
-    const closeSelectors = [
-      'button[aria-label="Close"]',
-      'svg[aria-label="Close"]',
-      '[aria-label="Close"] button',
-      'button:has(svg[aria-label="Close"])',
-    ];
-    
-    for (const selector of closeSelectors) {
-      const btn = document.querySelector(selector);
-      if (btn instanceof HTMLElement) {
-        btn.click();
-        return true;
-      }
-    }
-    return false;
-  });
-  
-  if (closeButtonClicked) {
-    await page.waitForTimeout(500);
-    console.log(`[SCREENSHOT] Clicked close button`);
-  }
-  
-  // Neutralize overlays using visibility/opacity instead of display:none
-  const neutralized = await page.evaluate(() => {
-    let count = 0;
-    
-    // Helper to neutralize an element without breaking layout
-    const neutralize = (el: HTMLElement) => {
-      el.style.visibility = 'hidden';
-      el.style.opacity = '0';
-      el.style.pointerEvents = 'none';
-      count++;
-    };
-    
-    // 1. Neutralize "Continue watching" / signup modals
-    const signupModals = document.querySelectorAll('div');
-    signupModals.forEach(el => {
-      const hasClasses = el.classList.contains('x1oiqv2n') && el.classList.contains('x1sgudl8');
-      if (hasClasses) {
-        neutralize(el as HTMLElement);
-      }
-    });
-    
-    // 2. Neutralize login dialogs (role="dialog" with login form)
-    const dialogs = document.querySelectorAll('div[role="dialog"]');
-    dialogs.forEach(dialog => {
-      if (dialog.querySelector('input[name="username"]') || 
-          dialog.querySelector('form#loginForm') ||
-          dialog.textContent?.includes('See more from')) {
-        neutralize(dialog as HTMLElement);
-      }
-    });
-    
-    // 3. Neutralize fixed backdrop overlays
-    const allDivs = document.querySelectorAll('div');
-    allDivs.forEach(el => {
-      const style = getComputedStyle(el);
-      // Fixed overlay with high z-index, not containing main content
-      if (style.position === 'fixed' && 
-          parseInt(style.zIndex || '0') > 100 &&
-          !el.querySelector('main, article, nav')) {
-        // Check if it looks like an overlay (dark background or high opacity backdrop)
-        const bg = style.backgroundColor;
-        if (bg.includes('rgba') && bg.includes('0.') || el.classList.contains('x1uvtmcs')) {
-          neutralize(el as HTMLElement);
+  // Try clicking close buttons if present - wrapped in try-catch for navigation safety
+  try {
+    const closeButtonClicked = await page.evaluate(() => {
+      const closeSelectors = [
+        'button[aria-label="Close"]',
+        'svg[aria-label="Close"]',
+        '[aria-label="Close"] button',
+        'button:has(svg[aria-label="Close"])',
+      ];
+      
+      for (const selector of closeSelectors) {
+        const btn = document.querySelector(selector);
+        if (btn instanceof HTMLElement) {
+          btn.click();
+          return true;
         }
       }
+      return false;
     });
     
-    // 4. Neutralize specific Instagram overlay classes
-    const overlayClasses = [
-      'x1uvtmcs.x4k7w5x.x1h91t0o',
-      'x1ey2m1c.xtijo5x.x1o0tod',
-      'xg6iff7.xippug5',
-    ];
-    
-    overlayClasses.forEach(classStr => {
-      const selector = classStr.split('.').map(c => `.${c}`).join('');
-      document.querySelectorAll(selector).forEach(el => {
-        neutralize(el as HTMLElement);
+    if (closeButtonClicked) {
+      await page.waitForTimeout(500);
+      console.log(`[SCREENSHOT] Clicked close button`);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('Execution context was destroyed')) {
+      console.log(`[SCREENSHOT] Page navigated during close button click - stopping overlay removal`);
+      return; // Exit early, page navigated
+    }
+    console.log(`[SCREENSHOT] Close button click failed: ${msg}`);
+  }
+  
+  // Neutralize overlays using visibility/opacity instead of display:none - wrapped in try-catch
+  try {
+    const neutralized = await page.evaluate(() => {
+      let count = 0;
+      
+      // Helper to neutralize an element without breaking layout
+      const neutralize = (el: HTMLElement) => {
+        el.style.visibility = 'hidden';
+        el.style.opacity = '0';
+        el.style.pointerEvents = 'none';
+        count++;
+      };
+      
+      // 1. Neutralize "Continue watching" / signup modals
+      const signupModals = document.querySelectorAll('div');
+      signupModals.forEach(el => {
+        const hasClasses = el.classList.contains('x1oiqv2n') && el.classList.contains('x1sgudl8');
+        if (hasClasses) {
+          neutralize(el as HTMLElement);
+        }
       });
+      
+      // 2. Neutralize login dialogs (role="dialog" with login form)
+      const dialogs = document.querySelectorAll('div[role="dialog"]');
+      dialogs.forEach(dialog => {
+        if (dialog.querySelector('input[name="username"]') || 
+            dialog.querySelector('form#loginForm') ||
+            dialog.textContent?.includes('See more from')) {
+          neutralize(dialog as HTMLElement);
+        }
+      });
+      
+      // 3. Neutralize fixed backdrop overlays
+      const allDivs = document.querySelectorAll('div');
+      allDivs.forEach(el => {
+        const style = getComputedStyle(el);
+        // Fixed overlay with high z-index, not containing main content
+        if (style.position === 'fixed' && 
+            parseInt(style.zIndex || '0') > 100 &&
+            !el.querySelector('main, article, nav')) {
+          // Check if it looks like an overlay (dark background or high opacity backdrop)
+          const bg = style.backgroundColor;
+          if (bg.includes('rgba') && bg.includes('0.') || el.classList.contains('x1uvtmcs')) {
+            neutralize(el as HTMLElement);
+          }
+        }
+      });
+      
+      // 4. Neutralize specific Instagram overlay classes
+      const overlayClasses = [
+        'x1uvtmcs.x4k7w5x.x1h91t0o',
+        'x1ey2m1c.xtijo5x.x1o0tod',
+        'xg6iff7.xippug5',
+      ];
+      
+      overlayClasses.forEach(classStr => {
+        const selector = classStr.split('.').map(c => `.${c}`).join('');
+        document.querySelectorAll(selector).forEach(el => {
+          neutralize(el as HTMLElement);
+        });
+      });
+      
+      return count;
     });
     
-    return count;
-  });
+    console.log(`[SCREENSHOT] Neutralized ${neutralized} overlay elements`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('Execution context was destroyed')) {
+      console.log(`[SCREENSHOT] Page navigated during overlay neutralization - stopping`);
+      return; // Exit early, page navigated
+    }
+    console.log(`[SCREENSHOT] Overlay neutralization failed: ${msg}`);
+  }
   
-  console.log(`[SCREENSHOT] Neutralized ${neutralized} overlay elements`);
-  
-  // Restore scroll ability
-  await restoreInstagramScrollability(page);
+  // Restore scroll ability - wrapped in try-catch
+  try {
+    await restoreInstagramScrollability(page);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.log(`[SCREENSHOT] Scroll restoration failed: ${msg}`);
+  }
 }
 
 /**
@@ -1589,12 +1612,40 @@ async function captureScreenshot(
         // NOW we are confirmed on PROFILE page - proceed with overlay removal and grid checks
         console.log(`[SCREENSHOT] ✅ Confirmed on PROFILE page, proceeding with screenshot preparation...`);
         
-        // Remove Instagram popup overlays
-        console.log(`[SCREENSHOT] Removing Instagram popup overlays...`);
-        await removeInstagramOverlaysViaGoogle(page);
-        
-        // Log elements before taking screenshot
-        await logPageElements(page, 'Before taking Instagram screenshot (PROFILE state)');
+        // Remove Instagram popup overlays - wrapped in try-catch to handle navigation/redirect
+        try {
+          console.log(`[SCREENSHOT] Removing Instagram popup overlays...`);
+          await removeInstagramOverlaysViaGoogle(page);
+          
+          // Log elements before taking screenshot
+          await logPageElements(page, 'Before taking Instagram screenshot (PROFILE state)');
+        } catch (overlayError) {
+          // Instagram may redirect during overlay removal, destroying the execution context
+          // This is okay - we can still try to take the screenshot
+          const errorMsg = overlayError instanceof Error ? overlayError.message : String(overlayError);
+          if (errorMsg.includes('Execution context was destroyed') || errorMsg.includes('navigation')) {
+            console.log(`[SCREENSHOT] ⚠️ Page navigated during overlay removal - proceeding with screenshot anyway`);
+            // Wait a moment for the page to settle
+            await page.waitForTimeout(2000).catch(() => {});
+            
+            // Re-verify we're still on a valid page
+            const currentUrl = page.url();
+            console.log(`[SCREENSHOT] Current URL after navigation: ${currentUrl}`);
+            
+            // If we got redirected to login/challenge, fail gracefully
+            const newState = classifyInstagramPageState(currentUrl);
+            if (newState === 'LOGIN' || newState === 'CHALLENGE') {
+              console.log(`[SCREENSHOT] ❌ Redirected to ${newState} page during overlay removal`);
+              return {
+                success: false,
+                error: `Instagram redirected to ${newState} page during screenshot preparation`
+              };
+            }
+          } else {
+            // Some other error - log and continue
+            console.log(`[SCREENSHOT] ⚠️ Overlay removal failed: ${errorMsg} - continuing anyway`);
+          }
+        }
         
       } else {
         // FACEBOOK and WEBSITE: Direct navigation (unchanged)
