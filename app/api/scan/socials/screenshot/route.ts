@@ -704,18 +704,26 @@ async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promi
       
       // Check if page is suspiciously empty (Instagram blocking automation)
       if (pageContent.length < 500 || bodyText.length < 10) {
-        console.log(`[SCREENSHOT] ⚠️ Page appears to be empty/blocked by Instagram`);
+        console.log(`[SCREENSHOT] ⚠️ Page appears to be empty/blocked by Instagram - waiting longer for JS to load...`);
         
-        // Try to take a screenshot to see what Instagram is showing
-        const blockScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+        // Wait longer - Instagram's React app can take time to hydrate
+        await page.waitForTimeout(5000);
         
-        // Wait a bit more in case it's still loading
-        await page.waitForTimeout(3000);
+        // Try to wait for any input to appear
+        try {
+          await page.waitForSelector('input', { timeout: 10000 });
+          console.log(`[SCREENSHOT] ✅ Input appeared after extended wait`);
+        } catch {
+          console.log(`[SCREENSHOT] ⚠️ No input appeared after extended wait`);
+        }
+        
         const inputsAfterWait = await page.locator('input').count();
         const contentAfterWait = await page.content().catch(() => '');
-        console.log(`[SCREENSHOT] After additional wait: ${inputsAfterWait} inputs, HTML length: ${contentAfterWait.length}`);
+        console.log(`[SCREENSHOT] After extended wait: ${inputsAfterWait} inputs, HTML length: ${contentAfterWait.length}`);
         
         if (inputsAfterWait === 0 && contentAfterWait.length < 500) {
+          // Try to take a screenshot to see what Instagram is showing
+          const blockScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
           // Definitely blocked - return error with screenshot
           return {
             status: 'login_failed',
@@ -742,8 +750,13 @@ async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promi
     let usernameFound = false;
     
     // Try each selector strategy with a short timeout
+    // Instagram uses different selectors on different page versions:
+    // - Old: input[name="username"]
+    // - New: input[name="email"] with autocomplete="username webauthn"
     const usernameSelectors = [
       'input[name="username"]',
+      'input[name="email"]', // New Instagram login page uses name="email" for username
+      'input[autocomplete*="username"]', // Matches "username" or "username webauthn"
       'input[type="text"][aria-label*="username" i], input[type="text"][aria-label*="phone" i], input[type="text"][aria-label*="email" i]',
       'input[autocomplete="username"], input[placeholder*="username" i], input[placeholder*="phone" i]',
       'input[type="text"]',
@@ -780,8 +793,12 @@ async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promi
     let passwordInput: ReturnType<typeof page.locator> | null = null;
     let passwordFound = false;
     
+    // Password selectors - Instagram uses different names:
+    // - Old: input[name="password"]
+    // - New: input[name="pass"]
     const passwordSelectors = [
       'input[name="password"]',
+      'input[name="pass"]', // New Instagram login page uses name="pass"
       'input[type="password"]',
       'input[autocomplete="current-password"], input[aria-label*="password" i]',
     ];
@@ -813,9 +830,20 @@ async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promi
     await page.waitForTimeout(500);
     
     // Click login button - try multiple selectors
+    // Instagram uses different button structures on different page versions:
+    // - Old: div[role="button"][aria-label="Log in"]
+    // - New: div[role="none"] containing span with "Log in" text
     console.log(`[SCREENSHOT] Looking for login button...`);
     let loginButton = page.locator('div[role="button"][aria-label="Log in"]').first();
     
+    if (await loginButton.count() === 0) {
+      // New Instagram login page uses div[role="none"] with span containing "Log in"
+      loginButton = page.locator('div[role="none"]:has(span:text-is("Log in"))').first();
+    }
+    if (await loginButton.count() === 0) {
+      // Try finding by the exact text
+      loginButton = page.locator('span:text-is("Log in")').first();
+    }
     if (await loginButton.count() === 0) {
       loginButton = page.locator('button[type="submit"]').filter({ hasText: 'Log in' });
     }
@@ -972,7 +1000,13 @@ async function dismissInstagramPopups(page: Page): Promise<void> {
   console.log(`[SCREENSHOT] Looking for Instagram popups to dismiss...`);
   
   // List of popup button selectors to try (in order)
+  // Instagram uses different structures on different pages:
+  // - Old: div[role="button"]:has-text("Not now")
+  // - New: div[role="none"]:has(span:text-is("Not now"))
   const popupButtonSelectors = [
+    // New Instagram "Save login info?" popup - div[role="none"] with span text
+    'div[role="none"]:has(span:text-is("Not now"))',
+    'div[role="none"] span:text-is("Not now")',
     // Suspicious activity "Close" button
     'div[role="button"]:has-text("Close")',
     'button:has-text("Close")',
@@ -1293,6 +1327,7 @@ async function neutralizeInstagramOverlays(page: Page): Promise<void> {
       const dialogs = document.querySelectorAll('div[role="dialog"]');
       dialogs.forEach(dialog => {
         if (dialog.querySelector('input[name="username"]') || 
+            dialog.querySelector('input[name="email"]') ||  // New Instagram login page
             dialog.querySelector('form#loginForm') ||
             dialog.textContent?.includes('See more from')) {
           neutralize(dialog as HTMLElement);
@@ -1644,12 +1679,12 @@ async function captureScreenshot(
       try {
         browser = await pwChromium.launch({
           headless: useHeadless,
-        args: [
+      args: [
           // Start with @sparticuz/chromium defaults (serverless-safe). Keep our extras minimal to avoid conflicts.
           ...(isServerless ? chromium.args : []),
-          '--disable-blink-features=AutomationControlled',
-          // Window size arguments (must match viewport)
-          '--window-size=1920,1080',
+        '--disable-blink-features=AutomationControlled',
+        // Window size arguments (must match viewport)
+        '--window-size=1920,1080',
           // Keep existing behavior for some sites; avoid adding redundant sandbox/dev-shm flags (already in chromium.args).
           '--disable-web-security',
           '--disable-features=IsolateOrigins,site-per-process',
@@ -1657,8 +1692,8 @@ async function captureScreenshot(
           '--incognito',
         ],
         executablePath,
-        timeout: TIMEOUT_MS
-      });
+      timeout: TIMEOUT_MS
+    });
       } catch (launchError) {
         if (!isServerless && !localExecutablePath) {
           console.error(
@@ -1670,9 +1705,9 @@ async function captureScreenshot(
         throw launchError;
       }
 
-      console.log(`[SCREENSHOT] Browser launched successfully`);
+    console.log(`[SCREENSHOT] Browser launched successfully`);
 
-      // Create context with appropriate viewport and user agent
+    // Create context with appropriate viewport and user agent
       // IMPORTANT: Only Instagram uses proper mobile emulation (isMobile=true, hasTouch=true)
       // Facebook keeps old behavior (isMobile=false, hasTouch=false) even for mobile viewport
       const isMobileViewport = viewport === 'mobile';
@@ -1690,46 +1725,46 @@ async function captureScreenshot(
       
       const deviceScaleFactor = isMobileViewport ? 2 : 1;
 
-      const context = await browser.newContext({
-        viewport: viewportConfig,
-        userAgent: userAgent,
+    const context = await browser.newContext({
+      viewport: viewportConfig,
+      userAgent: userAgent,
         deviceScaleFactor,
         // Only Instagram uses proper mobile emulation
         // Facebook keeps old behavior: isMobile=false, hasTouch=false (even for mobile viewport)
         isMobile: useMobileEmulation,
         hasTouch: useMobileEmulation,
         // Keep JavaScript enabled
-        javaScriptEnabled: true,
-        // Add permissions
-        permissions: ['geolocation'],
+      javaScriptEnabled: true,
+      // Add permissions
+      permissions: ['geolocation'],
         // Set locale for consistent rendering
         locale: 'en-US',
-      });
+    });
 
       // Debug log context settings (safe to log, no secrets)
       console.log(`[SCREENSHOT] Context created: ${viewportConfig.width}x${viewportConfig.height}, scale=${deviceScaleFactor}, isMobile=${useMobileEmulation}, hasTouch=${useMobileEmulation}, UA=${useMobileEmulation ? 'iPhone' : 'Chrome Desktop'}, platform=${platform}`);
 
-      // Set timeouts
-      context.setDefaultNavigationTimeout(TIMEOUT_MS);
-      context.setDefaultTimeout(TIMEOUT_MS);
+    // Set timeouts
+    context.setDefaultNavigationTimeout(TIMEOUT_MS);
+    context.setDefaultTimeout(TIMEOUT_MS);
 
-      page = await context.newPage();
-      page.setDefaultNavigationTimeout(TIMEOUT_MS);
-      page.setDefaultTimeout(TIMEOUT_MS);
+    page = await context.newPage();
+    page.setDefaultNavigationTimeout(TIMEOUT_MS);
+    page.setDefaultTimeout(TIMEOUT_MS);
 
-      // Apply stealth techniques
-      await setupStealth(page);
-      console.log(`[SCREENSHOT] Stealth setup complete`);
+    // Apply stealth techniques
+    await setupStealth(page);
+    console.log(`[SCREENSHOT] Stealth setup complete`);
 
-      // Validate and normalize URL
-      let normalizedUrl = url.trim();
-      if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
-        normalizedUrl = `https://${normalizedUrl}`;
-      }
-      
-      console.log(`[SCREENSHOT] Navigating to ${normalizedUrl}...`);
-      console.log(`[SCREENSHOT] Original URL was: ${url}`);
-      const startTime = Date.now();
+    // Validate and normalize URL
+    let normalizedUrl = url.trim();
+    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+      normalizedUrl = `https://${normalizedUrl}`;
+    }
+    
+    console.log(`[SCREENSHOT] Navigating to ${normalizedUrl}...`);
+    console.log(`[SCREENSHOT] Original URL was: ${url}`);
+    const startTime = Date.now();
       
       // INSTAGRAM: Navigate directly and handle login with state machine
       if (platform === 'instagram') {
@@ -2011,111 +2046,111 @@ async function captureScreenshot(
         
       } else {
         // FACEBOOK and WEBSITE: Direct navigation (unchanged)
-        try {
-          const response = await page.goto(normalizedUrl, {
+    try {
+      const response = await page.goto(normalizedUrl, {
             waitUntil: 'domcontentloaded',
-            timeout: TIMEOUT_MS
-          });
+        timeout: TIMEOUT_MS
+      });
 
-          const navigationTime = Date.now() - startTime;
-          console.log(`[SCREENSHOT] Navigation completed in ${navigationTime}ms`);
+      const navigationTime = Date.now() - startTime;
+      console.log(`[SCREENSHOT] Navigation completed in ${navigationTime}ms`);
 
-          // Check response status
-          if (response) {
-            const status = response.status();
-            console.log(`[SCREENSHOT] Response status: ${status}`);
-            
-            if (status >= 400) {
-              return {
-                success: false,
-                error: `HTTP ${status}: Failed to load page`
-              };
-            }
-          }
-
-          // Check if page loaded correctly
-          const currentUrl = page.url();
-          console.log(`[SCREENSHOT] Current URL after navigation: ${currentUrl}`);
-          
-          if (!currentUrl || currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
-            return {
-              success: false,
-              error: `Page navigation failed - invalid URL after navigation: ${currentUrl}`
-            };
-          }
-
-          // Wait for page to be fully loaded
-          console.log(`[SCREENSHOT] Waiting for page to load...`);
-          await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
-          
-          // Wait for network to be idle (but with shorter timeout)
-          try {
-            await page.waitForLoadState('networkidle', { timeout: 15000 });
-          } catch (e) {
-            console.log(`[SCREENSHOT] Network idle timeout, proceeding anyway`);
-          }
-          
-          // Additional wait for dynamic content (social media pages often load content dynamically)
-          await page.waitForTimeout(3000);
-          console.log(`[SCREENSHOT] Page load complete`);
-        } catch (navigationError) {
-          console.error(`[SCREENSHOT] Navigation error:`, navigationError);
-          const currentUrl = page.url();
-          console.log(`[SCREENSHOT] Current URL after error: ${currentUrl}`);
-          
-          if (currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
-            return {
-              success: false,
-              error: `Navigation failed: ${navigationError instanceof Error ? navigationError.message : 'Unknown error'}`
-            };
-          }
-          // If we got somewhere, continue anyway
+      // Check response status
+      if (response) {
+        const status = response.status();
+        console.log(`[SCREENSHOT] Response status: ${status}`);
+        
+        if (status >= 400) {
+          return {
+            success: false,
+            error: `HTTP ${status}: Failed to load page`
+          };
         }
+      }
+
+      // Check if page loaded correctly
+      const currentUrl = page.url();
+      console.log(`[SCREENSHOT] Current URL after navigation: ${currentUrl}`);
+      
+      if (!currentUrl || currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
+        return {
+          success: false,
+          error: `Page navigation failed - invalid URL after navigation: ${currentUrl}`
+        };
+      }
+
+      // Wait for page to be fully loaded
+      console.log(`[SCREENSHOT] Waiting for page to load...`);
+      await page.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_MS });
+      
+      // Wait for network to be idle (but with shorter timeout)
+      try {
+        await page.waitForLoadState('networkidle', { timeout: 15000 });
+      } catch (e) {
+        console.log(`[SCREENSHOT] Network idle timeout, proceeding anyway`);
+      }
+      
+      // Additional wait for dynamic content (social media pages often load content dynamically)
+      await page.waitForTimeout(3000);
+      console.log(`[SCREENSHOT] Page load complete`);
+    } catch (navigationError) {
+      console.error(`[SCREENSHOT] Navigation error:`, navigationError);
+      const currentUrl = page.url();
+      console.log(`[SCREENSHOT] Current URL after error: ${currentUrl}`);
+      
+      if (currentUrl === 'about:blank' || currentUrl.startsWith('chrome-error://')) {
+        return {
+          success: false,
+          error: `Navigation failed: ${navigationError instanceof Error ? navigationError.message : 'Unknown error'}`
+        };
+      }
+      // If we got somewhere, continue anyway
+    }
       } // End of else block (Facebook/Website direct navigation)
 
-      // Wait for content to be visible (platform-specific selectors)
-      const contentSelectors = [
-        'body',
-        'main',
-        '[role="main"]',
-        'article',
-        'div[class*="main"]',
-        'div[class*="content"]'
-      ];
+    // Wait for content to be visible (platform-specific selectors)
+    const contentSelectors = [
+      'body',
+      'main',
+      '[role="main"]',
+      'article',
+      'div[class*="main"]',
+      'div[class*="content"]'
+    ];
 
-      let contentFound = false;
-      for (const selector of contentSelectors) {
-        try {
-          const element = page.locator(selector).first();
-          const isVisible = await element.isVisible({ timeout: 5000 }).catch(() => false);
-          if (isVisible) {
-            contentFound = true;
-            console.log(`[SCREENSHOT] Content found using selector: ${selector}`);
-            break;
-          }
-        } catch {
-          // Continue to next selector
-        }
-      }
-
-      if (!contentFound) {
-        console.log(`[SCREENSHOT] Warning: No content selectors found, proceeding anyway`);
-      }
-
-      // Verify page actually loaded content (not just blank page)
+    let contentFound = false;
+    for (const selector of contentSelectors) {
       try {
-        const pageContent = await page.content();
-        const bodyText = await page.locator('body').textContent().catch(() => '');
-        
-        if (!pageContent || pageContent.length < 100 || (bodyText && bodyText.length < 10)) {
-          console.log(`[SCREENSHOT] Warning: Page content seems empty (${pageContent?.length || 0} chars, body: ${bodyText?.length || 0} chars)`);
-          // Don't fail, but log warning - some pages might load content dynamically
-        } else {
-          console.log(`[SCREENSHOT] Page content verified: ${pageContent.length} chars, body: ${bodyText?.length || 0} chars`);
+        const element = page.locator(selector).first();
+        const isVisible = await element.isVisible({ timeout: 5000 }).catch(() => false);
+        if (isVisible) {
+          contentFound = true;
+          console.log(`[SCREENSHOT] Content found using selector: ${selector}`);
+          break;
         }
-      } catch (e) {
-        console.log(`[SCREENSHOT] Could not verify page content:`, e);
+      } catch {
+        // Continue to next selector
       }
+    }
+
+    if (!contentFound) {
+      console.log(`[SCREENSHOT] Warning: No content selectors found, proceeding anyway`);
+    }
+
+    // Verify page actually loaded content (not just blank page)
+    try {
+      const pageContent = await page.content();
+      const bodyText = await page.locator('body').textContent().catch(() => '');
+      
+      if (!pageContent || pageContent.length < 100 || (bodyText && bodyText.length < 10)) {
+        console.log(`[SCREENSHOT] Warning: Page content seems empty (${pageContent?.length || 0} chars, body: ${bodyText?.length || 0} chars)`);
+        // Don't fail, but log warning - some pages might load content dynamically
+      } else {
+        console.log(`[SCREENSHOT] Page content verified: ${pageContent.length} chars, body: ${bodyText?.length || 0} chars`);
+      }
+    } catch (e) {
+      console.log(`[SCREENSHOT] Could not verify page content:`, e);
+    }
 
       // At this point, we're only handling social media (instagram/facebook)
       // Websites are handled by captureWebsiteScreenshot() above
@@ -2133,7 +2168,7 @@ async function captureScreenshot(
         console.log(`[SCREENSHOT] Instagram pre-capture state check: ${currentState}`);
         
         if (currentState === 'PROFILE') {
-          await removeInstagramPrompts(page);
+        await removeInstagramPrompts(page);
           
           // INSTAGRAM: Ensure grid is rendered before screenshot
           console.log(`[SCREENSHOT] Instagram: Ensuring grid is rendered before capture...`);
@@ -2153,12 +2188,12 @@ async function captureScreenshot(
             success: false,
             error: `Instagram page state is ${currentState}, not PROFILE. URL: ${currentUrl}`
           };
-        }
       }
+    }
 
-      // Take screenshot
+    // Take screenshot
       // IMPORTANT: Use viewport-only for Instagram to avoid fullPage rendering issues
-      const isMobile = viewport === 'mobile';
+    const isMobile = viewport === 'mobile';
       const isInstagram = platform === 'instagram';
       
       // Instagram always uses viewport mode to avoid fullPage bugs
@@ -2166,77 +2201,77 @@ async function captureScreenshot(
       const useFullPage = isInstagram ? false : !isMobile;
       
       console.log(`[SCREENSHOT] Capturing ${useFullPage ? 'full-page' : 'viewport'} screenshot (platform: ${platform})...`);
-      const screenshotStartTime = Date.now();
+    const screenshotStartTime = Date.now();
+    
+    const screenshotBuffer = await page.screenshot({
+      fullPage: useFullPage,
+      timeout: TIMEOUT_MS
+    });
+
+    const screenshotTime = Date.now() - screenshotStartTime;
+    console.log(`[SCREENSHOT] Screenshot captured in ${screenshotTime}ms`);
+
+    // Convert to base64
+    const base64Screenshot = screenshotBuffer.toString('base64');
+    const dataUrl = `data:image/png;base64,${base64Screenshot}`;
+    
+    console.log(`[SCREENSHOT] Screenshot converted to base64 (${base64Screenshot.length} chars)`);
+    console.log(`[SCREENSHOT] ✅ Screenshot capture successful`);
+
+    return {
+      success: true,
+      screenshot: dataUrl
+    };
+
+  } catch (error) {
+    console.error(`[SCREENSHOT] ❌ Error capturing screenshot:`, error);
+    
+    if (error instanceof Error) {
+      console.error(`[SCREENSHOT] Error message: ${error.message}`);
+      console.error(`[SCREENSHOT] Error stack: ${error.stack}`);
       
-      const screenshotBuffer = await page.screenshot({
-        fullPage: useFullPage,
-        timeout: TIMEOUT_MS
-      });
-
-      const screenshotTime = Date.now() - screenshotStartTime;
-      console.log(`[SCREENSHOT] Screenshot captured in ${screenshotTime}ms`);
-
-      // Convert to base64
-      const base64Screenshot = screenshotBuffer.toString('base64');
-      const dataUrl = `data:image/png;base64,${base64Screenshot}`;
-      
-      console.log(`[SCREENSHOT] Screenshot converted to base64 (${base64Screenshot.length} chars)`);
-      console.log(`[SCREENSHOT] ✅ Screenshot capture successful`);
-
-      return {
-        success: true,
-        screenshot: dataUrl
-      };
-
-    } catch (error) {
-      console.error(`[SCREENSHOT] ❌ Error capturing screenshot:`, error);
-      
-      if (error instanceof Error) {
-        console.error(`[SCREENSHOT] Error message: ${error.message}`);
-        console.error(`[SCREENSHOT] Error stack: ${error.stack}`);
-        
-        // Check for timeout errors
-        if (error.message.includes('timeout') || error.message.includes('Timeout')) {
-          return {
-            success: false,
-            error: `Timeout: Page took longer than ${TIMEOUT_MS}ms to load`
-          };
-        }
-        
+      // Check for timeout errors
+      if (error.message.includes('timeout') || error.message.includes('Timeout')) {
         return {
           success: false,
-          error: error.message
+          error: `Timeout: Page took longer than ${TIMEOUT_MS}ms to load`
         };
       }
       
       return {
         success: false,
-        error: 'Unknown error occurred during screenshot capture'
+        error: error.message
       };
-    } finally {
-      // Always close browser and page
-      try {
-        if (page) {
-          await page.close().catch((err) => {
-            console.error(`[SCREENSHOT] Error closing page:`, err);
-          });
-        }
-      } catch (err) {
-        console.error(`[SCREENSHOT] Error in page cleanup:`, err);
+    }
+    
+    return {
+      success: false,
+      error: 'Unknown error occurred during screenshot capture'
+    };
+  } finally {
+    // Always close browser and page
+    try {
+      if (page) {
+        await page.close().catch((err) => {
+          console.error(`[SCREENSHOT] Error closing page:`, err);
+        });
       }
+    } catch (err) {
+      console.error(`[SCREENSHOT] Error in page cleanup:`, err);
+    }
 
-      try {
-        if (browser) {
-          await browser.close().catch((err) => {
-            console.error(`[SCREENSHOT] Error closing browser:`, err);
-          });
-          console.log(`[SCREENSHOT] Browser closed`);
-        }
-      } catch (err) {
-        console.error(`[SCREENSHOT] Error in browser cleanup:`, err);
+    try {
+      if (browser) {
+        await browser.close().catch((err) => {
+          console.error(`[SCREENSHOT] Error closing browser:`, err);
+        });
+        console.log(`[SCREENSHOT] Browser closed`);
       }
+    } catch (err) {
+      console.error(`[SCREENSHOT] Error in browser cleanup:`, err);
     }
   }
+}
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
