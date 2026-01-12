@@ -1737,14 +1737,13 @@ async function captureScreenshot(
           }
           
           if (loginResult.status === 'login_failed') {
-            console.log(`[SCREENSHOT] ❌ Login FAILED - attempting unauthenticated access as fallback`);
+            console.log(`[SCREENSHOT] ❌ Login FAILED - attempting Google search bypass as fallback`);
+            console.log(`[SCREENSHOT] Login error was: ${loginResult.error}`);
             
-            // Check if the error indicates Instagram is blocking automation
-            const isBlocked = loginResult.error?.includes('blocking automation') || 
-                             loginResult.error?.includes('page is empty');
-            
-            if (isBlocked) {
-              console.log(`[SCREENSHOT] Instagram appears to be blocking automation - trying Google search bypass`);
+            // Always try Google bypass when login fails - regardless of reason
+            // This handles: blocked pages, failed credentials, redirects, challenges, etc.
+            {
+              console.log(`[SCREENSHOT] Trying Google search bypass to access profile without login...`);
               
               // Extract username from URL for Google search
               const usernameMatch = normalizedUrl.match(/instagram\.com\/([^\/\?]+)/);
@@ -1877,17 +1876,10 @@ async function captureScreenshot(
                 console.log(`[SCREENSHOT] Google bypass failed: ${googleErr}`);
                 return {
                   success: false,
-                  error: `Instagram is blocking automation. Google bypass also failed. ${loginResult.error}`,
+                  error: `Instagram login failed and Google bypass also failed. Original error: ${loginResult.error}`,
                   screenshot: loginResult.debugScreenshot
                 };
               }
-            } else {
-              // Other login failure (not blocking) - return error
-              return {
-                success: false,
-                error: `Instagram login failed: ${loginResult.error}`,
-                screenshot: loginResult.debugScreenshot
-              };
             }
           }
           
