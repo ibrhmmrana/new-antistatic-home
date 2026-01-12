@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { chromium as pwChromium } from "playwright-core";
-import type { Browser, Page } from "playwright-core";
+import type { Browser, Page, BrowserContext } from "playwright-core";
 import chromium from "@sparticuz/chromium";
 
 // Force Node.js runtime (Playwright is not compatible with Edge runtime)
@@ -32,6 +32,120 @@ const USER_AGENTS = {
 
 // Timeout configuration
 const TIMEOUT_MS = 30000; // 30 seconds
+
+/**
+ * Injects Instagram session cookies into the browser context for authenticated access.
+ * This bypasses the login flow entirely by using pre-existing session cookies.
+ * 
+ * Required: INSTAGRAM_SESSION_ID environment variable
+ * Optional: INSTAGRAM_CSRF_TOKEN, INSTAGRAM_DS_USER_ID for better reliability
+ * 
+ * @param context - The Playwright BrowserContext to inject cookies into
+ * @returns true if session cookies were injected, false if no session ID configured
+ */
+async function injectInstagramSessionCookies(context: BrowserContext): Promise<boolean> {
+  const sessionId = process.env.INSTAGRAM_SESSION_ID;
+  
+  if (!sessionId) {
+    console.log(`[SCREENSHOT] ⚠️ INSTAGRAM_SESSION_ID not configured - will use fallback methods`);
+    return false;
+  }
+  
+  console.log(`[SCREENSHOT] 🔐 Injecting Instagram session cookies...`);
+  
+  // Build cookie array with required sessionid
+  const cookies: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    secure?: boolean;
+    httpOnly?: boolean;
+    sameSite?: 'Strict' | 'Lax' | 'None';
+  }> = [
+    {
+      name: 'sessionid',
+      value: sessionId,
+      domain: '.instagram.com',
+      path: '/',
+      secure: true,
+      httpOnly: true,
+      sameSite: 'Lax' as const,
+    },
+  ];
+  
+  // Add optional CSRF token if provided (recommended for reliability)
+  const csrfToken = process.env.INSTAGRAM_CSRF_TOKEN;
+  if (csrfToken) {
+    cookies.push({
+      name: 'csrftoken',
+      value: csrfToken,
+      domain: '.instagram.com',
+      path: '/',
+      secure: true,
+      sameSite: 'Lax' as const,
+    });
+    console.log(`[SCREENSHOT] ✅ CSRF token cookie added`);
+  }
+  
+  // Add optional user ID if provided
+  const dsUserId = process.env.INSTAGRAM_DS_USER_ID;
+  if (dsUserId) {
+    cookies.push({
+      name: 'ds_user_id',
+      value: dsUserId,
+      domain: '.instagram.com',
+      path: '/',
+      secure: true,
+      sameSite: 'Lax' as const,
+    });
+    console.log(`[SCREENSHOT] ✅ User ID cookie added`);
+  }
+  
+  try {
+    await context.addCookies(cookies);
+    
+    // Log cookie summary (without exposing values)
+    const cookieNames = cookies.map(c => c.name).join(', ');
+    console.log(`[SCREENSHOT] ✅ Session cookies injected successfully`);
+    console.log(`[SCREENSHOT] 📋 Cookies set: ${cookieNames} (${cookies.length} total)`);
+    console.log(`[SCREENSHOT] 🔑 Session ID length: ${sessionId.length} chars (first 8: ${sessionId.substring(0, 8)}...)`);
+    
+    return true;
+  } catch (error) {
+    console.error(`[SCREENSHOT] ❌ Failed to inject session cookies:`, error);
+    return false;
+  }
+}
+
+/**
+ * Logs the authentication method being used for Instagram screenshots.
+ * Helps with debugging and monitoring session validity.
+ */
+function logInstagramAuthMethod(): void {
+  const hasSessionId = !!process.env.INSTAGRAM_SESSION_ID;
+  const hasCsrfToken = !!process.env.INSTAGRAM_CSRF_TOKEN;
+  const hasUserId = !!process.env.INSTAGRAM_DS_USER_ID;
+  const hasLegacyCredentials = !!process.env.INSTAGRAM_USERNAME && !!process.env.INSTAGRAM_PASSWORD;
+  
+  console.log(`[SCREENSHOT] ═══════════════════════════════════════════════════════════`);
+  console.log(`[SCREENSHOT] 🔐 INSTAGRAM AUTHENTICATION CONFIG`);
+  console.log(`[SCREENSHOT] ───────────────────────────────────────────────────────────`);
+  console.log(`[SCREENSHOT]   Session-based auth (recommended):`);
+  console.log(`[SCREENSHOT]     • INSTAGRAM_SESSION_ID: ${hasSessionId ? '✅ Configured' : '❌ Not set'}`);
+  console.log(`[SCREENSHOT]     • INSTAGRAM_CSRF_TOKEN: ${hasCsrfToken ? '✅ Configured' : '⚪ Not set (optional)'}`);
+  console.log(`[SCREENSHOT]     • INSTAGRAM_DS_USER_ID: ${hasUserId ? '✅ Configured' : '⚪ Not set (optional)'}`);
+  console.log(`[SCREENSHOT]   Legacy credentials (deprecated):`);
+  console.log(`[SCREENSHOT]     • Username/Password: ${hasLegacyCredentials ? '⚠️ Configured but not used' : '⚪ Not set'}`);
+  console.log(`[SCREENSHOT] ───────────────────────────────────────────────────────────`);
+  
+  if (hasSessionId) {
+    console.log(`[SCREENSHOT] 📝 Auth method: SESSION COOKIES (primary)`);
+  } else {
+    console.log(`[SCREENSHOT] 📝 Auth method: CSE BYPASS ONLY (no session configured)`);
+  }
+  console.log(`[SCREENSHOT] ═══════════════════════════════════════════════════════════`);
+}
 
 /**
  * Simple, clean website screenshot capture.
@@ -577,8 +691,19 @@ async function logPageElements(page: Page, context: string): Promise<void> {
 }
 
 /**
+ * @deprecated This function is no longer used as the primary authentication method.
+ * Instagram now uses session cookie injection via injectInstagramSessionCookies().
+ * This function is kept for reference but may be removed in a future version.
+ * 
  * Instagram login state machine - handles login flow and returns detailed status
  * Returns InstagramLoginResult with status indicating what happened
+ * 
+ * NOTE: Username/password login is unreliable due to:
+ * - 2FA/verification challenges
+ * - Rate limiting
+ * - Bot detection
+ * 
+ * Prefer using session-based authentication with INSTAGRAM_SESSION_ID env var.
  */
 async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promise<InstagramLoginResult> {
   const currentUrl = page.url();
@@ -1825,11 +1950,26 @@ async function captureScreenshot(
     console.log(`[SCREENSHOT] Original URL was: ${url}`);
     const startTime = Date.now();
       
-      // INSTAGRAM: Navigate directly and handle login with state machine
+      // INSTAGRAM: Session-based authentication (primary) with fallback to CSE bypass
       if (platform === 'instagram') {
-        console.log(`[SCREENSHOT] 🔍 Instagram detected - starting state machine flow`);
+        console.log(`[SCREENSHOT] 🔍 Instagram detected - starting session-based authentication flow`);
         
-        // Navigate directly to Instagram URL
+        // Log authentication configuration
+        logInstagramAuthMethod();
+        
+        // Track if we successfully bypassed via CSE (to skip re-navigation later)
+        let cseBypassSuccessful = false;
+        
+        // STEP 1: Inject session cookies BEFORE navigation (if configured)
+        const sessionInjected = await injectInstagramSessionCookies(context);
+        
+        if (sessionInjected) {
+          console.log(`[SCREENSHOT] 🔐 Session cookies injected - navigating directly to profile`);
+        } else {
+          console.log(`[SCREENSHOT] ⚠️ No session cookies - will rely on fallback methods if blocked`);
+        }
+        
+        // STEP 2: Navigate directly to Instagram profile URL
         console.log(`[SCREENSHOT] Navigating to: ${normalizedUrl}`);
         await page.goto(normalizedUrl, {
           waitUntil: 'domcontentloaded',
@@ -1843,97 +1983,105 @@ async function captureScreenshot(
         });
         await page.waitForTimeout(3000);
         
-        // Classify initial page state
+        // STEP 3: Classify page state after navigation
         const initialUrl = page.url();
         let pageState = classifyInstagramPageState(initialUrl);
         console.log(`[SCREENSHOT] 🔄 Initial URL: ${initialUrl}`);
         console.log(`[SCREENSHOT] 🔄 Initial state: ${pageState}`);
-        await logPageElements(page, `Initial state: ${pageState}`);
         
-        // Track if we successfully bypassed via CSE (to skip re-navigation later)
-        let cseBypassSuccessful = false;
-        
-        // Handle login if needed
-        if (pageState === 'LOGIN' || pageState === 'CHALLENGE') {
-          const loginResult = await handleInstagramLogin(page, normalizedUrl);
+        // If session auth worked and we're on PROFILE, we're done with auth!
+        if (pageState === 'PROFILE') {
+          console.log(`[SCREENSHOT] ✅ Session authentication SUCCESS - on profile page`);
+          await logPageElements(page, `Session auth successful - PROFILE state`);
+          // Skip login handling entirely, proceed to screenshot preparation below
+        }
+        // If on CHALLENGE page, session may be flagged - return error
+        else if (pageState === 'CHALLENGE') {
+          console.log(`[SCREENSHOT] ❌ CHALLENGE page detected - session may be flagged`);
+          await logPageElements(page, `Session auth failed - CHALLENGE state`);
           
-          console.log(`[SCREENSHOT] 🔄 Login result: ${loginResult.status}`);
+          if (sessionInjected) {
+            console.log(`[SCREENSHOT] ⚠️ Session cookies were injected but got CHALLENGE - session may be invalid`);
+          }
           
-          // Handle non-success states
-          if (loginResult.status === 'challenge_required') {
-            console.log(`[SCREENSHOT] ❌ CHALLENGE detected - cannot proceed`);
+          const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+          return {
+            success: false,
+            error: `Instagram challenge/verification required. Session may be invalid or flagged.`,
+            screenshot: debugScreenshot
+          };
+        }
+        // If on LOGIN page - session expired/invalid or not configured
+        else if (pageState === 'LOGIN') {
+          console.log(`[SCREENSHOT] ⚠️ On LOGIN page - session expired/invalid or not configured`);
+          await logPageElements(page, `Initial state: ${pageState}`);
+          
+          if (sessionInjected) {
+            console.log(`[SCREENSHOT] ❌ Session cookies were injected but got redirected to LOGIN - session expired`);
+            console.log(`[SCREENSHOT] 💡 Please refresh your INSTAGRAM_SESSION_ID in environment variables`);
+          }
+          
+          // Try CSE bypass as fallback (handles: expired sessions, no credentials, etc.)
+          console.log(`[SCREENSHOT] 🔄 Attempting Google CSE bypass as fallback...`);
+          
+          // Extract username from URL for Google search
+          const usernameMatch = normalizedUrl.match(/instagram\.com\/([^\/\?]+)/);
+          const username = usernameMatch ? usernameMatch[1] : null;
+          
+          if (!username) {
+            console.log(`[SCREENSHOT] Could not extract username from URL: ${normalizedUrl}`);
+            const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
             return {
               success: false,
-              error: `Instagram challenge/verification required: ${loginResult.error}`,
-              // Include debug screenshot in error for debugging
-              screenshot: loginResult.debugScreenshot
+              error: `Session expired/invalid and could not extract username for CSE bypass.`,
+              screenshot: debugScreenshot
             };
           }
           
-          if (loginResult.status === 'login_failed') {
-            console.log(`[SCREENSHOT] ❌ Login FAILED - attempting Google search bypass as fallback`);
-            console.log(`[SCREENSHOT] Login error was: ${loginResult.error}`);
+          console.log(`[SCREENSHOT] Extracted username: ${username}`);
+          console.log(`[SCREENSHOT] Using Google CSE API to find Instagram profile...`);
+          
+          try {
+            // Use Google Custom Search Engine API instead of Playwright-based search
+            // This avoids CAPTCHAs and rate limiting from Google
+            const apiKey = process.env.GOOGLE_CSE_API_KEY;
+            const cx = process.env.GOOGLE_CSE_CX;
             
-            // Always try Google bypass when login fails - regardless of reason
-            // This handles: blocked pages, failed credentials, redirects, challenges, etc.
-            {
-              console.log(`[SCREENSHOT] Trying Google search bypass to access profile without login...`);
-              
-              // Extract username from URL for Google search
-              const usernameMatch = normalizedUrl.match(/instagram\.com\/([^\/\?]+)/);
-              const username = usernameMatch ? usernameMatch[1] : null;
-              
-              if (!username) {
-                console.log(`[SCREENSHOT] Could not extract username from URL: ${normalizedUrl}`);
-                return {
-                  success: false,
-                  error: `Instagram is blocking automation and could not extract username. ${loginResult.error}`,
-                  screenshot: loginResult.debugScreenshot
-                };
-              }
-              
-              console.log(`[SCREENSHOT] Extracted username: ${username}`);
-              console.log(`[SCREENSHOT] Using Google CSE API to find Instagram profile...`);
-              
-              try {
-                // Use Google Custom Search Engine API instead of Playwright-based search
-                // This avoids CAPTCHAs and rate limiting from Google
-                const apiKey = process.env.GOOGLE_CSE_API_KEY;
-                const cx = process.env.GOOGLE_CSE_CX;
-                
-                if (!apiKey || !cx) {
-                  console.log(`[SCREENSHOT] Google CSE API not configured (missing GOOGLE_CSE_API_KEY or GOOGLE_CSE_CX)`);
-                  return {
-                    success: false,
-                    error: `Instagram is blocking automation and Google CSE API is not configured. Cannot find profile.`,
-                    screenshot: loginResult.debugScreenshot
-                  };
-                }
-                
-                // Build search query - use site restriction for accurate results
-                const searchQuery = `site:instagram.com "${username}"`;
-                console.log(`[SCREENSHOT] Google CSE search query: ${searchQuery}`);
-                
-                // Call Google CSE API
-                const cseUrl = new URL('https://www.googleapis.com/customsearch/v1');
-                cseUrl.searchParams.set('key', apiKey);
-                cseUrl.searchParams.set('cx', cx);
-                cseUrl.searchParams.set('q', searchQuery);
-                cseUrl.searchParams.set('num', '5');
-                
-                const cseResponse = await fetch(cseUrl.toString(), {
-                  headers: { 'Accept': 'application/json' },
-                });
-                
-                if (!cseResponse.ok) {
-                  const errorText = await cseResponse.text().catch(() => 'Unknown error');
-                  console.log(`[SCREENSHOT] Google CSE API error ${cseResponse.status}: ${errorText.slice(0, 200)}`);
-                  return {
-                    success: false,
-                    error: `Instagram is blocking automation. Google CSE API returned ${cseResponse.status}.`,
-                    screenshot: loginResult.debugScreenshot
-                  };
-                }
+            if (!apiKey || !cx) {
+              console.log(`[SCREENSHOT] Google CSE API not configured (missing GOOGLE_CSE_API_KEY or GOOGLE_CSE_CX)`);
+              const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+              return {
+                success: false,
+                error: `Session expired and Google CSE API is not configured. Please refresh INSTAGRAM_SESSION_ID.`,
+                screenshot: debugScreenshot
+              };
+            }
+            
+            // Build search query - use site restriction for accurate results
+            const searchQuery = `site:instagram.com "${username}"`;
+            console.log(`[SCREENSHOT] Google CSE search query: ${searchQuery}`);
+            
+            // Call Google CSE API
+            const cseUrl = new URL('https://www.googleapis.com/customsearch/v1');
+            cseUrl.searchParams.set('key', apiKey);
+            cseUrl.searchParams.set('cx', cx);
+            cseUrl.searchParams.set('q', searchQuery);
+            cseUrl.searchParams.set('num', '5');
+            
+            const cseResponse = await fetch(cseUrl.toString(), {
+              headers: { 'Accept': 'application/json' },
+            });
+            
+            if (!cseResponse.ok) {
+              const errorText = await cseResponse.text().catch(() => 'Unknown error');
+              console.log(`[SCREENSHOT] Google CSE API error ${cseResponse.status}: ${errorText.slice(0, 200)}`);
+              const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+              return {
+                success: false,
+                error: `Session expired and Google CSE API returned ${cseResponse.status}.`,
+                screenshot: debugScreenshot
+              };
+            }
                 
                 const cseData = await cseResponse.json();
                 const cseItems = cseData.items || [];
@@ -2069,23 +2217,16 @@ async function captureScreenshot(
                 }
               } catch (cseErr) {
                 console.log(`[SCREENSHOT] Google CSE bypass failed: ${cseErr}`);
+                const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
                 return {
                   success: false,
-                  error: `Instagram login failed and Google CSE bypass also failed. ${loginResult.error}`,
-                  screenshot: loginResult.debugScreenshot
+                  error: `Session expired/invalid and Google CSE bypass also failed: ${cseErr}`,
+                  screenshot: debugScreenshot
                 };
               }
-            }
-          }
-          
-          if (loginResult.status === 'no_credentials') {
-            console.log(`[SCREENSHOT] ⚠️ No credentials - attempting unauthenticated access`);
-            // Continue without login, might still get some content
-          }
-          
-          // Re-check page state after login
-          pageState = loginResult.pageState;
-        }
+            // End of CSE bypass try block
+          } // End of LOGIN state handling (else if pageState === 'LOGIN')
+        // At this point: PROFILE, UNKNOWN state after CSE bypass, or fell through from earlier states
         
         // Verify we're on PROFILE state before proceeding
         const currentUrl = page.url();
