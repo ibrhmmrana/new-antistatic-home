@@ -166,10 +166,12 @@ function logScreenshotError(platform: string, status: number, body: string): voi
 async function captureSocialScreenshot(
   platform: string,
   url: string,
-  viewport: 'desktop' | 'mobile'
+  viewport: 'desktop' | 'mobile',
+  businessName?: string,
+  businessLocation?: string
 ): Promise<{ platform: string; url: string; screenshot: string | null; status: 'success' | 'error' } | { websiteScreenshot: string | null }> {
   const startTime = Date.now();
-  console.log(`[SCREENSHOT CALL] Starting ${platform} screenshot for: ${url}`);
+  console.log(`[SCREENSHOT CALL] Starting ${platform} screenshot for: ${url}${businessName ? ` (business: ${businessName})` : ''}`);
   
   try {
     // Determine base URL for internal API calls
@@ -190,7 +192,7 @@ async function captureSocialScreenshot(
     const response = await fetch(requestUrl, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ platform, url, viewport }),
+      body: JSON.stringify({ platform, url, viewport, businessName, businessLocation }),
       signal: controller.signal,
     });
     
@@ -1654,10 +1656,11 @@ export async function POST(request: NextRequest) {
     console.log(`[API] Preparing to capture ${totalScreenshots} screenshots sequentially (${socialLinks.length} social + ${websiteUrlToUse ? '1 website' : '0 websites'})`);
     
     // Capture social media screenshots one at a time
+    // Pass business context to help with Google search bypass if Instagram blocks login
     for (const link of socialLinks) {
       console.log(`[API] Capturing screenshot for ${link.platform}: ${link.url}`);
       try {
-        const result = await captureSocialScreenshot(link.platform, link.url, 'mobile');
+        const result = await captureSocialScreenshot(link.platform, link.url, 'mobile', businessName, address);
         if ('platform' in result) {
           console.log(`[API] Social screenshot for ${result.platform}: hasScreenshot=${!!result.screenshot}, status=${result.status}`);
           socialScreenshots.push(result);
@@ -1679,7 +1682,7 @@ export async function POST(request: NextRequest) {
     if (websiteUrlToUse) {
       console.log(`[API] Capturing website screenshot for: ${websiteUrlToUse}`);
       try {
-        const result = await captureSocialScreenshot('website', websiteUrlToUse, 'desktop');
+        const result = await captureSocialScreenshot('website', websiteUrlToUse, 'desktop', businessName, address);
         if ('websiteScreenshot' in result) {
           console.log(`[API] Website screenshot: hasScreenshot=${!!result.websiteScreenshot}`);
           websiteScreenshot = result.websiteScreenshot;

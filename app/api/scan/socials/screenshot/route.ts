@@ -1566,7 +1566,9 @@ async function setupStealth(page: Page): Promise<void> {
 async function captureScreenshot(
   url: string,
   viewport: 'desktop' | 'mobile',
-  platformParam?: string
+  platformParam?: string,
+  businessName?: string,
+  businessLocation?: string
 ): Promise<{ success: boolean; screenshot?: string; error?: string }> {
   // Detect platform early
   let platform = platformParam || 'unknown';
@@ -1762,8 +1764,22 @@ async function captureScreenshot(
               console.log(`[SCREENSHOT] Navigating to Google to search for Instagram profile...`);
               
               try {
-                // Navigate to Google and search for the Instagram profile
-                const searchQuery = encodeURIComponent(`site:instagram.com "${username}"`);
+                // Build search query - use business context if available for better results
+                // Format: "[username] instagram" or "[businessName] [location] instagram"
+                let searchQueryText: string;
+                if (businessName && businessLocation) {
+                  searchQueryText = `${businessName} ${businessLocation} instagram`;
+                  console.log(`[SCREENSHOT] Using business context for search: ${searchQueryText}`);
+                } else if (businessName) {
+                  searchQueryText = `${businessName} instagram ${username}`;
+                  console.log(`[SCREENSHOT] Using business name for search: ${searchQueryText}`);
+                } else {
+                  // Simple search - just username + instagram (no site restriction)
+                  searchQueryText = `${username} instagram`;
+                  console.log(`[SCREENSHOT] Using simple username search: ${searchQueryText}`);
+                }
+                
+                const searchQuery = encodeURIComponent(searchQueryText);
                 await page.goto(`https://www.google.com/search?q=${searchQuery}`, { 
                   waitUntil: 'domcontentloaded', 
                   timeout: 15000 
@@ -2205,9 +2221,9 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { platform, url, viewport = 'desktop' } = body;
+    const { platform, url, viewport = 'desktop', businessName, businessLocation } = body;
 
-    console.log(`[API] Request body:`, { platform, url, viewport });
+    console.log(`[API] Request body:`, { platform, url, viewport, businessName, businessLocation });
 
     // Validate required parameters
     if (!platform || !url) {
@@ -2252,8 +2268,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`[API] Parameters validated, starting screenshot capture...`);
 
-    // Capture screenshot
-    const result = await captureScreenshot(url, viewport, platform);
+    // Capture screenshot - pass business context for Google search bypass
+    const result = await captureScreenshot(url, viewport, platform, businessName, businessLocation);
 
     const totalTime = Date.now() - startTime;
     console.log(`[API] Total request time: ${totalTime}ms`);
