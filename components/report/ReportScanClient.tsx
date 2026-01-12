@@ -237,16 +237,49 @@ export default function ReportScanClient({
     }
   };
 
-  const handlePrevious = () => {
-    if (currentStep > 0) {
-      setCurrentStep((prev) => prev - 1);
+  // Timer state for progress tracking
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const ESTIMATED_TOTAL_SECONDS = 60; // Estimated total scan time in seconds
+  
+  // Start timer on mount
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, []);
+  
+  // Calculate remaining time based on progress
+  const getSecondsRemaining = () => {
+    // Calculate progress as a percentage (0 to 1)
+    const stageWeights = [0.15, 0.25, 0.20, 0.20, 0.20]; // Weight per stage
+    let progress = 0;
+    for (let i = 0; i < currentStep; i++) {
+      progress += stageWeights[i];
     }
+    // Add partial progress for current stage based on time
+    const avgStageTime = ESTIMATED_TOTAL_SECONDS / 5;
+    const timeInCurrentStage = elapsedSeconds - (currentStep * avgStageTime);
+    const currentStageProgress = Math.min(timeInCurrentStage / avgStageTime, 0.9) * stageWeights[currentStep];
+    progress += currentStageProgress;
+    
+    // Estimate remaining time
+    const estimatedRemaining = Math.max(0, Math.round(ESTIMATED_TOTAL_SECONDS * (1 - progress)));
+    return estimatedRemaining;
   };
-
-  const handleStepClick = (stepId: number) => {
-    setCurrentStep(stepId);
+  
+  // Calculate progress percentage for the progress bar
+  const getProgressPercentage = () => {
+    const stageWeights = [0.15, 0.25, 0.20, 0.20, 0.20];
+    let progress = 0;
+    for (let i = 0; i < currentStep; i++) {
+      progress += stageWeights[i];
+    }
+    // Add some progress within current stage
+    progress += stageWeights[currentStep] * 0.5 * Math.min(elapsedSeconds / 10, 1);
+    return Math.min(progress * 100, 99); // Cap at 99% until complete
   };
-
 
   // Build step list
   const steps = [
@@ -283,11 +316,10 @@ export default function ReportScanClient({
             {steps.map((step) => (
               <li
                 key={step.id}
-                onClick={() => handleStepClick(step.id)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors cursor-pointer ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                   step.id === currentStep
                     ? "bg-blue-50"
-                    : "hover:bg-gray-50"
+                    : ""
                 }`}
               >
                 <div className="flex-shrink-0">{getStepIcon(step.id)}</div>
@@ -307,34 +339,23 @@ export default function ReportScanClient({
           </ul>
         </div>
 
-        {/* Navigation controls */}
+        {/* Progress indicator */}
         <div className="p-4 border-t border-gray-200">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              onClick={handlePrevious}
-              disabled={currentStep === 0}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                currentStep === 0
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-              }`}
-            >
-              Previous
-            </button>
-            <span className="text-xs text-gray-500">
-              Step {currentStep + 1} of 5
-            </span>
-            <button
-              onClick={handleNext}
-              disabled={currentStep === 4}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                currentStep === 4
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-blue-600 text-white hover:bg-blue-700"
-              }`}
-            >
-              Next
-            </button>
+          {/* Progress bar */}
+          <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden mb-3">
+            <div 
+              className="h-full bg-blue-600 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${getProgressPercentage()}%` }}
+            />
+          </div>
+          
+          {/* Running status */}
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-4 h-4 text-gray-500 animate-spin" />
+            <div className="flex flex-col">
+              <span className="text-sm font-medium text-gray-700">Running...</span>
+              <span className="text-xs text-gray-500">{getSecondsRemaining()} seconds remaining</span>
+            </div>
           </div>
         </div>
       </div>
