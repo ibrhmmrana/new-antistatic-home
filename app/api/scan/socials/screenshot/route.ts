@@ -1744,35 +1744,87 @@ async function captureScreenshot(
                              loginResult.error?.includes('page is empty');
             
             if (isBlocked) {
-              console.log(`[SCREENSHOT] Instagram appears to be blocking automation - trying direct profile navigation without login`);
+              console.log(`[SCREENSHOT] Instagram appears to be blocking automation - trying Google search bypass`);
               
-              // Try navigating directly to profile - sometimes Instagram shows limited content without login
+              // Extract username from URL for Google search
+              const usernameMatch = normalizedUrl.match(/instagram\.com\/([^\/\?]+)/);
+              const username = usernameMatch ? usernameMatch[1] : null;
+              
+              if (!username) {
+                console.log(`[SCREENSHOT] Could not extract username from URL: ${normalizedUrl}`);
+                return {
+                  success: false,
+                  error: `Instagram is blocking automation and could not extract username. ${loginResult.error}`,
+                  screenshot: loginResult.debugScreenshot
+                };
+              }
+              
+              console.log(`[SCREENSHOT] Extracted username: ${username}`);
+              console.log(`[SCREENSHOT] Navigating to Google to search for Instagram profile...`);
+              
               try {
-                await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-                await page.waitForTimeout(3000);
+                // Navigate to Google and search for the Instagram profile
+                const searchQuery = encodeURIComponent(`site:instagram.com "${username}"`);
+                await page.goto(`https://www.google.com/search?q=${searchQuery}`, { 
+                  waitUntil: 'domcontentloaded', 
+                  timeout: 15000 
+                });
+                await page.waitForTimeout(2000);
+                
+                console.log(`[SCREENSHOT] Google search completed, looking for Instagram result...`);
+                
+                // Try to dismiss "Before you continue" popup on Google
+                try {
+                  const notNowButton = await page.$('button:has-text("Not now"), g-raised-button:has-text("Not now"), [role="button"]:has-text("Not now")');
+                  if (notNowButton) {
+                    console.log(`[SCREENSHOT] Dismissing Google popup...`);
+                    await notNowButton.click();
+                    await page.waitForTimeout(1000);
+                  }
+                } catch (popupErr) {
+                  // Ignore popup dismissal errors
+                }
+                
+                // Find and click the first Instagram result
+                const instagramLink = await page.$(`a[href*="instagram.com/${username}"]`);
+                if (!instagramLink) {
+                  console.log(`[SCREENSHOT] No Instagram link found in Google results`);
+                  return {
+                    success: false,
+                    error: `Instagram is blocking automation. Could not find profile via Google search.`,
+                    screenshot: await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined)
+                  };
+                }
+                
+                console.log(`[SCREENSHOT] Found Instagram link in Google results, clicking...`);
+                await instagramLink.click();
+                await page.waitForTimeout(5000); // Wait for Instagram to load
                 
                 const fallbackUrl = page.url();
                 const fallbackState = classifyInstagramPageState(fallbackUrl);
-                console.log(`[SCREENSHOT] Fallback navigation - URL: ${fallbackUrl}, State: ${fallbackState}`);
+                console.log(`[SCREENSHOT] After Google bypass - URL: ${fallbackUrl}, State: ${fallbackState}`);
                 
-                // If we're on profile or unknown (might have some content), try to screenshot
+                // If we reached the profile or unknown state, continue
                 if (fallbackState === 'PROFILE' || fallbackState === 'UNKNOWN') {
-                  console.log(`[SCREENSHOT] ⚠️ Proceeding with unauthenticated screenshot (may show limited content)`);
-                  // Continue with screenshot attempt below
+                  console.log(`[SCREENSHOT] ✅ Google bypass successful! Proceeding with screenshot...`);
                   pageState = fallbackState;
+                  
+                  // Remove Instagram overlays that appear after Google navigation
+                  await removeInstagramOverlaysViaGoogle(page);
                 } else {
                   // Still on login/challenge - can't proceed
+                  console.log(`[SCREENSHOT] Google bypass failed - still on ${fallbackState}`);
                   return {
                     success: false,
-                    error: `Instagram is blocking automation. Login page is empty. ${loginResult.error}`,
-                    screenshot: loginResult.debugScreenshot
+                    error: `Instagram is blocking automation even via Google. State: ${fallbackState}`,
+                    screenshot: await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined)
                   };
                 }
-              } catch (navError) {
-                console.log(`[SCREENSHOT] Fallback navigation also failed: ${navError}`);
+              } catch (googleErr) {
+                console.log(`[SCREENSHOT] Google bypass failed: ${googleErr}`);
                 return {
                   success: false,
-                  error: `Instagram is blocking automation. Login page is empty. ${loginResult.error}`,
+                  error: `Instagram is blocking automation. Google bypass also failed. ${loginResult.error}`,
                   screenshot: loginResult.debugScreenshot
                 };
               }
