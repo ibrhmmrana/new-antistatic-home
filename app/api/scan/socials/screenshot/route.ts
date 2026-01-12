@@ -686,24 +686,59 @@ async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promi
       console.log(`[SCREENSHOT] ⚠️ Unexpected state ${currentState}, attempting login anyway`);
     }
     
-    // Wait for inputs to be visible and ready - try multiple selector strategies
+    // Debug: Check if ANY inputs exist on the page
+    const allInputs = await page.locator('input').count();
+    const allButtons = await page.locator('button').count();
+    const allClickableDivs = await page.locator('div[role="button"]').count();
+    console.log(`[SCREENSHOT] Page element counts: ${allInputs} inputs, ${allButtons} buttons, ${allClickableDivs} clickable divs`);
+    
+    if (allInputs === 0) {
+      // No inputs at all - Instagram might be blocking or page structure changed
+      const pageContent = await page.content().catch(() => '');
+      const bodyText = await page.locator('body').textContent().catch(() => '');
+      console.log(`[SCREENSHOT] ⚠️ No inputs found on page. Body text length: ${bodyText.length}, HTML length: ${pageContent.length}`);
+      
+      // Wait a bit more in case it's still loading
+      await page.waitForTimeout(3000);
+      const inputsAfterWait = await page.locator('input').count();
+      console.log(`[SCREENSHOT] Inputs after additional wait: ${inputsAfterWait}`);
+      
+      if (inputsAfterWait === 0) {
+        throw new Error('Instagram login page has no input fields - page may be blocked or structure changed');
+      }
+    }
+    
+    // Wait for inputs to be visible and ready - try multiple selector strategies with short timeouts
     console.log(`[SCREENSHOT] Waiting for username input...`);
-    let usernameInput = page.locator('input[name="username"]').first();
+    let usernameInput: ReturnType<typeof page.locator> | null = null;
+    let usernameFound = false;
     
-    // Try alternative selectors if primary fails
-    if (await usernameInput.count() === 0) {
-      console.log(`[SCREENSHOT] Primary username selector not found, trying alternatives...`);
-      usernameInput = page.locator('input[type="text"][aria-label*="username" i], input[type="text"][aria-label*="phone" i], input[type="text"][aria-label*="email" i]').first();
-    }
-    if (await usernameInput.count() === 0) {
-      usernameInput = page.locator('input[autocomplete="username"], input[placeholder*="username" i], input[placeholder*="phone" i]').first();
-    }
-    if (await usernameInput.count() === 0) {
-      // Last resort: any text input that might be username
-      usernameInput = page.locator('input[type="text"]').first();
+    // Try each selector strategy with a short timeout
+    const usernameSelectors = [
+      'input[name="username"]',
+      'input[type="text"][aria-label*="username" i], input[type="text"][aria-label*="phone" i], input[type="text"][aria-label*="email" i]',
+      'input[autocomplete="username"], input[placeholder*="username" i], input[placeholder*="phone" i]',
+      'input[type="text"]',
+    ];
+    
+    for (const selector of usernameSelectors) {
+      try {
+        const locator = page.locator(selector).first();
+        await locator.waitFor({ state: 'visible', timeout: 5000 });
+        usernameInput = locator;
+        usernameFound = true;
+        console.log(`[SCREENSHOT] ✅ Found username input with selector: ${selector}`);
+        break;
+      } catch (e) {
+        console.log(`[SCREENSHOT] Username selector failed: ${selector}`);
+        continue;
+      }
     }
     
-    await usernameInput.waitFor({ state: 'visible', timeout: 15000 });
+    if (!usernameFound || !usernameInput) {
+      throw new Error('Could not find username input field with any selector strategy');
+    }
+    
     await usernameInput.click(); // Click to focus
     await page.waitForTimeout(300);
     await usernameInput.fill(username);
@@ -712,20 +747,35 @@ async function handleInstagramLogin(page: Page, targetProfileUrl: string): Promi
     // Small delay between fields (human-like)
     await page.waitForTimeout(500);
     
-    // Fill password - try multiple selector strategies
+    // Fill password - try multiple selector strategies with short timeouts
     console.log(`[SCREENSHOT] Waiting for password input...`);
-    let passwordInput = page.locator('input[name="password"]').first();
+    let passwordInput: ReturnType<typeof page.locator> | null = null;
+    let passwordFound = false;
     
-    // Try alternative selectors if primary fails
-    if (await passwordInput.count() === 0) {
-      console.log(`[SCREENSHOT] Primary password selector not found, trying alternatives...`);
-      passwordInput = page.locator('input[type="password"]').first();
-    }
-    if (await passwordInput.count() === 0) {
-      passwordInput = page.locator('input[autocomplete="current-password"], input[aria-label*="password" i]').first();
+    const passwordSelectors = [
+      'input[name="password"]',
+      'input[type="password"]',
+      'input[autocomplete="current-password"], input[aria-label*="password" i]',
+    ];
+    
+    for (const selector of passwordSelectors) {
+      try {
+        const locator = page.locator(selector).first();
+        await locator.waitFor({ state: 'visible', timeout: 5000 });
+        passwordInput = locator;
+        passwordFound = true;
+        console.log(`[SCREENSHOT] ✅ Found password input with selector: ${selector}`);
+        break;
+      } catch (e) {
+        console.log(`[SCREENSHOT] Password selector failed: ${selector}`);
+        continue;
+      }
     }
     
-    await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
+    if (!passwordFound || !passwordInput) {
+      throw new Error('Could not find password input field with any selector strategy');
+    }
+    
     await passwordInput.click(); // Click to focus
     await page.waitForTimeout(300);
     await passwordInput.fill(password);
