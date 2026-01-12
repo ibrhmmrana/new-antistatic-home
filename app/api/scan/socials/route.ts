@@ -1130,6 +1130,330 @@ function cleanAndDeduplicateSocialLinks(
  * @param url - The URL to analyze
  * @returns The platform name (e.g., 'instagram', 'facebook') or null if not a recognized platform
  */
+// ============================================================================
+// Google Custom Search API Integration
+// ============================================================================
+
+type SocialPlatform = 'facebook' | 'instagram';
+type SocialLink = { platform: SocialPlatform; url: string };
+type GoogleCseItem = { 
+  link?: string; 
+  title?: string; 
+  snippet?: string; 
+  displayLink?: string;
+};
+type GoogleCseResponse = { 
+  items?: GoogleCseItem[];
+  error?: { message?: string; code?: number };
+};
+
+/**
+ * Performs a Google Custom Search API query.
+ * 
+ * @param query - The search query string
+ * @param num - Number of results to return (default: 5)
+ * @returns Promise resolving to array of search result items
+ */
+async function googleCseSearch(query: string, num: number = 5): Promise<GoogleCseItem[]> {
+  const apiKey = process.env.GOOGLE_CSE_API_KEY;
+  const cx = process.env.GOOGLE_CSE_CX;
+  
+  if (!apiKey || !cx) {
+    console.warn(`[SOCIAL EXTRACTOR] Google CSE API credentials not configured (GOOGLE_CSE_API_KEY or GOOGLE_CSE_CX missing). Skipping API search.`);
+    return [];
+  }
+  
+  const url = new URL('https://www.googleapis.com/customsearch/v1');
+  url.searchParams.set('key', apiKey);
+  url.searchParams.set('cx', cx);
+  url.searchParams.set('q', query);
+  url.searchParams.set('num', num.toString());
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    
+    const response = await fetch(url.toString(), {
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      const snippet = errorText.length > 300 ? errorText.substring(0, 300) + '...' : errorText;
+      console.error(`[SOCIAL EXTRACTOR] Google CSE API error ${response.status}: ${snippet}`);
+      return [];
+    }
+    
+    const data: GoogleCseResponse = await response.json();
+    
+    if (data.error) {
+      console.error(`[SOCIAL EXTRACTOR] Google CSE API error: ${data.error.message || 'Unknown error'}`);
+      return [];
+    }
+    
+    return data.items || [];
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error(`[SOCIAL EXTRACTOR] Google CSE API request timeout`);
+    } else {
+      console.error(`[SOCIAL EXTRACTOR] Google CSE API request failed:`, error);
+    }
+    return [];
+  }
+}
+
+/**
+ * Normalizes and validates a Facebook URL.
+ * Returns null if the URL should be rejected (not a profile/page).
+ */
+function normalizeFacebookUrl(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    
+    // Convert m.facebook.com to www.facebook.com
+    if (urlObj.hostname === 'm.facebook.com') {
+      urlObj.hostname = 'www.facebook.com';
+    }
+    
+    // Remove query string and fragments
+    urlObj.search = '';
+    urlObj.hash = '';
+    
+    const pathname = urlObj.pathname.toLowerCase();
+    
+    // Reject non-profile URLs
+    const rejectedPatterns = [
+      '/groups/',
+      '/photo.php',
+      '/posts/',
+      '/reel/',
+      '/watch/',
+      '/events/',
+      '/marketplace/',
+      '/share/',
+    ];
+    
+    for (const pattern of rejectedPatterns) {
+      if (pathname.includes(pattern)) {
+        return null;
+      }
+    }
+    
+    // Reject if it has fbid in query (photo/post links)
+    if (url.toLowerCase().includes('fbid=')) {
+      return null;
+    }
+    
+    // Clean up the URL
+    let cleanUrl = urlObj.toString();
+    
+    // Ensure it ends with / for consistency (unless it's a /page/ URL)
+    if (!cleanUrl.endsWith('/') && !cleanUrl.includes('/page/')) {
+      cleanUrl += '/';
+    }
+    
+    return cleanUrl;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Normalizes and validates an Instagram URL.
+ * Returns null if the URL should be rejected (not a profile).
+ */
+function normalizeInstagramUrl(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    
+    // Ensure it's an Instagram URL
+    if (!urlObj.hostname.includes('instagram.com')) {
+      return null;
+    }
+    
+    // Remove query string and fragments
+    urlObj.search = '';
+    urlObj.hash = '';
+    
+    const pathname = urlObj.pathname.toLowerCase();
+    
+    // Reject non-profile URLs
+    const rejectedPatterns = [
+      '/p/',
+      '/reel/',
+      '/tv/',
+      '/explore/',
+      '/accounts/',
+      '/stories/',
+      '/direct/',
+    ];
+    
+    for (const pattern of rejectedPatterns) {
+      if (pathname.includes(pattern)) {
+        return null;
+      }
+    }
+    
+    // Clean up the URL - remove trailing slash
+    let cleanUrl = urlObj.toString();
+    cleanUrl = cleanUrl.replace(/\/$/, '');
+    
+    return cleanUrl;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Scores a search result item to determine if it's a good match for the business.
+ * Higher score = better match.
+ */
+function scoreSearchResult(
+  item: GoogleCseItem,
+  businessName: string,
+  platform: SocialPlatform
+): number {
+  let score = 0;
+  const businessNameLower = businessName.toLowerCase();
+  
+  // Check displayLink matches platform domain
+  const displayLink = (item.displayLink || '').toLowerCase();
+  if (platform === 'facebook' && displayLink.includes('facebook.com')) {
+    score += 3;
+  } else if (platform === 'instagram' && displayLink.includes('instagram.com')) {
+    score += 3;
+  }
+  
+  // Check if title or snippet contains business name
+  const title = (item.title || '').toLowerCase();
+  const snippet = (item.snippet || '').toLowerCase();
+  if (title.includes(businessNameLower) || snippet.includes(businessNameLower)) {
+    score += 2;
+  }
+  
+  // Check if URL path looks like a clean profile (single segment)
+  const link = item.link || '';
+  try {
+    const url = new URL(link);
+    const pathSegments = url.pathname.split('/').filter(s => s.length > 0);
+    if (pathSegments.length <= 2) { // e.g., /username or /username/
+      score += 1;
+    }
+  } catch {
+    // Invalid URL, no bonus
+  }
+  
+  return score;
+}
+
+/**
+ * Extracts social media links using Google Custom Search API.
+ * 
+ * This approach avoids CAPTCHAs by using Google's official API instead of scraping.
+ * 
+ * @param businessName - The name of the business
+ * @param address - The full address of the business
+ * @returns Promise resolving to an object with social media links
+ */
+async function extractSocialLinksViaGoogleCse(
+  businessName: string,
+  address: string
+): Promise<{ socialLinks: SocialLink[] }> {
+  const apiKey = process.env.GOOGLE_CSE_API_KEY;
+  const cx = process.env.GOOGLE_CSE_CX;
+  
+  if (!apiKey || !cx) {
+    console.log(`[SOCIAL EXTRACTOR] Google CSE API not configured, skipping API search`);
+    return { socialLinks: [] };
+  }
+  
+  console.log(`[SOCIAL EXTRACTOR] Using Google CSE API to search for social profiles`);
+  
+  const socialLinks: SocialLink[] = [];
+  const seenUrls = new Set<string>();
+  
+  // Build search queries for each platform
+  const searchQueries = {
+    facebook: [
+      `facebook ${businessName} ${address}`,
+      `site:facebook.com ${businessName} ${address}`,
+    ],
+    instagram: [
+      `instagram ${businessName} ${address}`,
+      `site:instagram.com ${businessName} ${address}`,
+    ],
+  };
+  
+  // Search for Facebook profiles
+  const facebookCandidates: Array<{ url: string; score: number }> = [];
+  for (const query of searchQueries.facebook) {
+    console.log(`[SOCIAL EXTRACTOR] Searching Facebook: "${query}"`);
+    const items = await googleCseSearch(query, 5);
+    
+    for (const item of items) {
+      if (!item.link) continue;
+      
+      const normalized = normalizeFacebookUrl(item.link);
+      if (!normalized || seenUrls.has(normalized)) continue;
+      
+      seenUrls.add(normalized);
+      const score = scoreSearchResult(item, businessName, 'facebook');
+      facebookCandidates.push({ url: normalized, score });
+      console.log(`[SOCIAL EXTRACTOR] Facebook candidate: ${normalized} (score: ${score})`);
+    }
+    
+    // Small delay between queries to be respectful
+    await randomDelay(200, 400);
+  }
+  
+  // Search for Instagram profiles
+  const instagramCandidates: Array<{ url: string; score: number }> = [];
+  for (const query of searchQueries.instagram) {
+    console.log(`[SOCIAL EXTRACTOR] Searching Instagram: "${query}"`);
+    const items = await googleCseSearch(query, 5);
+    
+    for (const item of items) {
+      if (!item.link) continue;
+      
+      const normalized = normalizeInstagramUrl(item.link);
+      if (!normalized || seenUrls.has(normalized)) continue;
+      
+      seenUrls.add(normalized);
+      const score = scoreSearchResult(item, businessName, 'instagram');
+      instagramCandidates.push({ url: normalized, score });
+      console.log(`[SOCIAL EXTRACTOR] Instagram candidate: ${normalized} (score: ${score})`);
+    }
+    
+    // Small delay between queries
+    await randomDelay(200, 400);
+  }
+  
+  // Select best candidate for each platform (highest score)
+  if (facebookCandidates.length > 0) {
+    const bestFacebook = facebookCandidates.reduce((best, current) => 
+      current.score > best.score ? current : best
+    );
+    socialLinks.push({ platform: 'facebook', url: bestFacebook.url });
+    console.log(`[SOCIAL EXTRACTOR] Selected Facebook: ${bestFacebook.url} (score: ${bestFacebook.score})`);
+  }
+  
+  if (instagramCandidates.length > 0) {
+    const bestInstagram = instagramCandidates.reduce((best, current) => 
+      current.score > best.score ? current : best
+    );
+    socialLinks.push({ platform: 'instagram', url: bestInstagram.url });
+    console.log(`[SOCIAL EXTRACTOR] Selected Instagram: ${bestInstagram.url} (score: ${bestInstagram.score})`);
+  }
+  
+  console.log(`[SOCIAL EXTRACTOR] Google CSE API found ${socialLinks.length} social links`);
+  return { socialLinks };
+}
+
 function extractPlatformFromUrl(url: string): string | null {
   const urlLower = url.toLowerCase();
 
@@ -1195,24 +1519,24 @@ export async function POST(request: NextRequest) {
 
     // Create the scraper execution promise
     const scraperPromise = (async () => {
-      // APPROACH 1: Try to extract social links from Google Business Profile (GBP)
-      // APPROACH 2: Fall back to scraping the business website directly if GBP fails
+      // APPROACH 1: Use Google Custom Search API (official, no CAPTCHAs)
+      // APPROACH 2: Fall back to scraping the business website directly if API returns nothing
       
-      console.log(`[API] Extracting social links from GBP for: "${businessName}" at "${address}"`);
+      console.log(`[API] Extracting social links for: "${businessName}" at "${address}"`);
       
-      // Extract social links and website URL from Google Business Profile
-      const gbpResult = await extractSocialLinksFromGBP(businessName, address);
-      let socialLinks = cleanAndDeduplicateSocialLinks(gbpResult.socialLinks);
-      console.log(`[API] Found ${socialLinks.length} social links from GBP`);
+      // Try Google Custom Search API first (avoids CAPTCHAs)
+      const cseResult = await extractSocialLinksViaGoogleCse(businessName, address);
+      let socialLinks = cleanAndDeduplicateSocialLinks(cseResult.socialLinks);
+      console.log(`[API] Found ${socialLinks.length} social links from Google CSE API`);
       
-      // Use website URL from GBP if found, otherwise fall back to provided URL
-      const websiteUrlToUse = gbpResult.websiteUrl || providedWebsiteUrl || null;
-      console.log(`[API] Website URL: ${websiteUrlToUse || 'none'} (GBP: ${gbpResult.websiteUrl || 'none'}, provided: ${providedWebsiteUrl || 'none'})`);
+      // Use provided website URL (we don't get it from CSE API)
+      const websiteUrlToUse = providedWebsiteUrl || null;
+      console.log(`[API] Website URL: ${websiteUrlToUse || 'none'} (provided: ${providedWebsiteUrl || 'none'})`);
       
-      // FALLBACK: If GBP returned no social links and we have a website URL, try scraping the website directly
-      // This bypasses Google entirely and avoids CAPTCHA issues
+      // FALLBACK: If API returned no social links and we have a website URL, try scraping the website directly
+      // This provides a backup method if the API doesn't find the profiles
       if (socialLinks.length === 0 && websiteUrlToUse) {
-        console.log(`[API] GBP returned no social links. Falling back to website scraping: ${websiteUrlToUse}`);
+        console.log(`[API] Google CSE API returned no social links. Falling back to website scraping: ${websiteUrlToUse}`);
         try {
           const websiteLinks = await extractSocialLinksFromWebsite(websiteUrlToUse);
           socialLinks = cleanAndDeduplicateSocialLinks(websiteLinks);
