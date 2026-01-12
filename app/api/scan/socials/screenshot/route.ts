@@ -180,39 +180,29 @@ async function dismissSocialMediaPopups(page: Page, platform: string): Promise<v
     }
   }
 
-  // Also try pressing Escape key for modals
-  try {
-    const dialog = page.locator('[role="dialog"]').first();
-    const dialogVisible = await dialog.isVisible({ timeout: 1000 }).catch(() => false);
-    
-    if (dialogVisible) {
-      console.log(`[SCREENSHOT] Found dialog, pressing Escape key`);
-      await page.keyboard.press('Escape');
-      await page.waitForTimeout(500);
-    }
-  } catch {
-    // No dialog found or error, continue
-  }
-
+  // NOTE: Do NOT press Escape key for Instagram - it causes navigation back to login page
+  // For dialogs, we rely on clicking the close buttons instead
+  
   // Wait a bit for popup animations to complete
   await page.waitForTimeout(1000);
   
   // Verify popup is gone by checking if close button still exists (platform-specific)
+  // If still visible, try clicking the close button again (not Escape key)
   try {
-    let closeButtonStillVisible = false;
+    let closeButton = null;
     
     if (platform === 'instagram') {
-      closeButtonStillVisible = await page.locator('div[role="button"] svg[aria-label="Close"]').first().isVisible({ timeout: 500 }).catch(() => false);
+      closeButton = page.locator('div[role="button"] svg[aria-label="Close"]').first();
     } else if (platform === 'facebook') {
-      closeButtonStillVisible = await page.locator('div[role="button"][aria-label="Close"]').first().isVisible({ timeout: 500 }).catch(() => false);
+      closeButton = page.locator('div[role="button"][aria-label="Close"]').first();
     } else {
       // Generic check
-      closeButtonStillVisible = await page.locator('[aria-label="Close"]').first().isVisible({ timeout: 500 }).catch(() => false);
+      closeButton = page.locator('[aria-label="Close"]').first();
     }
     
-    if (closeButtonStillVisible) {
-      console.log(`[SCREENSHOT] Popup still visible, trying Escape key again`);
-      await page.keyboard.press('Escape');
+    if (closeButton && await closeButton.isVisible({ timeout: 500 }).catch(() => false)) {
+      console.log(`[SCREENSHOT] Popup still visible, clicking close button again`);
+      await closeButton.click().catch(() => {});
       await page.waitForTimeout(1000);
     }
   } catch {
@@ -1259,14 +1249,8 @@ async function restoreInstagramScrollability(page: Page): Promise<void> {
 async function neutralizeInstagramOverlays(page: Page): Promise<void> {
   console.log(`[SCREENSHOT] Neutralizing Instagram overlays...`);
   
-  // First, try pressing Escape to close any modal
-  try {
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(300);
-    console.log(`[SCREENSHOT] Pressed Escape to close modals`);
-  } catch (e) {
-    console.log(`[SCREENSHOT] Escape key failed, continuing`);
-  }
+  // NOTE: Do NOT press Escape key here - Instagram interprets it as "go back"
+  // and navigates away from the profile page back to login
   
   // Try clicking close buttons if present - wrapped in try-catch for navigation safety
   try {
