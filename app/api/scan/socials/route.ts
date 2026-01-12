@@ -1547,61 +1547,53 @@ export async function POST(request: NextRequest) {
         }
       }
 
-    // Now capture screenshots in parallel after links are extracted
-    const screenshotPromises: Promise<{ platform: string; url: string; screenshot: string | null; status: 'success' | 'error' } | { websiteScreenshot: string | null }>[] = [];
-    
-    // Log what screenshots we're going to capture
-    console.log(`[API] Preparing to capture screenshots for ${socialLinks.length} social links + ${websiteUrlToUse ? '1 website' : '0 websites'}`);
-    
-    // Capture mobile screenshots for social media links
-    for (const link of socialLinks) {
-      console.log(`[API] Queuing screenshot for ${link.platform}: ${link.url}`);
-      screenshotPromises.push(
-        captureSocialScreenshot(link.platform, link.url, 'mobile')
-      );
-    }
-
-    // Capture website screenshot (desktop) if website URL exists
-    if (websiteUrlToUse) {
-      console.log(`[API] Queuing website screenshot for: ${websiteUrlToUse}`);
-      screenshotPromises.push(
-        captureSocialScreenshot('website', websiteUrlToUse, 'desktop')
-      );
-    }
-
-    console.log(`[API] Starting ${screenshotPromises.length} screenshot captures in parallel...`);
+    // Capture screenshots SEQUENTIALLY to avoid ETXTBSY error
+    // (Multiple parallel Chromium launches conflict over /tmp/chromium binary)
     const screenshotStartTime = Date.now();
-    
-    // Execute all screenshot captures in parallel
-    const screenshotResults = await Promise.allSettled(screenshotPromises);
-    
-    const screenshotElapsed = Date.now() - screenshotStartTime;
-    console.log(`[API] All ${screenshotPromises.length} screenshot captures completed in ${screenshotElapsed}ms`);
-
-    // Process screenshot results
     const socialScreenshots: Array<{ platform: string; url: string; screenshot: string | null; status: 'success' | 'error' }> = [];
     let websiteScreenshot: string | null = null;
-
-    console.log(`[API] Processing ${screenshotResults.length} screenshot results...`);
-    for (let i = 0; i < screenshotResults.length; i++) {
-      const settledResult = screenshotResults[i];
-      console.log(`[API] Result ${i + 1}: status=${settledResult.status}`);
-      
-      if (settledResult.status === 'fulfilled') {
-        const result = settledResult.value;
+    
+    const totalScreenshots = socialLinks.length + (websiteUrlToUse ? 1 : 0);
+    console.log(`[API] Preparing to capture ${totalScreenshots} screenshots sequentially (${socialLinks.length} social + ${websiteUrlToUse ? '1 website' : '0 websites'})`);
+    
+    // Capture social media screenshots one at a time
+    for (const link of socialLinks) {
+      console.log(`[API] Capturing screenshot for ${link.platform}: ${link.url}`);
+      try {
+        const result = await captureSocialScreenshot(link.platform, link.url, 'mobile');
         if ('platform' in result) {
-          // Social media screenshot
           console.log(`[API] Social screenshot for ${result.platform}: hasScreenshot=${!!result.screenshot}, status=${result.status}`);
           socialScreenshots.push(result);
-        } else if ('websiteScreenshot' in result) {
-          // Website screenshot
+        }
+      } catch (error) {
+        console.error(`[API] Screenshot capture for ${link.platform} FAILED:`, error);
+        socialScreenshots.push({
+          platform: link.platform,
+          url: link.url,
+          screenshot: null,
+          status: 'error',
+        });
+      }
+      // Small delay between captures to ensure Chromium binary is released
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // Capture website screenshot
+    if (websiteUrlToUse) {
+      console.log(`[API] Capturing website screenshot for: ${websiteUrlToUse}`);
+      try {
+        const result = await captureSocialScreenshot('website', websiteUrlToUse, 'desktop');
+        if ('websiteScreenshot' in result) {
           console.log(`[API] Website screenshot: hasScreenshot=${!!result.websiteScreenshot}`);
           websiteScreenshot = result.websiteScreenshot;
         }
-      } else {
-        console.error(`[API] Screenshot capture ${i + 1} REJECTED:`, settledResult.reason);
+      } catch (error) {
+        console.error(`[API] Website screenshot capture FAILED:`, error);
       }
     }
+    
+    const screenshotElapsed = Date.now() - screenshotStartTime;
+    console.log(`[API] All ${totalScreenshots} screenshot captures completed in ${screenshotElapsed}ms`);
 
       // Return complete results with screenshots
       const result = {
