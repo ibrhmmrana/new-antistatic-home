@@ -31,3 +31,4 @@ Since this is a public key (exposed to the browser), make sure to:
 - Restrict the API key to your domain in Google Cloud Console
 - Set up API key restrictions to only allow Maps JavaScript API and Places API
 
+

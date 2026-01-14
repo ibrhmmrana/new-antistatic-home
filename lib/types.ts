@@ -14,3 +14,4 @@ export interface SelectedPlace {
   secondary_text: string;
 }
 
+

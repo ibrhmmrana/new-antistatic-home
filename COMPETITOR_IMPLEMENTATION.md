@@ -142,3 +142,4 @@ if (currentZoom && currentZoom < 12) { // Minimum zoom
 - All competitor detection logic is server-side (keeps API keys safe)
 - Fallback search only triggers if insufficient results at 10km radius
 
+

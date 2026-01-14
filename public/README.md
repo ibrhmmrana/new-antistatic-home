@@ -52,3 +52,4 @@ Place icons in `public/icons/` and reference them:
 - Use Next.js `Image` component for optimized images
 - For fonts, prefer `next/font/local` for better performance
 
+

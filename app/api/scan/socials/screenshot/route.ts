@@ -1995,7 +1995,7 @@ async function captureScreenshot(
           await logPageElements(page, `Session auth successful - PROFILE state`);
           // Skip login handling entirely, proceed to screenshot preparation below
         }
-        // If on CHALLENGE page, session may be flagged - return error
+        // If on CHALLENGE page, try to dismiss and fall back to CSE bypass
         else if (pageState === 'CHALLENGE') {
           console.log(`[SCREENSHOT] ❌ CHALLENGE page detected - session may be flagged`);
           await logPageElements(page, `Session auth failed - CHALLENGE state`);
@@ -2004,12 +2004,249 @@ async function captureScreenshot(
             console.log(`[SCREENSHOT] ⚠️ Session cookies were injected but got CHALLENGE - session may be invalid`);
           }
           
-          const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
-          return {
-            success: false,
-            error: `Instagram challenge/verification required. Session may be invalid or flagged.`,
-            screenshot: debugScreenshot
-          };
+          // Try to dismiss the challenge if a dismiss button is available
+          console.log(`[SCREENSHOT] 🔄 Attempting to dismiss challenge...`);
+          try {
+            const dismissButton = page.locator('div[role="button"][aria-label="Dismiss"], button[aria-label="Dismiss"], [aria-label*="Dismiss" i]').first();
+            const isVisible = await dismissButton.isVisible({ timeout: 3000 }).catch(() => false);
+            
+            if (isVisible) {
+              console.log(`[SCREENSHOT] Found dismiss button, clicking...`);
+              await dismissButton.click({ timeout: 5000 });
+              await page.waitForTimeout(2000);
+              
+              // Re-check page state after dismissing
+              const afterDismissUrl = page.url();
+              const afterDismissState = classifyInstagramPageState(afterDismissUrl);
+              console.log(`[SCREENSHOT] After dismiss - URL: ${afterDismissUrl}, State: ${afterDismissState}`);
+              
+              if (afterDismissState === 'PROFILE') {
+                console.log(`[SCREENSHOT] ✅ Challenge dismissed successfully - on profile page`);
+                pageState = 'PROFILE';
+                // Continue to screenshot preparation below
+              } else if (afterDismissState === 'LOGIN') {
+                console.log(`[SCREENSHOT] After dismiss, redirected to LOGIN - will try CSE bypass`);
+                pageState = 'LOGIN';
+                // Fall through to CSE bypass logic below
+              } else {
+                console.log(`[SCREENSHOT] After dismiss, still on ${afterDismissState} - will try CSE bypass`);
+                pageState = afterDismissState;
+                // Fall through to CSE bypass logic below
+              }
+            } else {
+              console.log(`[SCREENSHOT] No dismiss button found, will try CSE bypass`);
+              // Fall through to CSE bypass logic below
+            }
+          } catch (dismissError) {
+            console.log(`[SCREENSHOT] Failed to dismiss challenge: ${dismissError}, will try CSE bypass`);
+            // Fall through to CSE bypass logic below
+          }
+          
+          // If still on CHALLENGE or LOGIN after dismiss attempt, use CSE bypass
+          if (pageState === 'CHALLENGE' || pageState === 'LOGIN') {
+            console.log(`[SCREENSHOT] 🔄 Attempting Google CSE bypass as fallback...`);
+            
+            // Extract username from URL for Google search
+            const usernameMatch = normalizedUrl.match(/instagram\.com\/([^\/\?]+)/);
+            const username = usernameMatch ? usernameMatch[1] : null;
+            
+            if (!username) {
+              console.log(`[SCREENSHOT] Could not extract username from URL: ${normalizedUrl}`);
+              const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+              return {
+                success: false,
+                error: `Challenge detected and could not extract username for CSE bypass.`,
+                screenshot: debugScreenshot
+              };
+            }
+            
+            console.log(`[SCREENSHOT] Extracted username: ${username}`);
+            console.log(`[SCREENSHOT] Using Google CSE API to find Instagram profile...`);
+            
+            try {
+              // Use Google Custom Search Engine API instead of Playwright-based search
+              // This avoids CAPTCHAs and rate limiting from Google
+              const apiKey = process.env.GOOGLE_CSE_API_KEY;
+              const cx = process.env.GOOGLE_CSE_CX;
+              
+              if (!apiKey || !cx) {
+                console.log(`[SCREENSHOT] Google CSE API not configured (missing GOOGLE_CSE_API_KEY or GOOGLE_CSE_CX)`);
+                const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+                return {
+                  success: false,
+                  error: `Challenge detected and Google CSE API is not configured. Please configure GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX.`,
+                  screenshot: debugScreenshot
+                };
+              }
+              
+              // Build search query - use site restriction for accurate results
+              const searchQuery = `site:instagram.com "${username}"`;
+              console.log(`[SCREENSHOT] Google CSE search query: ${searchQuery}`);
+              
+              // Call Google CSE API
+              const cseUrl = new URL('https://www.googleapis.com/customsearch/v1');
+              cseUrl.searchParams.set('key', apiKey);
+              cseUrl.searchParams.set('cx', cx);
+              cseUrl.searchParams.set('q', searchQuery);
+              cseUrl.searchParams.set('num', '5');
+              
+              const cseResponse = await fetch(cseUrl.toString(), {
+                headers: { 'Accept': 'application/json' },
+              });
+              
+              if (!cseResponse.ok) {
+                const errorText = await cseResponse.text().catch(() => 'Unknown error');
+                console.log(`[SCREENSHOT] Google CSE API error ${cseResponse.status}: ${errorText.slice(0, 200)}`);
+                const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+                return {
+                  success: false,
+                  error: `Challenge detected and Google CSE API returned ${cseResponse.status}.`,
+                  screenshot: debugScreenshot
+                };
+              }
+              
+              const cseData = await cseResponse.json();
+              const cseItems = cseData.items || [];
+              console.log(`[SCREENSHOT] Google CSE returned ${cseItems.length} results`);
+              
+              // Find the best matching Instagram profile URL
+              let instagramProfileUrl: string | null = null;
+              for (const item of cseItems) {
+                const link = item.link || '';
+                // Check if it's a profile URL (not a post, reel, etc.)
+                if (link.includes('instagram.com/') && 
+                    !link.includes('/p/') && 
+                    !link.includes('/reel/') && 
+                    !link.includes('/stories/') &&
+                    !link.includes('/explore/') &&
+                    !link.includes('help.instagram.com')) {
+                  // Check if username matches
+                  const urlMatch = link.match(/instagram\.com\/([^\/\?]+)/);
+                  if (urlMatch && urlMatch[1].toLowerCase() === username.toLowerCase()) {
+                    instagramProfileUrl = link;
+                    console.log(`[SCREENSHOT] Found exact username match: ${link}`);
+                    break;
+                  }
+                }
+              }
+              
+              // If no exact match, try broader matching but still filter out non-profile URLs
+              if (!instagramProfileUrl) {
+                for (const item of cseItems) {
+                  const link = item.link || '';
+                  // Check if URL contains our username
+                  if (link.includes(`instagram.com/${username}`) || 
+                      link.toLowerCase().includes(`instagram.com/${username.toLowerCase()}`)) {
+                    
+                    // If it's a profile URL (not a post/reel), use it directly
+                    if (!link.includes('/p/') && 
+                        !link.includes('/reel/') && 
+                        !link.includes('/stories/') &&
+                        !link.includes('/explore/')) {
+                      instagramProfileUrl = link;
+                      console.log(`[SCREENSHOT] Found partial username match (profile URL): ${link}`);
+                      break;
+                    } else {
+                      // It's a post/reel URL - extract username and construct profile URL
+                      const urlMatch = link.match(/instagram\.com\/([^\/\?]+)/);
+                      if (urlMatch && urlMatch[1]) {
+                        const extractedUsername = urlMatch[1];
+                        instagramProfileUrl = `https://www.instagram.com/${extractedUsername}/`;
+                        console.log(`[SCREENSHOT] Found post/reel URL, extracted profile: ${instagramProfileUrl} (from: ${link})`);
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+              
+              // If still no match, check if ANY Instagram result contains our username and extract profile
+              // But SKIP special paths like /p/, /reel/, /stories/, /explore/, /accounts/, /tags/, etc.
+              if (!instagramProfileUrl) {
+                const specialPaths = ['p', 'reel', 'stories', 'explore', 'accounts', 'tags', 'about', 'directory', 'developer', 'help', 'legal', 'api'];
+                
+                for (const item of cseItems) {
+                  const link = item.link || '';
+                  // Try to extract username from any Instagram URL
+                  const urlMatch = link.match(/instagram\.com\/([^\/\?]+)/);
+                  if (urlMatch && urlMatch[1]) {
+                    const extractedSegment = urlMatch[1].toLowerCase();
+                    
+                    // Skip if the extracted segment is a special path (not a username)
+                    if (specialPaths.includes(extractedSegment)) {
+                      console.log(`[SCREENSHOT] Skipping special path URL: ${link}`);
+                      continue;
+                    }
+                    
+                    if (extractedSegment === username.toLowerCase() ||
+                        extractedSegment.includes(username.toLowerCase()) ||
+                        username.toLowerCase().includes(extractedSegment)) {
+                      instagramProfileUrl = `https://www.instagram.com/${urlMatch[1]}/`;
+                      console.log(`[SCREENSHOT] Extracted profile from result: ${instagramProfileUrl} (from: ${link})`);
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              // Last resort: if CSE results don't help, try constructing profile URL directly from the original username
+              if (!instagramProfileUrl) {
+                console.log(`[SCREENSHOT] CSE results don't contain usable profile URL, constructing from username...`);
+                console.log(`[SCREENSHOT] CSE results were:`, JSON.stringify(cseItems.slice(0, 3).map((i: { link?: string; title?: string }) => ({ link: i.link, title: i.title }))));
+                instagramProfileUrl = `https://www.instagram.com/${username}/`;
+                console.log(`[SCREENSHOT] Using constructed profile URL: ${instagramProfileUrl}`);
+              }
+              
+              console.log(`[SCREENSHOT] Found Instagram profile via CSE: ${instagramProfileUrl}`);
+              console.log(`[SCREENSHOT] Clearing cookies before CSE navigation to avoid tainted session...`);
+              
+              // Clear cookies to remove the "tainted" session from failed challenge
+              // This gives us a fresh start for navigating to the profile
+              try {
+                const context = page.context();
+                await context.clearCookies();
+                console.log(`[SCREENSHOT] ✅ Cookies cleared`);
+              } catch (clearErr) {
+                console.log(`[SCREENSHOT] ⚠️ Could not clear cookies: ${clearErr}`);
+              }
+              
+              console.log(`[SCREENSHOT] Navigating directly to profile...`);
+              
+              // Navigate directly to the Instagram profile URL
+              await page.goto(instagramProfileUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+              await page.waitForTimeout(3000);
+              
+              const fallbackUrl = page.url();
+              const fallbackState = classifyInstagramPageState(fallbackUrl);
+              console.log(`[SCREENSHOT] After CSE navigation - URL: ${fallbackUrl}, State: ${fallbackState}`);
+              
+              // If we reached the profile or unknown state, continue
+              if (fallbackState === 'PROFILE' || fallbackState === 'UNKNOWN') {
+                console.log(`[SCREENSHOT] ✅ Google CSE bypass successful! Proceeding with screenshot...`);
+                pageState = fallbackState;
+                cseBypassSuccessful = true; // Mark CSE bypass as successful to skip re-navigation later
+                
+                // Remove Instagram overlays
+                await removeInstagramOverlaysViaGoogle(page);
+              } else {
+                // Still on login/challenge - Instagram is blocking this profile
+                console.log(`[SCREENSHOT] CSE bypass failed - Instagram still blocking. State: ${fallbackState}`);
+                return {
+                  success: false,
+                  error: `Instagram is blocking access to this profile. State: ${fallbackState}`,
+                  screenshot: await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined)
+                };
+              }
+            } catch (cseErr) {
+              console.log(`[SCREENSHOT] Google CSE bypass failed: ${cseErr}`);
+              const debugScreenshot = await page.screenshot({ fullPage: false }).then(b => b.toString('base64')).catch(() => undefined);
+              return {
+                success: false,
+                error: `Challenge detected and Google CSE bypass also failed: ${cseErr}`,
+                screenshot: debugScreenshot
+              };
+            }
+          }
         }
         // If on LOGIN page - session expired/invalid or not configured
         else if (pageState === 'LOGIN') {

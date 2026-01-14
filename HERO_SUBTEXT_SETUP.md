@@ -50,3 +50,4 @@ The transition should be:
 3. No overlap or conflicting animations
 4. Smooth, single-direction vertical roll effect
 
+

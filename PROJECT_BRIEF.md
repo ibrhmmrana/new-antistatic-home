@@ -261,3 +261,4 @@ This landing page is a **conversion-focused, value-first experience** that demon
 
 The technical architecture prioritizes **security** (server-side API proxies), **performance** (caching, optimized images), and **user experience** (smooth animations, responsive design, accessible UI).
 
+

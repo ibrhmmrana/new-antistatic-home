@@ -14,3 +14,4 @@ export function generateScanId(): string {
   return combined.substring(0, 12);
 }
 
+
