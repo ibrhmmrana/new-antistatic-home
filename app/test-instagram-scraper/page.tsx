@@ -2,48 +2,44 @@
 
 import { useState } from "react";
 
-interface InstagramComment {
-  author: string;
-  text: string;
-  timestamp: Date | null;
-  likeCount: number | null;
-  isAuthorVerified: boolean;
-}
-
-interface InstagramPost {
-  id: string;
-  type: 'image' | 'video' | 'carousel';
-  timestamp: Date | null;
-  likeCount: number | null;
-  viewCount: number | null;
-  commentCount: number | null;
-  caption: string | null;
-  location: string | null;
-  taggedUsers: string[];
-  imageUrls: string[];
-  videoUrl: string | null;
-  comments: InstagramComment[];
-}
-
-interface InstagramProfile {
+interface ProfileData {
+  profilePictureUrl: string | null;
   username: string;
   fullName: string | null;
-  bio: string | null;
+  biography: string | null;
+  website: string | null;
+  isVerified: boolean;
+  category: string | null;
+  postCount: number | null;
   followerCount: number | null;
   followingCount: number | null;
-  postCount: number | null;
-  isVerified: boolean;
-  isPrivate: boolean;
-  profilePicUrl: string | null;
-  website: string | null;
-  businessCategory: string | null;
-  recentPosts: InstagramPost[];
+}
+
+interface Comment {
+  author: string;
+  text: string;
+}
+
+interface Post {
+  id: string;
+  url: string;
+  thumbnailUrl: string | null;
+  caption: string | null;
+  date: string | null;
+  likeCount: number | null;
+  commentCount: number | null;
+  comments: Comment[];
+}
+
+interface ScrapeResult {
+  profile: ProfileData;
+  posts: Post[];
 }
 
 export default function TestInstagramScraper() {
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<InstagramProfile | null>(null);
+  const [result, setResult] = useState<ScrapeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,15 +66,6 @@ export default function TestInstagramScraper() {
       setError(err.message || "An error occurred");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const formatDate = (date: Date | null): string => {
-    if (!date) return "N/A";
-    try {
-      return new Date(date).toLocaleString();
-    } catch {
-      return "N/A";
     }
   };
 
@@ -125,10 +112,10 @@ export default function TestInstagramScraper() {
             <div className="bg-white rounded-lg shadow-md p-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Profile Data</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {result.profilePicUrl && (
+                {result.profile.profilePictureUrl && (
                   <div className="md:col-span-2">
                     <img
-                      src={result.profilePicUrl}
+                      src={`/api/proxy-image?url=${encodeURIComponent(result.profile.profilePictureUrl)}`}
                       alt="Profile"
                       className="w-32 h-32 rounded-full object-cover"
                     />
@@ -136,122 +123,106 @@ export default function TestInstagramScraper() {
                 )}
                 <div>
                   <label className="text-sm font-semibold text-gray-500">Username</label>
-                  <p className="text-gray-900">@{result.username}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-500">Full Name</label>
-                  <p className="text-gray-900">{result.fullName || "N/A"}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-500">Verification Status</label>
-                  <p className="text-gray-900">
-                    {result.isVerified ? "✅ Verified" : "❌ Not Verified"}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-500">Account Type</label>
-                  <p className="text-gray-900">
-                    {result.isPrivate ? "🔒 Private" : "🌐 Public"}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-500">Followers</label>
-                  <p className="text-gray-900">
-                    {result.followerCount?.toLocaleString() || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-500">Following</label>
-                  <p className="text-gray-900">
-                    {result.followingCount?.toLocaleString() || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-500">Posts</label>
-                  <p className="text-gray-900">
-                    {result.postCount?.toLocaleString() || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-500">Business Category</label>
-                  <p className="text-gray-900">{result.businessCategory || "N/A"}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-gray-500">Website</label>
-                  <p className="text-gray-900">
-                    {result.website ? (
-                      <a href={result.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                        {result.website}
-                      </a>
-                    ) : (
-                      "N/A"
+                  <p className="text-gray-900 flex items-center gap-2">
+                    {result.profile.username}
+                    {result.profile.isVerified && (
+                      <span className="text-blue-500" title="Verified">✓</span>
                     )}
                   </p>
                 </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-semibold text-gray-500">Bio</label>
-                  <p className="text-gray-900 whitespace-pre-wrap">
-                    {result.bio || "N/A"}
-                  </p>
+                <div>
+                  <label className="text-sm font-semibold text-gray-500">Full Name</label>
+                  <p className="text-gray-900">{result.profile.fullName || "N/A"}</p>
                 </div>
+                <div>
+                  <label className="text-sm font-semibold text-gray-500">Verification Status</label>
+                  <p className="text-gray-900">{result.profile.isVerified ? "✓ Verified" : "Not Verified"}</p>
+                </div>
+                {result.profile.category && (
+                  <div>
+                    <label className="text-sm font-semibold text-gray-500">Category</label>
+                    <p className="text-gray-900">{result.profile.category}</p>
+                  </div>
+                )}
+                <div>
+                  <label className="text-sm font-semibold text-gray-500">Posts</label>
+                  <p className="text-gray-900">{result.profile.postCount?.toLocaleString() || "N/A"}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-gray-500">Followers</label>
+                  <p className="text-gray-900">{result.profile.followerCount?.toLocaleString() || "N/A"}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-gray-500">Following</label>
+                  <p className="text-gray-900">{result.profile.followingCount?.toLocaleString() || "N/A"}</p>
+                </div>
+                {result.profile.website && (
+                  <div>
+                    <label className="text-sm font-semibold text-gray-500">Website</label>
+                    <p className="text-gray-900">
+                      <a 
+                        href={result.profile.website.startsWith("http") ? result.profile.website : `https://${result.profile.website}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {result.profile.website}
+                      </a>
+                    </p>
+                  </div>
+                )}
+                {result.profile.biography && (
+                  <div className="md:col-span-2">
+                    <label className="text-sm font-semibold text-gray-500">Biography</label>
+                    <p className="text-gray-900 whitespace-pre-wrap">{result.profile.biography}</p>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Posts */}
             <div className="bg-white rounded-lg shadow-md p-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                Recent Posts ({result.recentPosts.length})
+                Last 5 Posts ({result.posts.length})
               </h2>
               <div className="space-y-8">
-                {result.recentPosts.map((post, index) => (
-                  <div key={post.id || index} className="border-b border-gray-200 pb-8 last:border-b-0">
+                {result.posts.map((post, index) => (
+                  <div key={index} className="border-b border-gray-200 pb-8 last:border-b-0">
                     <div className="mb-4">
-                      <div className="flex items-center gap-4 mb-2 flex-wrap">
-                        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold capitalize">
-                          {post.type}
-                        </span>
-                        {post.timestamp && (
-                          <span className="text-gray-500 text-sm">{formatDate(post.timestamp)}</span>
+                      <div className="flex items-center gap-4 mb-2">
+                        <a
+                          href={post.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline text-sm"
+                        >
+                          Open post ↗
+                        </a>
+                        {post.date && (
+                          <span className="text-gray-500 text-sm">
+                            {new Date(post.date).toLocaleString()}
+                          </span>
                         )}
                         {post.likeCount != null && (
                           <span className="text-gray-500 text-sm">❤️ {post.likeCount.toLocaleString()} likes</span>
-                        )}
-                        {post.viewCount != null && (
-                          <span className="text-gray-500 text-sm">👁️ {post.viewCount.toLocaleString()} views</span>
                         )}
                         {post.commentCount != null && (
                           <span className="text-gray-500 text-sm">💬 {post.commentCount.toLocaleString()} comments</span>
                         )}
                       </div>
-                      {post.location && (
-                        <p className="text-gray-600 text-sm">📍 {post.location}</p>
-                      )}
-                      {post.taggedUsers.length > 0 && (
-                        <p className="text-gray-600 text-sm">
-                          Tagged: {post.taggedUsers.map(u => `@${u}`).join(", ")}
-                        </p>
-                      )}
+                      <p className="text-xs text-gray-500">Post ID: {post.id}</p>
                     </div>
 
-                    {/* Media */}
+                    {/* Thumbnail */}
                     <div className="mb-4">
-                      {post.videoUrl ? (
-                        <video
-                          src={post.videoUrl}
-                          controls
-                          className="max-w-full rounded-lg"
+                      {post.thumbnailUrl ? (
+                        <img
+                          src={post.thumbnailUrl}
+                          alt={`Post ${index + 1} thumbnail`}
+                          className="w-full max-w-xl rounded-lg object-cover"
                         />
                       ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          {post.imageUrls.map((url, imgIndex) => (
-                            <img
-                              key={imgIndex}
-                              src={url}
-                              alt={`Post ${index + 1} - Image ${imgIndex + 1}`}
-                              className="w-full h-auto rounded-lg object-cover"
-                            />
-                          ))}
-                        </div>
+                        <p className="text-sm text-gray-500">No thumbnail found.</p>
                       )}
                     </div>
 
@@ -271,19 +242,8 @@ export default function TestInstagramScraper() {
                         <div className="space-y-3">
                           {post.comments.map((comment, commentIndex) => (
                             <div key={commentIndex} className="text-sm">
-                              <div className="flex items-start gap-2">
-                                <span className="font-semibold text-gray-900">
-                                  {comment.author}
-                                  {comment.isAuthorVerified && <span className="ml-1">✓</span>}
-                                </span>
-                                <span className="text-gray-600">{comment.text}</span>
-                              </div>
-                              <div className="flex items-center gap-3 mt-1 ml-4 text-xs text-gray-500">
-                                {comment.timestamp && <span>{formatDate(comment.timestamp)}</span>}
-                                {comment.likeCount != null && comment.likeCount > 0 && (
-                                  <span>❤️ {comment.likeCount}</span>
-                                )}
-                              </div>
+                              <span className="font-semibold text-gray-900">{comment.author}</span>
+                              <span className="text-gray-700 ml-2">{comment.text}</span>
                             </div>
                           ))}
                         </div>
@@ -299,3 +259,4 @@ export default function TestInstagramScraper() {
     </div>
   );
 }
+
