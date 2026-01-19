@@ -8,6 +8,7 @@ import ReportLeftRail from "@/components/report/ReportLeftRail";
 import ReportTopCards from "@/components/report/ReportTopCards";
 import ReportSearchVisibility from "@/components/report/ReportSearchVisibility";
 import ReportChecklistSection from "@/components/report/ReportChecklistSection";
+import ReportAIAnalysis from "@/components/report/ReportAIAnalysis";
 
 // Helper function to extract username from URL
 function extractUsernameFromUrl(url: string, platform: 'instagram' | 'facebook'): string | null {
@@ -54,6 +55,10 @@ export default function AnalysisPage() {
   const [report, setReport] = useState<ReportSchema | null>(null);
   const [placesDetails, setPlacesDetails] = useState<any>(null);
   const [socialsData, setSocialsData] = useState<any>(null);
+  
+  // AI Analysis state
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
 
   // Load cached analysis results from localStorage
   useEffect(() => {
@@ -181,6 +186,89 @@ export default function AnalysisPage() {
     }
   }, [placeId, placesDetails, websiteResult, gbpAnalysis, igResult, fbResult, socialsData]);
 
+  // Trigger AI analysis when all data is available
+  useEffect(() => {
+    if (!placeId || !placesDetails) return;
+    
+    // Check if we have enough data for AI analysis
+    const hasEnoughData = (igResult || fbResult || reviews.length > 0);
+    if (!hasEnoughData) return;
+
+    // Check if already cached
+    const cachedAiAnalysis = localStorage.getItem(`analysis_${scanId}_ai`);
+    if (cachedAiAnalysis) {
+      try {
+        setAiAnalysis(JSON.parse(cachedAiAnalysis));
+        return;
+      } catch (e) {
+        console.error('[ANALYSIS PAGE] Failed to parse cached AI analysis:', e);
+      }
+    }
+
+    // Trigger AI analysis
+    setAiAnalysisLoading(true);
+    
+    const businessName = placesDetails?.name || gbpAnalysis?.analysis?.businessName || 'Business';
+    const businessCategory = gbpAnalysis?.analysis?.category || websiteResult?.business_identity?.category_label || 'Business';
+
+    // Prepare data for AI analysis
+    const aiData: any = {
+      instagram: igResult?.profile ? {
+        biography: igResult.profile.biography,
+        website: igResult.profile.website,
+        category: igResult.profile.category,
+        followerCount: igResult.profile.followerCount,
+        postCount: igResult.posts?.length || 0,
+      } : undefined,
+      facebook: fbResult?.profile ? {
+        description: fbResult.profile.description,
+        website: fbResult.profile.website,
+        phone: fbResult.profile.phone,
+        address: fbResult.profile.address,
+        hours: fbResult.profile.hours,
+      } : undefined,
+      website: socialsData?.websiteUrl ? {
+        description: null, // Could extract from website crawl
+        phone: null,
+        address: null,
+        hours: null,
+      } : undefined,
+      reviews: reviews.length > 0 ? reviews.map((r: any) => ({
+        text: r.text,
+        rating: r.rating,
+        authorName: r.authorName,
+        relativeTime: r.relativeTime,
+      })) : undefined,
+    };
+
+    // Call AI analysis API
+    fetch('/api/ai/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'full',
+        businessName,
+        businessCategory,
+        data: aiData,
+      }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.analysis) {
+          setAiAnalysis(data.analysis);
+          localStorage.setItem(`analysis_${scanId}_ai`, JSON.stringify(data.analysis));
+        } else {
+          console.error('[ANALYSIS PAGE] AI analysis failed:', data.error);
+        }
+      })
+      .catch(error => {
+        console.error('[ANALYSIS PAGE] AI analysis error:', error);
+      })
+      .finally(() => {
+        setAiAnalysisLoading(false);
+      });
+  }, [scanId, placeId, placesDetails, gbpAnalysis, igResult, fbResult, reviews, websiteResult, socialsData]);
+
   // Show loading state while assembling report
   if (!report) {
     return (
@@ -222,6 +310,9 @@ export default function AnalysisPage() {
             targetPlaceId={report.meta.placeId}
             targetDomain={report.meta.websiteUrl || null}
           />
+          
+          {/* AI Analysis */}
+          <ReportAIAnalysis analysis={aiAnalysis} isLoading={aiAnalysisLoading} />
           
           {/* Summary Header */}
           <div className="mb-6">
