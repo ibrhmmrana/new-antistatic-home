@@ -181,8 +181,35 @@ async function setupStealth(page: Page): Promise<void> {
 }
 
 async function extractProfileBasics(page: Page, username: string): Promise<ScrapeResult["profile"]> {
-  await page.waitForSelector("header, main", { timeout: 15000 });
-  await page.waitForTimeout(800);
+  // Try multiple selectors with increasing timeout - Instagram page structure can vary
+  const selectors = [
+    "header, main",
+    "main",
+    "header",
+    "article",
+    "body", // Fallback to body if nothing else works
+  ];
+  
+  let elementFound = false;
+  for (const selector of selectors) {
+    try {
+      await page.waitForSelector(selector, { timeout: 10000 });
+      elementFound = true;
+      console.log(`[INSTAGRAM] Found element with selector: ${selector}`);
+      break;
+    } catch (error) {
+      // Try next selector
+      continue;
+    }
+  }
+  
+  if (!elementFound) {
+    console.warn(`[INSTAGRAM] Could not find main page elements, proceeding anyway...`);
+    // Wait a bit for page to stabilize
+    await page.waitForTimeout(2000);
+  } else {
+    await page.waitForTimeout(800);
+  }
 
   // Try to expand biography by clicking the "more" button
   // Button structure: <div role="button"><span>more</span></div>
