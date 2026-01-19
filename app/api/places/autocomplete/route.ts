@@ -19,7 +19,7 @@ interface GoogleResponse {
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const input = searchParams.get("input");
-  const country = searchParams.get("country") || "za";
+  const country = searchParams.get("country"); // Optional: only filter by country if explicitly provided
 
   // Validate input
   if (!input || input.length < 2) {
@@ -42,7 +42,11 @@ export async function GET(request: NextRequest) {
     const url = new URL("https://maps.googleapis.com/maps/api/place/autocomplete/json");
     url.searchParams.set("input", input);
     url.searchParams.set("key", GOOGLE_PLACES_API_KEY);
-    url.searchParams.set("components", `country:${country}`);
+    
+    // Only restrict by country if explicitly provided (allows worldwide search by default)
+    if (country) {
+      url.searchParams.set("components", `country:${country}`);
+    }
 
     const response = await fetch(url.toString(), {
       signal: controller.signal,
