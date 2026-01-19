@@ -20,7 +20,7 @@ export function calculateScoreLabel(score: number, maxScore: number): ScoreLabel
  */
 export function calculateSearchResultsScore(
   visibilityScore: number | undefined,
-  checks: Array<{ status: CheckStatus; weight?: number }>
+  checks: Array<{ key: string; status: CheckStatus; weight?: number }>
 ): Score {
   const maxScore = 40;
   
