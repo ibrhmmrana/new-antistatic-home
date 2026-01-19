@@ -450,7 +450,7 @@ async function extractHoursAndServices(page: Page): Promise<{ hours: string | nu
               }
               
               // Dedupe
-              const uniqueServices = [...new Set(serviceList)];
+              const uniqueServices = Array.from(new Set(serviceList));
               if (uniqueServices.length > 0) {
                 services = uniqueServices.join(', ');
               }
@@ -1155,7 +1155,7 @@ async function extractFacebookPosts(page: Page): Promise<FacebookPost[]> {
       // Extract like count
       // Look for aria-label like "Like: 15K people" or "Like: 2 people"
       let likeCount: number | null = null;
-      const likeLabels = postContainer.querySelectorAll('[aria-label*="Like:"]');
+      const likeLabels = Array.from(postContainer.querySelectorAll('[aria-label*="Like:"]'));
       for (const label of likeLabels) {
         const ariaLabel = label.getAttribute('aria-label') || '';
         const match = ariaLabel.match(/Like:\s*([\d.,]+[KMkm]?)/i);
@@ -1167,7 +1167,7 @@ async function extractFacebookPosts(page: Page): Promise<FacebookPost[]> {
       
       // Also check for "Love:" labels and add them to the count
       if (likeCount !== null) {
-        const loveLabels = postContainer.querySelectorAll('[aria-label*="Love:"]');
+        const loveLabels = Array.from(postContainer.querySelectorAll('[aria-label*="Love:"]'));
         for (const label of loveLabels) {
           const ariaLabel = label.getAttribute('aria-label') || '';
           const match = ariaLabel.match(/Love:\s*([\d.,]+[KMkm]?)/i);
@@ -1182,7 +1182,7 @@ async function extractFacebookPosts(page: Page): Promise<FacebookPost[]> {
       // Fallback: look for total reactions (like "18K" in "All reactions:")
       if (likeCount === null) {
         // Look for the reactions summary span that shows total
-        const allSpans = postContainer.querySelectorAll('span.x135b78x');
+        const allSpans = Array.from(postContainer.querySelectorAll('span.x135b78x'));
         for (const span of allSpans) {
           const text = span.textContent?.trim() || '';
           if (/^[\d.,]+[KMkm]?$/.test(text)) {

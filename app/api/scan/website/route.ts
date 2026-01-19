@@ -543,7 +543,7 @@ function extractEmails(text: string): string[] {
   const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
   const matches = text.match(emailPattern);
   if (matches) {
-    return [...new Set(matches)].filter(email => 
+    return Array.from(new Set(matches)).filter(email => 
       !email.includes('example.com') && 
       !email.includes('@2x') &&
       !email.includes('.png') &&
@@ -2204,7 +2204,7 @@ export async function POST(request: NextRequest) {
         structuredDataAddress,
         navLabels: [], // Would need to extract from navigation
         footerText: null,
-        topPhrases: [...new Set(allTopPhrases)].slice(0, 10),
+        topPhrases: Array.from(new Set(allTopPhrases)).slice(0, 10),
         serviceKeywords: allServiceKeywords.slice(0, 10),
         locationEntities: allLocationEntities.slice(0, 5),
         hasMenuPage: pageResults.some(p => p.url.toLowerCase().includes('menu')),
