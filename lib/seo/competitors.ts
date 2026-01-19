@@ -532,7 +532,7 @@ function stringSimilarity(a: string, b: string): number {
   const aSet = new Set(aLower);
   const bSet = new Set(bLower);
   let overlap = 0;
-  for (const c of aSet) if (bSet.has(c)) overlap++;
+  for (const c of Array.from(aSet)) if (bSet.has(c)) overlap++;
   return overlap / Math.max(aSet.size, bSet.size);
 }
 
