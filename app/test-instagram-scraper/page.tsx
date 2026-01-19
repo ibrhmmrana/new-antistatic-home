@@ -498,6 +498,7 @@ export default function TestSocialScraper() {
         status: 'good' | 'warn' | 'bad';
         value?: string;
         helper: string;
+        extractedValue?: string;
       }>;
       keywordChecks: {
         extractedKeywords: string[];
