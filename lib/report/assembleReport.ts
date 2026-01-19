@@ -13,6 +13,7 @@ import type {
   CompetitorsCard,
   SearchVisibility,
   DataFreshness,
+  CheckStatus,
 } from './types';
 import {
   calculateSearchResultsScore,
@@ -691,8 +692,18 @@ function buildLocalListingsSection(
     });
   }
   
+  // Transform GBP checklist to match expected type (filter out items without required fields)
+  const gbpChecklist = (gbpAnalysis?.checklist || [])
+    .filter((item): item is { key: string; status: CheckStatus } => 
+      !!item.key && !!item.status
+    )
+    .map(item => ({
+      key: item.key,
+      status: item.status,
+    }));
+  
   const score = calculateLocalListingsScore(
-    gbpAnalysis?.checklist || [],
+    gbpChecklist,
     hasSocialLinks
   );
   
