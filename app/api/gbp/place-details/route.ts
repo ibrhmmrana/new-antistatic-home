@@ -7,7 +7,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { analyzeGbp } from '@/lib/gbp/analyzeGbp';
 
 interface PlaceDetailsResponse {
-  result: {
+  status?: string;
+  error_message?: string;
+  result?: {
     name?: string;
     formatted_address?: string;
     geometry?: {
@@ -28,6 +30,13 @@ interface PlaceDetailsResponse {
       open_now?: boolean;
     };
     price_level?: number;
+    editorial_summary?: {
+      overview?: string;
+    };
+    photos?: Array<{
+      photo_reference?: string;
+    }>;
+    url?: string;
   };
 }
 
