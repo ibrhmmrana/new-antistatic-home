@@ -1036,7 +1036,14 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
   );
   
   // Add user's business to the list if not present and we have placesDetails
-  let allBusinesses = [...competitorsRaw];
+  let allBusinesses: Array<{
+    name?: string;
+    rating?: number | null;
+    reviews?: number | null;
+    website?: string | null;
+    place_id?: string;
+    isUserBusiness?: boolean;
+  }> = [...competitorsRaw];
   if (!userAlreadyInList && placesDetails) {
     allBusinesses.push({
       name: placesDetails.name || meta.businessName,
@@ -1050,13 +1057,13 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
   
   // Sort all businesses by rating (desc), then by reviews (desc)
   const sortedCompetitors = allBusinesses
-    .sort((a: any, b: any) => {
+    .sort((a, b) => {
       const ratingA = a.rating || 0;
       const ratingB = b.rating || 0;
       if (ratingA !== ratingB) return ratingB - ratingA;
       return (b.reviews || 0) - (a.reviews || 0);
     })
-    .map((comp: any, idx: number) => {
+    .map((comp, idx) => {
       // Check if this is the target business
       const isTarget = 
         comp.isUserBusiness ||
