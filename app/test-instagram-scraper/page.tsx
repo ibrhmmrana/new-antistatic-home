@@ -2797,7 +2797,7 @@ Example: Instead of just "restaurant", use "Italian restaurant" or "Seafood rest
                 >
                   📋 Copy JSON
                 </button>
-              </div>
+          </div>
               {showIgJsonOutput && (
                 <>
                   <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-[600px] overflow-y-auto">

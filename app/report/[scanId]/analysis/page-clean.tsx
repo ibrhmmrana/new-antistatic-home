@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { debounce } from "@/lib/utils/debounce";
 import { assembleReport } from "@/lib/report/assembleReport";
 import type { ReportSchema } from "@/lib/report/types";
 import ReportLeftRail from "@/components/report/ReportLeftRail";
