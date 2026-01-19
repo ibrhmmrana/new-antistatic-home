@@ -526,6 +526,7 @@ export default function AnalysisPage() {
         status: 'good' | 'warn' | 'bad';
         value?: string;
         helper: string;
+        extractedValue?: string;
       }>;
       keywordChecks: {
         extractedKeywords: string[];
