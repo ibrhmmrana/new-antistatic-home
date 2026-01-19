@@ -12,6 +12,81 @@ export const runtime = 'nodejs';
 
 const TIMEOUT_MS = 60000; // 60 seconds
 
+// Simple mutex to prevent concurrent browser launches
+let browserLaunchLock = false;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000; // Start with 1 second
+
+/**
+ * Launch browser with retry logic for ETXTBSY errors
+ */
+async function launchBrowserWithRetry(
+  executablePath: string | undefined,
+  isServerless: boolean,
+  retries = MAX_RETRIES
+): Promise<Browser> {
+  // Wait for lock to be released
+  while (browserLaunchLock) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      browserLaunchLock = true;
+      
+      // Add small delay between attempts to avoid race conditions
+      if (attempt > 0) {
+        const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff
+        console.log(`[WEBSITE-SCRAPE] Retry attempt ${attempt + 1}/${retries} after ${delay}ms delay...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+      const browser = await pwChromium.launch({
+        headless: true,
+        args: [
+          ...(isServerless ? chromium.args : []),
+          '--disable-blink-features=AutomationControlled',
+          '--window-size=1920,1080',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+        ],
+        executablePath,
+        timeout: TIMEOUT_MS,
+      });
+
+      browserLaunchLock = false;
+      console.log(`[WEBSITE-SCRAPE] Browser launched successfully (attempt ${attempt + 1})`);
+      return browser;
+    } catch (error: any) {
+      browserLaunchLock = false;
+      
+      // Check if it's an ETXTBSY error or related spawn error
+      const isETXTBSY = error?.message?.includes('ETXTBSY') || 
+                       error?.message?.includes('spawn') ||
+                       error?.code === 'ETXTBSY' ||
+                       error?.message?.includes('Text file busy');
+      
+      if (isETXTBSY && attempt < retries - 1) {
+        console.warn(`[WEBSITE-SCRAPE] Browser launch failed (ETXTBSY/spawn error), retrying... (attempt ${attempt + 1}/${retries})`);
+        continue;
+      }
+      
+      // If it's the last attempt or not an ETXTBSY error, throw
+      if (attempt === retries - 1) {
+        console.error(`[WEBSITE-SCRAPE] Browser launch failed after ${retries} attempts:`, error?.message || error);
+      }
+      throw error;
+    } finally {
+      // Ensure lock is always released
+      browserLaunchLock = false;
+    }
+  }
+  
+  throw new Error('Failed to launch browser after all retries');
+}
+
 /**
  * Sets up stealth properties to avoid bot detection
  */
@@ -1921,20 +1996,7 @@ export async function POST(request: NextRequest) {
     
     console.log(`[WEBSITE-SCRAPE] Launching browser (headless: true)...`);
     
-    const browser = await pwChromium.launch({
-      headless: true,
-      args: [
-        ...(isServerless ? chromium.args : []),
-        '--disable-blink-features=AutomationControlled',
-        '--window-size=1920,1080',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-      ],
-      executablePath,
-      timeout: TIMEOUT_MS,
-    });
+    const browser = await launchBrowserWithRetry(executablePath, !!isServerless);
     
     const context = await browser.newContext({
       viewport: { width: 1920, height: 1080 },
