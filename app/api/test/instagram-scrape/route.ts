@@ -208,7 +208,7 @@ async function extractProfileBasics(page: Page, username: string): Promise<Scrap
     // Wait a bit for page to stabilize
     await page.waitForTimeout(2000);
   } else {
-    await page.waitForTimeout(800);
+  await page.waitForTimeout(800);
   }
 
   // Try to expand biography by clicking the "more" button

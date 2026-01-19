@@ -38,13 +38,13 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
   const offset = circumference - (overallPercentage / 100) * circumference;
   
   return (
-    <div className="w-64 sticky top-0 h-screen p-8 flex flex-col items-center overflow-y-auto rounded-2xl m-4"
+    <div className="w-64 sticky top-4 p-8 flex flex-col items-center overflow-y-auto rounded-2xl ml-4"
          style={{
-           background: 'linear-gradient(135deg, rgba(10, 22, 40, 0.85) 0%, rgba(15, 31, 58, 0.9) 100%)',
-           backdropFilter: 'blur(12px)',
-           WebkitBackdropFilter: 'blur(12px)',
-           boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.15)',
-           border: '1px solid rgba(255, 255, 255, 0.1)',
+           height: 'calc(100vh - 2rem)',
+           background: 'linear-gradient(135deg, rgba(10, 22, 40, 0.92) 0%, rgba(15, 31, 58, 0.95) 100%)',
+           backdropFilter: 'blur(20px)',
+           WebkitBackdropFilter: 'blur(20px)',
+           boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
          }}>
       {/* Circular Gauge */}
       <div className="relative w-32 h-32 mb-4">

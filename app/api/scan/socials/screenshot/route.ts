@@ -191,8 +191,8 @@ async function captureWebsiteScreenshot(
 
     // Try networkidle first, but fallback to domcontentloaded if it times out
     try {
-      await page.goto(normalizedUrl, {
-        waitUntil: 'networkidle',
+    await page.goto(normalizedUrl, {
+      waitUntil: 'networkidle',
         timeout: 20000, // 20 seconds for networkidle
       });
       console.log(`[SCREENSHOT] Page loaded (networkidle)`);

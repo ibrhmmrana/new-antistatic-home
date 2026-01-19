@@ -26,33 +26,33 @@ export async function GET(request: NextRequest) {
   const RETRY_DELAY_MS = 1000;
   
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      const url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxw}&photo_reference=${encodeURIComponent(ref)}&key=${apiKey}`;
+  try {
+    const url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxw}&photo_reference=${encodeURIComponent(ref)}&key=${apiKey}`;
       
       // Add delay between retries (exponential backoff)
       if (attempt > 0) {
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt));
       }
-      
-      const response = await fetch(url, {
-        next: { revalidate: 3600 * 24 * 7 }, // Cache for 1 week
+    
+    const response = await fetch(url, {
+      next: { revalidate: 3600 * 24 * 7 }, // Cache for 1 week
         signal: AbortSignal.timeout(10000), // 10 second timeout per attempt
-      });
+    });
 
-      if (!response.ok) {
-        throw new Error(`Google Places Photo API error: ${response.status}`);
-      }
+    if (!response.ok) {
+      throw new Error(`Google Places Photo API error: ${response.status}`);
+    }
 
-      // Get the image as a blob
-      const imageBlob = await response.blob();
-      
-      // Return the image with proper headers for CDN friendliness
-      return new NextResponse(imageBlob, {
-        headers: {
-          "Content-Type": response.headers.get("Content-Type") || "image/jpeg",
-          "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=604800",
-        },
-      });
+    // Get the image as a blob
+    const imageBlob = await response.blob();
+    
+    // Return the image with proper headers for CDN friendliness
+    return new NextResponse(imageBlob, {
+      headers: {
+        "Content-Type": response.headers.get("Content-Type") || "image/jpeg",
+        "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=604800",
+      },
+    });
     } catch (error: any) {
       const isLastAttempt = attempt === MAX_RETRIES - 1;
       const isNetworkError = error?.message?.includes('fetch failed') || 
@@ -75,11 +75,11 @@ export async function GET(request: NextRequest) {
       
       // If it's not a network error, don't retry
       console.error("[PLACES PHOTO] Non-retryable error:", error);
-      return NextResponse.json(
-        { error: "Failed to fetch place photo" },
-        { status: 500 }
-      );
-    }
+    return NextResponse.json(
+      { error: "Failed to fetch place photo" },
+      { status: 500 }
+    );
+  }
   }
   
   // Should never reach here, but TypeScript needs it
