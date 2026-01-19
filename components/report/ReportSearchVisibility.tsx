@@ -127,23 +127,24 @@ export default function ReportSearchVisibility({
                 {/* Expanded Content */}
                 {isExpanded && (
                   <div className="border-t border-gray-200 p-6 bg-gray-50">
-                    <div className="grid grid-cols-2 gap-6">
-                      {/* Map Pack Results */}
+                    <div className="grid grid-cols-2 gap-8">
+                      {/* Map Pack Results - Left Column */}
                       <div>
                         <h4 className="font-semibold text-gray-900 mb-1">Google Maps results</h4>
-                        <p className="text-xs text-gray-500 mb-3">These results get the most clicks</p>
+                        <p className="text-xs text-gray-500 mb-4">These results get the most clicks</p>
                         {query.mapPack.results.length === 0 ? (
                           <p className="text-sm text-gray-500">No map pack results available</p>
                         ) : (
                           <div className="flex gap-4">
                             {/* Map - Left side */}
-                            <div className="flex-1 relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100 h-[400px]">
+                            <div className="w-48 flex-shrink-0 relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
                               {query.mapPack.results.some(r => r.placeId) ? (
                                 <>
                                   <img
                                     src={`/api/places/static-map?placeIds=${query.mapPack.results.filter(r => r.placeId).map(r => r.placeId).join(',')}&zoom=14`}
                                     alt="Map showing competitor locations"
                                     className="w-full h-full object-cover"
+                                    style={{ minHeight: '280px' }}
                                     onError={(e) => {
                                       const target = e.target as HTMLImageElement;
                                       target.style.display = 'none';
@@ -156,23 +157,21 @@ export default function ReportSearchVisibility({
                                       }
                                     }}
                                   />
-                                  <div className="absolute bottom-2 left-2 text-xs text-gray-600 bg-white/90 px-2 py-1 rounded flex items-center gap-1">
-                                    <span>Google</span>
-                                    <span>Map</span>
-                                    <span>Data</span>
-                                    <span>Terms</span>
+                                  <div className="absolute bottom-1 left-1 right-1 flex justify-between items-center">
+                                    <span className="text-[10px] text-gray-600 bg-white/90 px-1.5 py-0.5 rounded">Google</span>
+                                    <span className="text-[10px] text-gray-500 bg-white/90 px-1.5 py-0.5 rounded">Map Data · Terms</span>
                                   </div>
                                 </>
                               ) : (
-                                <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
-                                  Map data unavailable
+                                <div className="flex items-center justify-center text-gray-400 text-sm h-full min-h-[280px]">
+                                  Map unavailable
                                 </div>
                               )}
                             </div>
                             
                             {/* Top 3 map results list - Right side */}
-                            <div className="w-80 flex-shrink-0">
-                              <h5 className="text-sm font-semibold text-gray-900 mb-3">Top 3 map results</h5>
+                            <div className="flex-1">
+                              <h5 className="text-sm font-medium text-gray-700 mb-3">Top 3 map results</h5>
                               <div className="space-y-3">
                                 {query.mapPack.results.map((result, rIdx) => (
                                   <div
@@ -183,28 +182,25 @@ export default function ReportSearchVisibility({
                                         : 'bg-white border-gray-200'
                                     }`}
                                   >
-                                    <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center justify-between mb-1">
                                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                                        <span className="text-lg flex-shrink-0">🍴</span>
+                                        <span className="text-base flex-shrink-0">🍴</span>
                                         <span className="font-medium text-gray-900 text-sm truncate">
                                           {result.name}
                                         </span>
                                       </div>
-                                      <span className="text-xs font-semibold text-gray-700 flex-shrink-0 ml-2">
+                                      <span className="text-xs font-medium text-gray-600 flex-shrink-0 ml-2">
                                         {rIdx + 1 === 1 ? '1st' : rIdx + 1 === 2 ? '2nd' : '3rd'}
                                       </span>
                                     </div>
                                     {result.rating && (
-                                      <div className="text-xs text-gray-600 mb-1.5 flex items-center gap-1">
+                                      <div className="text-xs text-gray-600 mb-1 flex items-center gap-1">
                                         <span className="text-yellow-500">⭐</span>
-                                        <span className="font-medium">{result.rating}</span>
-                                        {result.reviews && (
-                                          <span className="text-gray-500">({result.reviews} reviews)</span>
-                                        )}
+                                        <span>{result.rating}</span>
                                       </div>
                                     )}
                                     {result.address && (
-                                      <div className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{result.address}</div>
+                                      <div className="text-xs text-gray-500 line-clamp-2">{result.address}</div>
                                     )}
                                   </div>
                                 ))}
@@ -214,7 +210,7 @@ export default function ReportSearchVisibility({
                         )}
                       </div>
                       
-                      {/* Organic Results */}
+                      {/* Organic Results - Right Column */}
                       <div>
                         <h4 className="font-semibold text-gray-900 mb-3">Google Search results</h4>
                         {isRankedOrganic ? (
@@ -229,7 +225,7 @@ export default function ReportSearchVisibility({
                         {query.organic.results.length === 0 ? (
                           <p className="text-sm text-gray-500">No organic results available</p>
                         ) : (
-                          <div className="space-y-3 max-h-96 overflow-y-auto">
+                          <div className="space-y-2 max-h-[320px] overflow-y-auto pr-2">
                             {query.organic.results.map((result) => {
                               const isTarget = targetDomainNormalized
                                 ? normalizeDomain(result.link) === targetDomainNormalized
@@ -238,32 +234,40 @@ export default function ReportSearchVisibility({
                               return (
                                 <div
                                   key={result.position}
-                                  className={`p-3 rounded-lg border ${
+                                  className={`p-2.5 rounded-lg border ${
                                     isTarget
                                       ? 'bg-blue-50 border-blue-200'
                                       : 'bg-white border-gray-200'
                                   }`}
                                 >
                                   <div className="flex items-start gap-2">
-                                    {result.faviconUrl && (
-                                      <img
-                                        src={result.faviconUrl}
-                                        alt=""
-                                        className="w-4 h-4 mt-1 flex-shrink-0"
-                                      />
-                                    )}
+                                    <div className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                      {result.faviconUrl ? (
+                                        <img
+                                          src={result.faviconUrl}
+                                          alt=""
+                                          className="w-3.5 h-3.5"
+                                          onError={(e) => {
+                                            const target = e.target as HTMLImageElement;
+                                            target.style.display = 'none';
+                                          }}
+                                        />
+                                      ) : (
+                                        <span className="text-[10px] text-gray-400">🌐</span>
+                                      )}
+                                    </div>
                                     <div className="flex-1 min-w-0">
+                                      <div className="text-xs text-gray-500 mb-0.5">
+                                        {result.displayLink}
+                                      </div>
                                       <a
                                         href={result.link}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-sm text-blue-600 hover:underline line-clamp-1"
+                                        className="text-sm text-blue-600 hover:underline line-clamp-1 font-medium"
                                       >
                                         {result.title}
                                       </a>
-                                      <div className="text-xs text-gray-500 mt-0.5">
-                                        {result.displayLink}
-                                      </div>
                                       {result.snippet && (
                                         <div className="text-xs text-gray-600 mt-1 line-clamp-2">
                                           {result.snippet}

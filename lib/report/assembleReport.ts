@@ -966,7 +966,7 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
   };
   
   // Build competitors card
-  const competitors = websiteCrawl?.competitors_snapshot?.competitors_places || [];
+  const competitorsRaw = websiteCrawl?.competitors_snapshot?.competitors_places || [];
   const targetPlaceId = placeId;
   const targetWebsite = meta.websiteUrl;
   
@@ -983,17 +983,37 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
   
   const targetDomainNormalized = targetWebsite ? normalizeDomain(targetWebsite) : null;
   
-  // Sort competitors and identify target business
-  const sortedCompetitors = [...competitors]
-    .sort((a, b) => {
+  // Check if user's business is already in the competitors list
+  const userAlreadyInList = competitorsRaw.some((comp: any) => 
+    (targetPlaceId && comp.place_id === targetPlaceId) ||
+    (targetDomainNormalized && comp.website && normalizeDomain(comp.website) === targetDomainNormalized)
+  );
+  
+  // Add user's business to the list if not present and we have placesDetails
+  let allBusinesses = [...competitorsRaw];
+  if (!userAlreadyInList && placesDetails) {
+    allBusinesses.push({
+      name: placesDetails.name || meta.businessName,
+      rating: placesDetails.rating || null,
+      reviews: placesDetails.user_ratings_total || null,
+      website: placesDetails.website || meta.websiteUrl,
+      place_id: targetPlaceId,
+      isUserBusiness: true, // Mark to identify later
+    });
+  }
+  
+  // Sort all businesses by rating (desc), then by reviews (desc)
+  const sortedCompetitors = allBusinesses
+    .sort((a: any, b: any) => {
       const ratingA = a.rating || 0;
       const ratingB = b.rating || 0;
       if (ratingA !== ratingB) return ratingB - ratingA;
       return (b.reviews || 0) - (a.reviews || 0);
     })
-    .map((comp, idx) => {
+    .map((comp: any, idx: number) => {
       // Check if this is the target business
       const isTarget = 
+        comp.isUserBusiness ||
         (targetPlaceId && comp.place_id === targetPlaceId) ||
         (targetDomainNormalized && comp.website && normalizeDomain(comp.website) === targetDomainNormalized);
       
@@ -1012,7 +1032,7 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
   const userRank = userBusiness ? userBusiness.rank : null;
   
   const competitorsCard: CompetitorsCard = {
-    count: competitors.length,
+    count: sortedCompetitors.length,
     list: sortedCompetitors,
     userRank: userRank || undefined,
   };
