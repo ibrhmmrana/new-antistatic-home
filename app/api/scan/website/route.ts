@@ -2242,6 +2242,7 @@ export async function POST(request: NextRequest) {
           location_country: 'South Africa',
           latlng: null,
           place_id: null,
+          place_types: [], // Empty array as fallback
           rating: null,
           review_count: 0,
           sources: { gbp: false, places: false, website: true },
