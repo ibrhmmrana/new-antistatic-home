@@ -153,7 +153,7 @@ function isDirectoryDomain(domain: string): boolean {
   if (DIRECTORY_DOMAINS.has(normalized)) return true;
   
   // Check if it's a subdomain of a directory
-  for (const dir of DIRECTORY_DOMAINS) {
+  for (const dir of Array.from(DIRECTORY_DOMAINS)) {
     if (normalized.endsWith(`.${dir}`)) return true;
   }
   
