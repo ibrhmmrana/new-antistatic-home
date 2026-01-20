@@ -53,7 +53,8 @@ export default function AIAgentLoadingScreen({ businessName, onAllAgentsDeployed
         const delay = 2000 + deployOrder * 600 + Math.random() * 1000; // 2s + (order * 0.6s) + random 0-1s
         const timeout = setTimeout(() => {
           setDeployedAgents(prev => {
-            const newSet = new Set([...prev, agentIdx]);
+            const newSet = new Set(Array.from(prev));
+            newSet.add(agentIdx);
             return newSet;
           });
         }, delay);
