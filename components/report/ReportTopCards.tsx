@@ -1,7 +1,8 @@
 "use client";
 
+import { useState, useEffect, useMemo } from "react";
 import { AlertTriangle } from "lucide-react";
-import type { ImpactCard, CompetitorsCard } from "@/lib/report/types";
+import type { ImpactCard, CompetitorsCard, ChecklistSection } from "@/lib/report/types";
 
 interface ReportTopCardsProps {
   impact: ImpactCard;
@@ -9,6 +10,8 @@ interface ReportTopCardsProps {
   businessName: string;
   websiteUrl: string | null;
   businessAvatar?: string | null;
+  placeId?: string | null;
+  sections?: ChecklistSection[];
 }
 
 export default function ReportTopCards({
@@ -17,23 +20,127 @@ export default function ReportTopCards({
   businessName,
   websiteUrl,
   businessAvatar,
+  placeId,
+  sections,
 }: ReportTopCardsProps) {
-  // Use passed businessAvatar or fallback to impact.businessAvatar
-  const avatarUrl = businessAvatar || impact.businessAvatar;
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   
-  // Generate problem-focused header without monetary values
+  // Fetch business photo from Places API
+  useEffect(() => {
+    if (!placeId) return;
+    
+    const fetchBusinessPhoto = async () => {
+      try {
+        // First, get place details to get photo reference
+        const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
+        if (!detailsResponse.ok) return;
+        
+        const detailsData = await detailsResponse.json();
+        // The API returns photoRef directly
+        const photoRef = detailsData.photoRef;
+        
+        if (!photoRef) return;
+        
+        // Fetch the actual photo using the photo reference
+        const photoResponse = await fetch(`/api/places/photo?ref=${encodeURIComponent(photoRef)}&maxw=200`);
+        if (photoResponse.ok) {
+          // Convert blob to object URL
+          const blob = await photoResponse.blob();
+          const url = URL.createObjectURL(blob);
+          setPhotoUrl(url);
+        }
+      } catch (error) {
+        console.error('Error fetching business photo:', error);
+      }
+    };
+    
+    fetchBusinessPhoto();
+    
+    // Cleanup: revoke object URL on unmount
+    return () => {
+      if (photoUrl) {
+        URL.revokeObjectURL(photoUrl);
+      }
+    };
+  }, [placeId]);
+  
+  // Use photo from Places API, then passed businessAvatar, then fallback to impact.businessAvatar
+  const avatarUrl = photoUrl || businessAvatar || impact.businessAvatar;
+  
+  // Extract top 3 issues from all sections
+  const topIssues = useMemo(() => {
+    if (!sections || sections.length === 0) {
+      // Fallback to impact.topProblems if sections not provided
+      return impact.topProblems.slice(0, 3);
+    }
+    
+    const allIssues: Array<{ label: string; impact: 'high' | 'medium' | 'low'; status: 'bad' | 'warn' }> = [];
+    
+    // Collect all issues from all sections
+    sections.forEach(section => {
+      section.checks.forEach(check => {
+        if (check.status === 'bad' || check.status === 'warn') {
+          // Determine impact level based on check key
+          const highImpactKeys = [
+            'h1_service_area',
+            'h1_keywords',
+            'primary_cta',
+            'contact_phone',
+            'gbp_website',
+            'indexability',
+            'gbp_description',
+            'gbp_hours',
+            'gbp_phone',
+          ];
+          const mediumImpactKeys = [
+            'meta_desc_service_area',
+            'meta_desc_keywords',
+            'trust_testimonials',
+            'gbp_social_links',
+            'gbp_price_range',
+          ];
+          
+          let impactLevel: 'high' | 'medium' | 'low' = 'low';
+          if (highImpactKeys.includes(check.key)) impactLevel = 'high';
+          else if (mediumImpactKeys.includes(check.key)) impactLevel = 'medium';
+          
+          allIssues.push({
+            label: check.label,
+            impact: impactLevel,
+            status: check.status,
+          });
+        }
+      });
+    });
+    
+    // Sort by impact (high first), then by status (bad first), then take top 3
+    allIssues.sort((a, b) => {
+      const impactOrder = { high: 3, medium: 2, low: 1 };
+      if (impactOrder[a.impact] !== impactOrder[b.impact]) {
+        return impactOrder[b.impact] - impactOrder[a.impact];
+      }
+      // Bad issues come before warnings
+      if (a.status !== b.status) {
+        return a.status === 'bad' ? -1 : 1;
+      }
+      return 0;
+    });
+    
+    return allIssues.slice(0, 3).map(issue => ({ label: issue.label }));
+  }, [sections, impact.topProblems]);
+  
+  // Generate problem-focused header
   const getImpactHeader = () => {
-    const count = impact.topProblems.length;
+    const count = topIssues.length;
     if (count === 0) return "Your online presence looks good!";
     if (count === 1) return "We found 1 issue affecting your visibility";
-    if (count <= 3) return `We found ${count} issues affecting your visibility`;
-    return `We found ${count} issues that need attention`;
+    return `We found ${count} issues affecting your visibility`;
   };
   
   return (
     <div className="grid grid-cols-2 gap-6 mb-8">
       {/* Impact Card */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-md">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           {getImpactHeader()}
         </h3>
@@ -73,27 +180,46 @@ export default function ReportTopCards({
         
         {/* Top Problems */}
         <div className="space-y-2">
-          {impact.topProblems.map((problem, idx) => (
+          {topIssues.map((issue, idx) => (
             <div key={idx} className="flex items-start gap-2">
               <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <span className="text-sm text-gray-700">{problem.label}</span>
+              <span className="text-sm text-gray-700">{issue.label}</span>
             </div>
           ))}
         </div>
       </div>
       
       {/* Competitors Card */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-md">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          You're ranking below {competitors.count} competitors
+          {(() => {
+            // Find the user's business in the competitors list
+            const userBusiness = competitors.list.find(c => c.isTargetBusiness);
+            if (!userBusiness) {
+              return `You're ranking below ${competitors.count} competitors`;
+            }
+            
+            // Count how many competitors are ranked above the user
+            const competitorsAbove = competitors.list.filter(
+              c => !c.isTargetBusiness && c.rank < userBusiness.rank
+            ).length;
+            
+            if (competitorsAbove === 0) {
+              return "You're ranked #1! 🎉";
+            } else if (competitorsAbove === 1) {
+              return "You're ranking below 1 competitor";
+            } else {
+              return `You're ranking below ${competitorsAbove} competitors`;
+            }
+          })()}
         </h3>
         
         {/* Scrollable list showing 5 items, scroll to see more */}
-        <div className="max-h-[280px] overflow-y-auto space-y-2 pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="max-h-[180px] overflow-y-auto space-y-0.5 pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {competitors.list.map((competitor) => (
             <div 
               key={competitor.rank} 
-              className={`flex items-center justify-between py-2 ${
+              className={`flex items-center justify-between py-1 ${
                 competitor.isTargetBusiness ? 'bg-blue-50 rounded-lg px-2 -mx-2' : ''
               }`}
             >

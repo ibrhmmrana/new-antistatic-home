@@ -51,6 +51,8 @@ export async function GET(request: NextRequest) {
       headers: {
         "Content-Type": response.headers.get("Content-Type") || "image/jpeg",
         "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=604800",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET",
       },
     });
     } catch (error: any) {

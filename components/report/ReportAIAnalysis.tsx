@@ -109,14 +109,14 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8">
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 shadow-md">
         <div className="flex items-center gap-3 mb-4">
           <Sparkles className="w-6 h-6 text-blue-600" />
           <h2 className="text-xl font-semibold text-gray-900">AI-Powered Analysis</h2>
         </div>
         <div className="flex items-center gap-2 text-gray-600">
           <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <span>Analyzing your online presence...</span>
+          <span>Analysing your online presence...</span>
         </div>
       </div>
     );
@@ -139,7 +139,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 shadow-md">
       <div className="flex items-center gap-3 mb-6">
         <Sparkles className="w-6 h-6 text-blue-600" />
         <h2 className="text-xl font-semibold text-gray-900">AI-Powered Analysis</h2>
@@ -165,7 +165,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
           {expandedSections.has('top-priorities') && (
             <div className="mt-4 space-y-3">
               {analysis.topPriorities.map((priority, idx) => (
-                <div key={idx} className="p-4 border border-gray-200 rounded-lg">
+                <div key={idx} className="p-4 border border-gray-200 rounded-xl shadow-sm">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold text-sm">
                       {idx + 1}
@@ -213,7 +213,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
                   <h4 className="font-semibold text-gray-900 mb-2">Pain Points</h4>
                   <div className="space-y-2">
                     {analysis.reviews.painPoints.map((point, idx) => (
-                      <div key={idx} className="p-3 border border-red-200 bg-red-50 rounded-lg">
+                      <div key={idx} className="p-3 border border-red-200 bg-red-50 rounded-xl shadow-sm">
                         <div className="flex items-center gap-2 mb-1">
                           {getSeverityIcon(point.severity)}
                           <span className="font-medium text-gray-900">{point.topic}</span>
@@ -236,7 +236,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
                   <h4 className="font-semibold text-gray-900 mb-2">Strengths</h4>
                   <div className="space-y-2">
                     {analysis.reviews.strengths.map((strength, idx) => (
-                      <div key={idx} className="p-3 border border-green-200 bg-green-50 rounded-lg">
+                      <div key={idx} className="p-3 border border-green-200 bg-green-50 rounded-xl shadow-sm">
                         <div className="flex items-center gap-2 mb-1">
                           <CheckCircle2 className="w-4 h-4 text-green-600" />
                           <span className="font-medium text-gray-900">{strength.topic}</span>
@@ -274,7 +274,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
           {expandedSections.has('consistency') && (
             <div className="mt-4 space-y-4">
               {analysis.consistency.inconsistencies.map((inc, idx) => (
-                <div key={idx} className="p-3 border border-yellow-200 bg-yellow-50 rounded-lg">
+                <div key={idx} className="p-3 border border-yellow-200 bg-yellow-50 rounded-xl shadow-sm">
                   <div className="font-medium text-gray-900 mb-1">
                     Inconsistent {inc.field} across {inc.platforms.join(', ')}
                   </div>
@@ -290,7 +290,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
               ))}
 
               {analysis.consistency.missingInfo.map((missing, idx) => (
-                <div key={idx} className="p-3 border border-blue-200 bg-blue-50 rounded-lg">
+                <div key={idx} className="p-3 border border-blue-200 bg-blue-50 rounded-xl shadow-sm">
                   <div className="font-medium text-gray-900 mb-1">
                     Missing {missing.field} from {missing.missingFrom.join(', ')}
                   </div>
@@ -318,7 +318,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
           {expandedSections.has('social') && (
             <div className="mt-4 space-y-4">
               {analysis.instagram && (
-                <div className="p-4 border border-gray-200 rounded-lg">
+                <div className="p-4 border border-gray-200 rounded-xl shadow-sm">
                   <h4 className="font-semibold text-gray-900 mb-2">Instagram ({analysis.instagram.score}/100)</h4>
                   <p className="text-sm text-gray-700 mb-3">{analysis.instagram.summary}</p>
                   {analysis.instagram.issues.length > 0 && (
@@ -340,7 +340,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
               )}
 
               {analysis.facebook && (
-                <div className="p-4 border border-gray-200 rounded-lg">
+                <div className="p-4 border border-gray-200 rounded-xl shadow-sm">
                   <h4 className="font-semibold text-gray-900 mb-2">Facebook ({analysis.facebook.score}/100)</h4>
                   <p className="text-sm text-gray-700 mb-3">{analysis.facebook.summary}</p>
                   {analysis.facebook.issues.length > 0 && (

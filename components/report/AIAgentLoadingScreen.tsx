@@ -1,12 +1,14 @@
 "use client";
 
-import { Sparkles, Zap, Search, Globe, MessageSquare, Image as ImageIcon } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Sparkles, Zap, Search, Globe, MessageSquare, Image as ImageIcon, Check } from "lucide-react";
 
 interface AIAgentLoadingScreenProps {
   businessName: string;
+  onAllAgentsDeployed?: () => void;
 }
 
-export default function AIAgentLoadingScreen({ businessName }: AIAgentLoadingScreenProps) {
+export default function AIAgentLoadingScreen({ businessName, onAllAgentsDeployed }: AIAgentLoadingScreenProps) {
   const agents = [
     { icon: Search, label: "Search Visibility Agent", color: "text-blue-500" },
     { icon: Globe, label: "Website Analysis Agent", color: "text-green-500" },
@@ -14,6 +16,60 @@ export default function AIAgentLoadingScreen({ businessName }: AIAgentLoadingScr
     { icon: ImageIcon, label: "Visual Content Agent", color: "text-orange-500" },
     { icon: Zap, label: "Performance Agent", color: "text-yellow-500" },
   ];
+
+  const [deployedAgents, setDeployedAgents] = useState<Set<number>>(new Set());
+  const allDeployedCalledRef = useRef(false);
+  const callbackRef = useRef(onAllAgentsDeployed);
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
+
+  // Store the latest callback in a ref to avoid dependency issues
+  useEffect(() => {
+    callbackRef.current = onAllAgentsDeployed;
+  }, [onAllAgentsDeployed]);
+
+  // Check if all agents are deployed and call callback
+  useEffect(() => {
+    const totalAgents = agents.length;
+    if (deployedAgents.size === totalAgents && !allDeployedCalledRef.current) {
+      allDeployedCalledRef.current = true;
+      callbackRef.current?.();
+    }
+  }, [deployedAgents.size, agents.length]);
+
+  // Deploy all agents after a few seconds
+  useEffect(() => {
+    const deployAgents = () => {
+      const totalAgents = agents.length;
+      const indices = Array.from({ length: totalAgents }, (_, i) => i);
+      
+      // Shuffle indices for random deployment order
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      
+      // Deploy all agents one by one with random delays
+      indices.forEach((agentIdx, deployOrder) => {
+        const delay = 2000 + deployOrder * 600 + Math.random() * 1000; // 2s + (order * 0.6s) + random 0-1s
+        const timeout = setTimeout(() => {
+          setDeployedAgents(prev => {
+            const newSet = new Set([...prev, agentIdx]);
+            return newSet;
+          });
+        }, delay);
+        timeoutsRef.current.push(timeout);
+      });
+    };
+
+    // Start deploying after 2 seconds
+    const timeout = setTimeout(deployAgents, 2000);
+    timeoutsRef.current.push(timeout);
+    
+    return () => {
+      timeoutsRef.current.forEach(t => clearTimeout(t));
+      timeoutsRef.current = [];
+    };
+  }, [agents.length]);
 
   return (
     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -33,7 +89,7 @@ export default function AIAgentLoadingScreen({ businessName }: AIAgentLoadingScr
           Deploying AI Agents
         </h2>
         <p className="text-lg text-gray-600 mb-8">
-          Analyzing <span className="font-semibold text-blue-600">{businessName}</span>'s online presence
+          Analysing <span className="font-semibold text-blue-600">{businessName}</span>'s online presence
         </p>
 
         {/* Agent List */}
@@ -54,18 +110,19 @@ export default function AIAgentLoadingScreen({ businessName }: AIAgentLoadingScr
                 </div>
                 <div className="flex-1 text-left">
                   <div className="font-medium text-gray-900">{agent.label}</div>
-                  <div className="text-sm text-gray-500">Initializing...</div>
+                  <div className="text-sm text-gray-500">
+                    {deployedAgents.has(idx) ? "Deployed" : "Initialising..."}
+                  </div>
                 </div>
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                {deployedAgents.has(idx) ? (
+                  <Check className="w-5 h-5 text-green-500 flex-shrink-0" />
+                ) : (
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                )}
               </div>
             );
           })}
         </div>
-
-        {/* Status Message */}
-        <p className="text-sm text-gray-500">
-          Our AI agents are scanning every aspect of your online presence
-        </p>
       </div>
 
       <style jsx>{`

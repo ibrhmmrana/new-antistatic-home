@@ -90,8 +90,23 @@ export default function BusinessSearch() {
     // Generate scan ID
     const scanId = generateScanId();
     
+    // Trigger social media search immediately (don't wait for report page)
+    // This runs in the background and results will be available when user reaches GBP stage
+    fetch('/api/scan/socials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        businessName: prediction.primary_text,
+        address: prediction.secondary_text,
+        scanId,
+        websiteUrl: null, // We don't have website yet, but API can still search
+      }),
+    }).catch(err => {
+      console.error('[BUSINESS-SEARCH] Failed to trigger social media search:', err);
+      // Don't block navigation if search fails
+    });
+    
     // Navigate immediately when business is selected
-    // Scraper will be triggered when report page loads
     const params = new URLSearchParams({
       placeId: prediction.place_id,
       name: prediction.primary_text,
@@ -275,4 +290,3 @@ export default function BusinessSearch() {
     </div>
   );
 }
-

@@ -11,28 +11,28 @@ interface AIAgentModalProps {
 // Stage-specific analysis messages
 const STAGE_MESSAGES: Record<number, string[]> = {
   0: [
-    "Analyzing competitor landscape",
+    "Analysing competitor landscape",
     "Mapping local market presence",
     "Identifying ranking opportunities",
     "Calculating market share",
     "Evaluating competitive positioning",
   ],
   1: [
-    "Analyzing Google Business Profile",
+    "Analysing Google Business Profile",
     "Checking profile completeness",
     "Reviewing category optimization",
     "Evaluating keyword usage",
     "Assessing profile strength",
   ],
   2: [
-    "Analyzing review sentiment",
+    "Analysing review sentiment",
     "Identifying pain points",
     "Extracting key themes",
     "Calculating sentiment scores",
     "Reviewing customer feedback",
   ],
   3: [
-    "Analyzing photo quality",
+    "Analysing photo quality",
     "Evaluating visual content",
     "Assessing image optimization",
     "Reviewing photo diversity",
@@ -40,7 +40,7 @@ const STAGE_MESSAGES: Record<number, string[]> = {
   ],
   4: [
     "Scanning online presence",
-    "Analyzing website performance",
+    "Analysing website performance",
     "Checking social media profiles",
     "Evaluating cross-platform consistency",
     "Compiling comprehensive report",
@@ -61,7 +61,7 @@ export default function AIAgentModal({ stage, stageName }: AIAgentModalProps) {
 
   return (
     <div className="fixed top-6 right-6 z-50 animate-fadeIn">
-      <div className="bg-white/80 backdrop-blur-md rounded-xl border border-white/20 shadow-lg p-4 min-w-[280px]">
+      <div className="bg-white/10 backdrop-blur-2xl rounded-xl border border-white/30 shadow-2xl p-4 min-w-[280px] backdrop-saturate-150">
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="absolute inset-0 bg-blue-500 rounded-full opacity-20 animate-ping" />
@@ -70,10 +70,10 @@ export default function AIAgentModal({ stage, stageName }: AIAgentModalProps) {
             </div>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+            <div className="text-xs font-semibold text-gray-800 uppercase tracking-wide mb-0.5 drop-shadow-sm">
               AI Agent
             </div>
-            <div className="text-sm font-medium text-gray-900 truncate">
+            <div className="text-sm font-medium text-gray-900 truncate drop-shadow-sm">
               {messages[currentMessageIndex]}
             </div>
           </div>

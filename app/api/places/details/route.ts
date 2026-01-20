@@ -33,6 +33,9 @@ export async function GET(request: NextRequest) {
       "formatted_address",
       "website", // CRITICAL: Add website field to get business website URL
       "url",
+      "international_phone_number",
+      "formatted_phone_number",
+      "opening_hours",
     ].join(",");
 
     const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${apiKey}`;
@@ -100,6 +103,8 @@ export async function GET(request: NextRequest) {
       photoRef,
       website: result.website || null,
       url: result.url || null,
+      phoneNumber: result.international_phone_number || result.formatted_phone_number || null,
+      openingHours: result.opening_hours || null,
     });
   } catch (error) {
     console.error("Error fetching place details:", error);

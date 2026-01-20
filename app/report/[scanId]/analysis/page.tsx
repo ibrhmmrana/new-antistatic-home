@@ -341,6 +341,8 @@ export default function AnalysisPage() {
             businessName={report.meta.businessName}
             websiteUrl={report.meta.websiteUrl}
             businessAvatar={report.summaryCards.impact.businessAvatar}
+            placeId={report.meta.placeId}
+            sections={report.sections}
           />
           
           {/* Search Visibility Table */}

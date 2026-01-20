@@ -6,6 +6,7 @@ import Image from "next/image";
 
 interface StagePhotoCollageProps {
   placeId: string;
+  scanId?: string;
   onComplete?: () => void;
 }
 
@@ -32,63 +33,151 @@ type Slot = {
   rotateDeg: number;
   z: number;
   aspect: "4/3" | "3/4" | "1/1";
+  angleRad?: number; // For reveal ordering and debugging
 };
 
 const MAX_PHOTOS = 12;
+const HERO_COUNT = 4; // First 4 slots are always hero cluster
+
+// Ring configuration constants
+const RING_CONFIG = {
+  MED: {
+    centerXPct: 48, // Slightly left of center to match hero cluster shift
+    centerYPct: 50,
+    radiusXPct: 40, // Horizontal radius (increased from 32)
+    radiusYPct: 42, // Vertical radius (increased from 34, slightly larger for ellipse)
+    minWidth: 320,
+    maxWidth: 400,
+    baseZ: 10,
+  },
+  LARGE: {
+    centerXPct: 49, // Slightly left of center
+    centerYPct: 50,
+    radiusXPct: 45, // Larger radius for LARGE template (increased from 38)
+    radiusYPct: 47, // Vertical radius (increased from 40)
+    minWidth: 340,
+    maxWidth: 420,
+    baseZ: 10,
+  },
+};
+
+// Rotation pattern for variety (deterministic based on index)
+const ROTATION_PATTERNS = [-8.5, 7.2, -6.8, 9.5, -1.8, -7.5, 8.2, -1.5];
+// Aspect pattern for variety
+const ASPECT_PATTERNS: Array<"4/3" | "3/4" | "1/1"> = ["4/3", "3/4", "1/1", "3/4", "4/3", "3/4", "1/1", "4/3"];
 
 // Hero cluster templates (first 3 photos, centered)
 // These form the core of the collage
 const TEMPLATE_SMALL: Slot[] = [
   // Slot 0: Hero for 1 photo (or reused as hero for 2-3 photos)
-  { leftPct: 50, topPct: 50, widthPx: 480, rotateDeg: 1.5, z: 15, aspect: "4/3" },
+  { leftPct: 50, topPct: 50, widthPx: 560, rotateDeg: 1.5, z: 15, aspect: "4/3" },
   // Slot 1: Second photo for 2 photos (or reused for 3 photos)
-  { leftPct: 45, topPct: 52, widthPx: 380, rotateDeg: 3.5, z: 14, aspect: "3/4" },
+  { leftPct: 45, topPct: 52, widthPx: 440, rotateDeg: 3.5, z: 14, aspect: "3/4" },
   // Slot 2: Third photo for 3 photos
-  { leftPct: 58, topPct: 48, widthPx: 360, rotateDeg: -3.5, z: 13, aspect: "1/1" },
+  { leftPct: 58, topPct: 48, widthPx: 420, rotateDeg: -3.5, z: 13, aspect: "1/1" },
 ];
 
-// Medium template (4-8 photos): hero cluster + surrounding ring
-const TEMPLATE_MED: Slot[] = [
-  // Hero cluster (first 4)
-  { leftPct: 50, topPct: 50, widthPx: 480, rotateDeg: -1.5, z: 18, aspect: "4/3" }, // Hero
-  { leftPct: 42, topPct: 48, widthPx: 360, rotateDeg: 4.5, z: 17, aspect: "3/4" }, // Left overlap
-  { leftPct: 58, topPct: 52, widthPx: 340, rotateDeg: -3.8, z: 16, aspect: "1/1" }, // Right overlap
-  { leftPct: 50, topPct: 58, widthPx: 320, rotateDeg: 2.2, z: 15, aspect: "4/3" }, // Bottom overlap
-  // Surrounding ring (remaining slots)
-  { leftPct: 25, topPct: 30, widthPx: 280, rotateDeg: -8.5, z: 10, aspect: "3/4" }, // Top-left
-  { leftPct: 75, topPct: 30, widthPx: 300, rotateDeg: 7.2, z: 11, aspect: "4/3" }, // Top-right
-  { leftPct: 80, topPct: 50, widthPx: 260, rotateDeg: -6.8, z: 12, aspect: "1/1" }, // Right
-  { leftPct: 75, topPct: 70, widthPx: 290, rotateDeg: 9.5, z: 13, aspect: "3/4" }, // Bottom-right
-  { leftPct: 25, topPct: 70, widthPx: 270, rotateDeg: -7.5, z: 12, aspect: "4/3" }, // Bottom-left
-  { leftPct: 20, topPct: 50, widthPx: 250, rotateDeg: 8.2, z: 11, aspect: "1/1" }, // Left
+// Hero cluster templates (fixed, never change)
+// Z-index values must be higher than max edge z-index (baseZ + 7 = 17)
+const HERO_CLUSTER_MED: Slot[] = [
+  { leftPct: 45, topPct: 45, widthPx: 560, rotateDeg: -1.5, z: 22, aspect: "4/3" }, // Hero (shifted left)
+  { leftPct: 35, topPct: 43, widthPx: 420, rotateDeg: 4.5, z: 21, aspect: "3/4" }, // Left overlap
+  { leftPct: 58, topPct: 48, widthPx: 400, rotateDeg: -3.8, z: 20, aspect: "1/1" }, // Right overlap
+  { leftPct: 45, topPct: 55, widthPx: 380, rotateDeg: 2.2, z: 19, aspect: "4/3" }, // Bottom overlap
 ];
 
-// Large template (9-12 photos): expanded hero + wider ring
-const TEMPLATE_LARGE: Slot[] = [
-  // Hero cluster (first 4)
-  { leftPct: 50, topPct: 50, widthPx: 520, rotateDeg: -1.2, z: 22, aspect: "4/3" }, // Hero
-  { leftPct: 40, topPct: 47, widthPx: 380, rotateDeg: 5.5, z: 21, aspect: "3/4" }, // Left overlap
-  { leftPct: 60, topPct: 53, widthPx: 360, rotateDeg: -4.2, z: 20, aspect: "1/1" }, // Right overlap
-  { leftPct: 50, topPct: 60, widthPx: 340, rotateDeg: 2.8, z: 19, aspect: "4/3" }, // Bottom overlap
-  // Wider surrounding ring
-  { leftPct: 20, topPct: 25, widthPx: 280, rotateDeg: -9.5, z: 10, aspect: "3/4" }, // Top-left
-  { leftPct: 50, topPct: 20, widthPx: 300, rotateDeg: 1.5, z: 11, aspect: "4/3" }, // Top-center
-  { leftPct: 80, topPct: 25, widthPx: 260, rotateDeg: 8.2, z: 12, aspect: "1/1" }, // Top-right
-  { leftPct: 85, topPct: 50, widthPx: 290, rotateDeg: -7.8, z: 13, aspect: "3/4" }, // Right
-  { leftPct: 80, topPct: 75, widthPx: 270, rotateDeg: 10.5, z: 14, aspect: "4/3" }, // Bottom-right
-  { leftPct: 50, topPct: 80, widthPx: 250, rotateDeg: -1.8, z: 13, aspect: "1/1" }, // Bottom-center
-  { leftPct: 20, topPct: 75, widthPx: 300, rotateDeg: -8.5, z: 12, aspect: "3/4" }, // Bottom-left
-  { leftPct: 15, topPct: 50, widthPx: 240, rotateDeg: 9.2, z: 11, aspect: "4/3" }, // Left
+const HERO_CLUSTER_LARGE: Slot[] = [
+  { leftPct: 45, topPct: 45, widthPx: 600, rotateDeg: -1.2, z: 22, aspect: "4/3" }, // Hero (shifted left)
+  { leftPct: 32, topPct: 42, widthPx: 440, rotateDeg: 5.5, z: 21, aspect: "3/4" }, // Left overlap
+  { leftPct: 60, topPct: 48, widthPx: 420, rotateDeg: -4.2, z: 20, aspect: "1/1" }, // Right overlap
+  { leftPct: 45, topPct: 58, widthPx: 400, rotateDeg: 2.8, z: 19, aspect: "4/3" }, // Bottom overlap
 ];
 
 /**
+ * Generate dynamic ring slots with even angular spacing
+ * @param edgeCount Number of edge photos (0-8)
+ * @param variant 'MED' or 'LARGE' for size configuration
+ * @returns Array of Slot objects positioned evenly around a circle
+ */
+function generateRingSlots(edgeCount: number, variant: 'MED' | 'LARGE'): Slot[] {
+  if (edgeCount <= 0) return [];
+  
+  const config = RING_CONFIG[variant];
+  const slots: Slot[] = [];
+  
+  // Start angle: -π/2 (12 o'clock / top)
+  const startAngle = -Math.PI / 2;
+  // Step angle: evenly distribute around full circle
+  const stepAngle = (2 * Math.PI) / edgeCount;
+  
+  for (let i = 0; i < edgeCount; i++) {
+    // Calculate angle for this slot (clockwise from top)
+    const theta = startAngle + i * stepAngle;
+    
+    // Calculate position using ellipse (slight vertical stretch)
+    const leftPct = config.centerXPct + config.radiusXPct * Math.cos(theta);
+    let topPct = config.centerYPct + config.radiusYPct * Math.sin(theta);
+    
+    // Shift the 6 o'clock position (bottom) up a bit
+    // 6 o'clock is at angle π/2 (90 degrees)
+    const sixOClockAngle = Math.PI / 2;
+    if (Math.abs(theta - sixOClockAngle) < 0.1 || Math.abs(theta - sixOClockAngle + 2 * Math.PI) < 0.1) {
+      topPct -= 22; // Shift up by 22 percentage points
+    }
+    
+    // Shift the 12 o'clock position (top) down a bit
+    // 12 o'clock is at angle -π/2 (270 degrees or -90 degrees)
+    const twelveOClockAngle = -Math.PI / 2;
+    if (Math.abs(theta - twelveOClockAngle) < 0.1 || Math.abs(theta - twelveOClockAngle + 2 * Math.PI) < 0.1) {
+      topPct += 8; // Shift down by 8 percentage points
+    }
+    
+    // Vary width slightly for visual interest (deterministic)
+    const widthVariation = (i % 3) * 20; // 0, 20, 40
+    const widthPx = config.minWidth + widthVariation;
+    
+    // Use rotation pattern (cycle through)
+    const rotateDeg = ROTATION_PATTERNS[i % ROTATION_PATTERNS.length];
+    
+    // Z-index increases slightly for layering
+    const z = config.baseZ + i;
+    
+    // Use aspect pattern (cycle through)
+    const aspect = ASPECT_PATTERNS[i % ASPECT_PATTERNS.length];
+    
+    slots.push({
+      leftPct,
+      topPct,
+      widthPx,
+      rotateDeg,
+      z,
+      aspect,
+      angleRad: theta, // Store for reveal ordering
+    });
+  }
+  
+  return slots;
+}
+
+/**
  * Get the appropriate template for a given photo count
+ * For 1-3 photos: use TEMPLATE_SMALL (centered cluster)
+ * For 4+ photos: use fixed hero cluster + dynamic ring
  */
 function getTemplate(count: number): Slot[] {
   if (count <= 0) return [];
   if (count <= 3) return TEMPLATE_SMALL.slice(0, count);
-  if (count <= 8) return TEMPLATE_MED.slice(0, count);
-  return TEMPLATE_LARGE.slice(0, Math.min(count, MAX_PHOTOS));
+  
+  // For 4+ photos: hero cluster + dynamic ring
+  const edgeCount = Math.min(count - HERO_COUNT, 8); // Max 8 edge slots
+  
+  // Choose variant based on count (MED for 4-10, LARGE for 9-12)
+  const variant: 'MED' | 'LARGE' = count <= 10 ? 'MED' : 'LARGE';
+  const heroCluster = variant === 'MED' ? HERO_CLUSTER_MED : HERO_CLUSTER_LARGE;
+  const ringSlots = generateRingSlots(edgeCount, variant);
+  
+  // Combine: hero cluster first, then ring slots
+  return [...heroCluster, ...ringSlots];
 }
 
 /**
@@ -153,6 +242,7 @@ function calculateCenteringOffset(
 
 export default function StagePhotoCollage({
   placeId,
+  scanId,
   onComplete,
 }: StagePhotoCollageProps) {
   const [data, setData] = useState<PhotosData | null>(null);
@@ -167,6 +257,28 @@ export default function StagePhotoCollage({
     const fetchPhotos = async () => {
       setLoading(true);
       setError(null);
+      
+      // First, check if data was pre-loaded in localStorage
+      if (scanId) {
+        try {
+          const cachedData = localStorage.getItem(`photos_${scanId}`);
+          if (cachedData) {
+            const photosData: PhotosData = JSON.parse(cachedData);
+            
+            // Validate cached data
+            if (photosData.photos && Array.isArray(photosData.photos)) {
+              console.log("[photos] Using pre-loaded data from localStorage");
+              setData(photosData);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("[photos] Failed to parse cached data, fetching fresh:", e);
+        }
+      }
+      
+      // If no cached data, fetch from API
       try {
         const response = await fetch(
           `/api/places/photos?placeId=${encodeURIComponent(placeId)}`
@@ -181,6 +293,11 @@ export default function StagePhotoCollage({
 
         const photosData: PhotosData = await response.json();
         setData(photosData);
+        
+        // Store in localStorage for future use
+        if (scanId) {
+          localStorage.setItem(`photos_${scanId}`, JSON.stringify(photosData));
+        }
       } catch (err: any) {
         console.error("Error fetching photos:", err);
         setError(err.message || "An unknown error occurred.");
@@ -190,7 +307,7 @@ export default function StagePhotoCollage({
     };
 
     fetchPhotos();
-  }, [placeId]);
+  }, [placeId, scanId]);
 
   // Calculate centering offset when data or container size changes
   useEffect(() => {
@@ -204,7 +321,12 @@ export default function StagePhotoCollage({
 
     if (containerWidth > 0 && containerHeight > 0) {
       const offset = calculateCenteringOffset(slots, containerWidth, containerHeight);
-      setCenteringOffset(offset);
+      // Shift the entire canvas up by subtracting a vertical offset
+      const verticalShift = 60; // Pixels to shift up
+      setCenteringOffset({
+        deltaX: offset.deltaX,
+        deltaY: offset.deltaY - verticalShift,
+      });
     }
   }, [data]);
 
@@ -221,7 +343,12 @@ export default function StagePhotoCollage({
 
       if (containerWidth > 0 && containerHeight > 0) {
         const offset = calculateCenteringOffset(slots, containerWidth, containerHeight);
-        setCenteringOffset(offset);
+        // Shift the entire canvas up by subtracting a vertical offset
+        const verticalShift = 60; // Pixels to shift up
+        setCenteringOffset({
+          deltaX: offset.deltaX,
+          deltaY: offset.deltaY - verticalShift,
+        });
       }
     };
 
@@ -334,24 +461,146 @@ export default function StagePhotoCollage({
   // Cap at MAX_PHOTOS
   const photosToShow = data.photos.slice(0, MAX_PHOTOS);
   const slots = getTemplate(photosToShow.length);
+  
+  // Determine variant for debug overlay
+  const variant: 'MED' | 'LARGE' = photosToShow.length <= 10 ? 'MED' : 'LARGE';
+  const edgeCount = Math.min(photosToShow.length - HERO_COUNT, 8);
 
-  // Create an array of indices sorted by z-index (ascending - back to front)
-  const sortedIndices = slots
-    .map((slot, index) => ({ index, z: slot.z }))
-    .sort((a, b) => a.z - b.z)
-    .map(item => item.index);
+  // Separate slots into edge (surrounding ring) and center (hero cluster)
+  // Hero cluster is always the first HERO_COUNT slots (indices 0-3)
+  // Edge slots are the remaining slots (indices HERO_COUNT+)
+  const edgeSlots: Array<{ index: number; slot: Slot; angle: number }> = [];
+  const centerSlots: Array<{ index: number; slot: Slot }> = [];
 
-  // Create a reverse mapping: for each original index, find its position in the sorted order
-  const revealOrder = new Map<number, number>();
-  sortedIndices.forEach((originalIndex, revealIndex) => {
-    revealOrder.set(originalIndex, revealIndex);
+  slots.forEach((slot, index) => {
+    // First HERO_COUNT slots are center (hero cluster), rest are edge (surrounding ring)
+    if (index < HERO_COUNT) {
+      centerSlots.push({ index, slot });
+    } else {
+      // Use stored angleRad if available (from dynamic generation), otherwise calculate
+      const angle = slot.angleRad !== undefined 
+        ? slot.angleRad < 0 ? slot.angleRad + 2 * Math.PI : slot.angleRad
+        : (() => {
+            // Fallback: calculate angle from position
+            const centerX = 50;
+            const centerY = 50;
+            const dx = slot.leftPct - centerX;
+            const dy = slot.topPct - centerY;
+            let angle = Math.atan2(dx, -dy);
+            if (angle < 0) angle += 2 * Math.PI;
+            return angle;
+          })();
+      edgeSlots.push({ index, slot, angle });
+    }
   });
+
+  // Sort edge slots by angle to ensure they're in circular order
+  edgeSlots.sort((a, b) => a.angle - b.angle);
+  
+  // Create circular reveal order: start at random point, proceed around circle
+  const revealOrder = new Map<number, number>();
+  const zIndexMap = new Map<number, number>();
+  const baseZ = 10; // Starting z-index
+  let revealIndex = 0;
+  
+  // Random starting point and direction for circular pattern (deterministic based on photo count)
+  const seed = photosToShow.length;
+  const startOffset = (seed * 7 + 13) % edgeSlots.length; // Random starting edge slot
+  const clockwise = (seed * 3) % 2 === 0; // Random direction (clockwise or counterclockwise)
+  
+  // Reveal edge slots in circular order (starting from random point)
+  const edgeOrder: Array<{ index: number; slot: Slot }> = [];
+  for (let i = 0; i < edgeSlots.length; i++) {
+    const actualIndex = clockwise 
+      ? (startOffset + i) % edgeSlots.length
+      : (startOffset - i + edgeSlots.length) % edgeSlots.length;
+    edgeOrder.push(edgeSlots[actualIndex]);
+  }
+  
+  // Reveal edge slots in circular order
+  edgeOrder.forEach(({ index }) => {
+    revealOrder.set(index, revealIndex);
+    zIndexMap.set(index, baseZ + revealIndex);
+    revealIndex++;
+  });
+  
+  // Randomly order center slots (deterministic shuffle)
+  const centerIndices = centerSlots.map(({ index }) => index);
+  for (let i = centerIndices.length - 1; i > 0; i--) {
+    const j = (seed * (i + 1) * 19 + i * 31) % (i + 1);
+    [centerIndices[i], centerIndices[j]] = [centerIndices[j], centerIndices[i]];
+  }
+  
+  // Reveal center slots in random order
+  centerIndices.forEach((index) => {
+    revealOrder.set(index, revealIndex);
+    zIndexMap.set(index, baseZ + revealIndex);
+    revealIndex++;
+  });
+
+  // Update slot z-index values based on reveal order
+  slots.forEach((slot, index) => {
+    if (zIndexMap.has(index)) {
+      slot.z = zIndexMap.get(index)!;
+    }
+  });
+
+  // Debug overlay disabled
+  const showDebugOverlay = false;
+  const ringConfig = RING_CONFIG[variant];
 
   return (
     <div 
       ref={containerRef}
       className="relative w-full h-full min-h-[600px] overflow-hidden isolate"
     >
+      {/* Debug overlay (dev only) */}
+      {showDebugOverlay && containerRef.current && (
+        <div 
+          className="absolute inset-0 pointer-events-none z-0"
+          style={{
+            transform: `translate(${centeringOffset.deltaX}px, ${centeringOffset.deltaY}px)`,
+          }}
+        >
+          {/* Container center */}
+          <div
+            className="absolute w-2 h-2 bg-red-500 rounded-full"
+            style={{
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+            }}
+            title="Container Center"
+          />
+          {/* Ring ellipse */}
+          <svg className="absolute inset-0 w-full h-full" style={{ opacity: 0.2 }}>
+            <ellipse
+              cx={`${ringConfig.centerXPct}%`}
+              cy={`${ringConfig.centerYPct}%`}
+              rx={`${ringConfig.radiusXPct}%`}
+              ry={`${ringConfig.radiusYPct}%`}
+              fill="none"
+              stroke="#3b82f6"
+              strokeWidth="2"
+              strokeDasharray="5,5"
+            />
+          </svg>
+          {/* Slot anchor points */}
+          {edgeSlots.map(({ index, slot }, i) => (
+            <div
+              key={`debug-${index}`}
+              className="absolute w-3 h-3 bg-blue-500 rounded-full border-2 border-white"
+              style={{
+                left: `${slot.leftPct}%`,
+                top: `${slot.topPct}%`,
+                transform: 'translate(-50%, -50%)',
+              }}
+              title={`Edge ${i + 1}: ${((slot.angleRad || 0) * 180 / Math.PI).toFixed(1)}°`}
+            />
+          ))}
+        </div>
+      )}
+      
       {/* Full-size canvas for absolute positioning with centering transform */}
       <div 
         className="absolute inset-0 min-h-[600px]"
@@ -366,7 +615,10 @@ export default function StagePhotoCollage({
           // Get the reveal order position for this image (back to front)
           const revealPosition = revealOrder.get(index) ?? index;
           const isVisible = revealPosition < visibleCount;
-          const photoUrl = `/api/places/photo?ref=${encodeURIComponent(photo.ref)}&maxw=1400`;
+          // Use absolute URL for local development to avoid Next.js Image optimization issues
+          const photoUrl = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+            ? `${window.location.origin}/api/places/photo?ref=${encodeURIComponent(photo.ref)}&maxw=1400`
+            : `/api/places/photo?ref=${encodeURIComponent(photo.ref)}&maxw=1400`;
 
           return (
             <div

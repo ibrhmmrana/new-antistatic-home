@@ -13,10 +13,20 @@ const nextConfig = {
         hostname: 'lh3.googleusercontent.com',
         pathname: '/**',
       },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        pathname: '/**',
+      },
+      {
+        protocol: 'http',
+        hostname: '127.0.0.1',
+        pathname: '/**',
+      },
     ],
     // Allow images from local API routes
-    domains: ['localhost'],
-    unoptimized: false,
+    domains: ['localhost', '127.0.0.1'],
+    unoptimized: process.env.NODE_ENV === 'development', // Disable optimization in dev to avoid issues
   },
 };
 

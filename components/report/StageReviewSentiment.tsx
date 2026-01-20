@@ -6,6 +6,7 @@ import Image from "next/image";
 
 interface StageReviewSentimentProps {
   placeId: string;
+  scanId?: string;
   onComplete?: () => void;
 }
 
@@ -48,6 +49,7 @@ function getStickerTransform(index: number) {
 
 export default function StageReviewSentiment({
   placeId,
+  scanId,
   onComplete,
 }: StageReviewSentimentProps) {
   const [data, setData] = useState<ReviewsData | null>(null);
@@ -59,6 +61,28 @@ export default function StageReviewSentiment({
     const fetchReviews = async () => {
       setLoading(true);
       setError(null);
+      
+      // First, check if data was pre-loaded in localStorage
+      if (scanId) {
+        try {
+          const cachedData = localStorage.getItem(`reviews_${scanId}`);
+          if (cachedData) {
+            const reviewsData: ReviewsData = JSON.parse(cachedData);
+            
+            // Validate cached data
+            if (reviewsData.reviews && Array.isArray(reviewsData.reviews)) {
+              console.log("[reviews] Using pre-loaded data from localStorage");
+              setData(reviewsData);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("[reviews] Failed to parse cached data, fetching fresh:", e);
+        }
+      }
+      
+      // If no cached data, fetch from API
       try {
         const response = await fetch(
           `/api/places/reviews?placeId=${encodeURIComponent(placeId)}`
@@ -73,6 +97,11 @@ export default function StageReviewSentiment({
 
         const reviewsData: ReviewsData = await response.json();
         setData(reviewsData);
+        
+        // Store in localStorage for future use
+        if (scanId) {
+          localStorage.setItem(`reviews_${scanId}`, JSON.stringify(reviewsData));
+        }
       } catch (err: any) {
         console.error("Error fetching reviews:", err);
         setError(err.message || "An unknown error occurred.");
@@ -82,7 +111,7 @@ export default function StageReviewSentiment({
     };
 
     fetchReviews();
-  }, [placeId]);
+  }, [placeId, scanId]);
 
   // Calculate scale to fit cards on screen without scrollbar
   useEffect(() => {

@@ -209,3 +209,26 @@ body {
   }
 }
 
+/* Finding reveal animation for GBP stage */
+@keyframes findingReveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.finding-reveal {
+  animation: findingReveal 0.4s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finding-reveal {
+    animation: none;
+    opacity: 1;
+  }
+}
+

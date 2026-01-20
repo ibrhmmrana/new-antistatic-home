@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useJsApiLoader, GoogleMap } from "@react-google-maps/api";
 import type { SearchVisibility } from "@/lib/report/types";
 import { getFaviconUrl } from "@/lib/seo/favicon";
 
@@ -11,12 +12,21 @@ interface ReportSearchVisibilityProps {
   targetDomain?: string | null;
 }
 
+const libraries: ("places")[] = ["places"];
+const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+
 export default function ReportSearchVisibility({
   searchVisibility,
   targetPlaceId,
   targetDomain,
 }: ReportSearchVisibilityProps) {
   const [expandedQueries, setExpandedQueries] = useState<Set<string>>(new Set());
+  const markersRef = useRef<Map<string, google.maps.Marker[]>>(new Map());
+  
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: apiKey,
+    libraries,
+  });
   
   const toggleQuery = (query: string) => {
     const newExpanded = new Set(expandedQueries);
@@ -27,6 +37,116 @@ export default function ReportSearchVisibility({
     }
     setExpandedQueries(newExpanded);
   };
+  
+  // Fetch locations for mapPack results and create markers
+  const initializeMapMarkers = useCallback(async (
+    mapInstance: google.maps.Map,
+    mapPackResults: Array<{ placeId: string | null; name: string; isTargetBusiness?: boolean }>,
+    queryKey: string
+  ) => {
+    if (!mapInstance || mapPackResults.length === 0) return;
+    
+    // Clear existing markers for this query
+    const existingMarkers = markersRef.current.get(queryKey) || [];
+    existingMarkers.forEach(marker => marker.setMap(null));
+    markersRef.current.set(queryKey, []);
+    
+    const bounds = new google.maps.LatLngBounds();
+    const newMarkers: google.maps.Marker[] = [];
+    let firstPosition: google.maps.LatLng | null = null;
+    
+    // Fetch locations for each placeId
+    for (const result of mapPackResults) {
+      if (!result.placeId) continue;
+      
+      try {
+        const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(result.placeId)}`);
+        if (!response.ok) continue;
+        
+        const data = await response.json();
+        if (!data.location?.lat || !data.location?.lng) continue;
+        
+        const position = new google.maps.LatLng(data.location.lat, data.location.lng);
+        if (!firstPosition) firstPosition = position;
+        bounds.extend(position);
+        
+        // Create marker - different style for target business
+        const marker = new google.maps.Marker({
+          position,
+          map: mapInstance,
+          title: result.name,
+          icon: result.isTargetBusiness ? {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 12,
+            fillColor: "#000000",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+          } : {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: "#ef4444",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+          },
+        });
+        
+        newMarkers.push(marker);
+      } catch (error) {
+        console.error(`Error fetching location for ${result.placeId}:`, error);
+      }
+    }
+    
+    // Store markers
+    markersRef.current.set(queryKey, newMarkers);
+    
+    // Fit bounds to show all markers, or center on first if only one
+    if (newMarkers.length > 0) {
+      if (newMarkers.length === 1 && firstPosition) {
+        mapInstance.setCenter(firstPosition);
+        mapInstance.setZoom(15);
+      } else if (newMarkers.length > 1) {
+        mapInstance.fitBounds(bounds, {
+          top: 20,
+          right: 20,
+          bottom: 20,
+          left: 20,
+        });
+      }
+    }
+  }, []);
+  
+  const onMapLoad = useCallback((mapInstance: google.maps.Map, queryKey: string, mapPackResults: Array<{ placeId: string | null; name: string; isTargetBusiness?: boolean }>) => {
+    // Initialize markers after a short delay to ensure map is fully loaded
+    setTimeout(() => {
+      initializeMapMarkers(mapInstance, mapPackResults, queryKey);
+    }, 100);
+  }, [initializeMapMarkers]);
+  
+  // Cleanup markers when query is collapsed
+  useEffect(() => {
+    return () => {
+      // Cleanup all markers on unmount
+      markersRef.current.forEach((markers) => {
+        markers.forEach(marker => marker.setMap(null));
+      });
+      markersRef.current.clear();
+    };
+  }, []);
+  
+  // Cleanup markers when query is collapsed
+  useEffect(() => {
+    searchVisibility.queries.forEach((query) => {
+      if (!expandedQueries.has(query.query)) {
+        const markers = markersRef.current.get(query.query);
+        if (markers) {
+          markers.forEach(marker => marker.setMap(null));
+          markersRef.current.delete(query.query);
+        }
+      }
+    });
+  }, [expandedQueries, searchVisibility.queries]);
   
   // Normalize domain for comparison
   const normalizeDomain = (url: string): string => {
@@ -41,7 +161,7 @@ export default function ReportSearchVisibility({
   const targetDomainNormalized = targetDomain ? normalizeDomain(targetDomain) : null;
   
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 shadow-md">
       {/* Header */}
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-1">
@@ -69,7 +189,7 @@ export default function ReportSearchVisibility({
             return (
               <div
                 key={idx}
-                className="border border-gray-200 rounded-lg overflow-hidden"
+                className="border-b border-gray-200 last:border-b-0"
               >
                 {/* Query Header (Collapsed) */}
                 <button
@@ -97,22 +217,22 @@ export default function ReportSearchVisibility({
                     )}
                     {!isRankedMap && (
                       <span className="px-2 py-1 bg-pink-100 text-pink-700 text-xs rounded">
-                        Unranked map pack
+                        Unranked on Google Maps
                       </span>
                     )}
                     {!isRankedOrganic && (
                       <span className="px-2 py-1 bg-pink-100 text-pink-700 text-xs rounded">
-                        Unranked organic
+                        Unranked on Google Search
                       </span>
                     )}
                     {isRankedMap && (
                       <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
-                        Ranked #{query.mapPack.rank} map pack
+                        Ranked #{query.mapPack.rank} on Google Maps
                       </span>
                     )}
                     {isRankedOrganic && (
                       <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
-                        Ranked #{query.organic.rank} organic
+                        Ranked #{query.organic.rank} on Google Search
                       </span>
                     )}
                     
@@ -137,31 +257,44 @@ export default function ReportSearchVisibility({
                         ) : (
                           <div className="flex gap-4">
                             {/* Map - Left side */}
-                            <div className="w-48 flex-shrink-0 relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
-                              {query.mapPack.results.some(r => r.placeId) ? (
-                                <>
-                                  <img
-                                    src={`/api/places/static-map?placeIds=${query.mapPack.results.filter(r => r.placeId).map(r => r.placeId).join(',')}&zoom=14`}
-                                    alt="Map showing competitor locations"
-                                    className="w-full h-full object-cover"
-                                    style={{ minHeight: '280px' }}
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      target.style.display = 'none';
-                                      const parent = target.parentElement;
-                                      if (parent && !parent.querySelector('.map-error')) {
-                                        const errorDiv = document.createElement('div');
-                                        errorDiv.className = 'map-error absolute inset-0 flex items-center justify-center text-gray-400 text-sm bg-gray-100';
-                                        errorDiv.textContent = 'Map unavailable';
-                                        parent.appendChild(errorDiv);
-                                      }
+                            <div className="w-48 flex-shrink-0 relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100" style={{ minHeight: '280px', pointerEvents: 'none' }}>
+                              {query.mapPack.results.some(r => r.placeId) && isLoaded ? (
+                                <div style={{ pointerEvents: 'none' }}>
+                                  <GoogleMap
+                                    mapContainerStyle={{
+                                      width: "100%",
+                                      height: "100%",
+                                      minHeight: "280px",
+                                      pointerEvents: 'none',
+                                    }}
+                                    center={{ lat: -33.9249, lng: 18.4241 }} // Default center (will be adjusted by fitBounds)
+                                    zoom={14}
+                                    onLoad={(map) => onMapLoad(map, query.query, query.mapPack.results)}
+                                    options={{
+                                      disableDefaultUI: true,
+                                      zoomControl: false,
+                                      streetViewControl: false,
+                                      mapTypeControl: false,
+                                      fullscreenControl: false,
+                                      draggable: false,
+                                      scrollwheel: false,
+                                      disableDoubleClickZoom: true,
+                                      gestureHandling: 'none',
+                                      keyboardShortcuts: false,
+                                      styles: [
+                                        {
+                                          featureType: "poi",
+                                          elementType: "labels",
+                                          stylers: [{ visibility: "off" }],
+                                        },
+                                      ],
                                     }}
                                   />
-                                  <div className="absolute bottom-1 left-1 right-1 flex justify-between items-center">
-                                    <span className="text-[10px] text-gray-600 bg-white/90 px-1.5 py-0.5 rounded">Google</span>
-                                    <span className="text-[10px] text-gray-500 bg-white/90 px-1.5 py-0.5 rounded">Map Data · Terms</span>
-                                  </div>
-                                </>
+                                </div>
+                              ) : query.mapPack.results.some(r => r.placeId) ? (
+                                <div className="flex items-center justify-center text-gray-400 text-sm h-full min-h-[280px]">
+                                  Loading map...
+                                </div>
                               ) : (
                                 <div className="flex items-center justify-center text-gray-400 text-sm h-full min-h-[280px]">
                                   Map unavailable
@@ -176,7 +309,7 @@ export default function ReportSearchVisibility({
                                 {query.mapPack.results.map((result, rIdx) => (
                                   <div
                                     key={rIdx}
-                                    className={`p-3 rounded-lg border ${
+                                    className={`p-3 rounded-xl border shadow-sm ${
                                       result.isTargetBusiness
                                         ? 'bg-blue-50 border-blue-200'
                                         : 'bg-white border-gray-200'
@@ -199,9 +332,6 @@ export default function ReportSearchVisibility({
                                         <span>{result.rating}</span>
                                       </div>
                                     )}
-                                    {result.address && (
-                                      <div className="text-xs text-gray-500 line-clamp-2">{result.address}</div>
-                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -210,7 +340,7 @@ export default function ReportSearchVisibility({
                         )}
                       </div>
                       
-                      {/* Organic Results - Right Column */}
+                      {/* Google Search Results - Right Column */}
                       <div>
                         <h4 className="font-semibold text-gray-900 mb-3">Google Search results</h4>
                         {isRankedOrganic ? (
@@ -223,7 +353,7 @@ export default function ReportSearchVisibility({
                           </div>
                         )}
                         {query.organic.results.length === 0 ? (
-                          <p className="text-sm text-gray-500">No organic results available</p>
+                          <p className="text-sm text-gray-500">No Google Search results available</p>
                         ) : (
                           <div className="space-y-2 max-h-[320px] overflow-y-auto pr-2">
                             {query.organic.results.map((result) => {
@@ -234,7 +364,7 @@ export default function ReportSearchVisibility({
                               return (
                                 <div
                                   key={result.position}
-                                  className={`p-2.5 rounded-lg border ${
+                                  className={`p-2.5 rounded-xl border shadow-sm ${
                                     isTarget
                                       ? 'bg-blue-50 border-blue-200'
                                       : 'bg-white border-gray-200'
@@ -268,11 +398,6 @@ export default function ReportSearchVisibility({
                                       >
                                         {result.title}
                                       </a>
-                                      {result.snippet && (
-                                        <div className="text-xs text-gray-600 mt-1 line-clamp-2">
-                                          {result.snippet}
-                                        </div>
-                                      )}
                                     </div>
                                   </div>
                                 </div>

@@ -559,7 +559,7 @@ export default function StageOnlinePresence({
       <div className="w-full h-full flex items-center justify-center">
         <div className="text-center">
           <ScanLineOverlay />
-          <div className="text-gray-600 text-sm mb-2 mt-4">Analyzing online presence...</div>
+          <div className="text-gray-600 text-sm mb-2 mt-4">Analysing online presence...</div>
           <div className="text-gray-400 text-xs">Fetching screenshots and links</div>
         </div>
       </div>

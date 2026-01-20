@@ -40,17 +40,25 @@ export default function ReportScanClient({
   name,
   addr,
 }: ReportScanClientProps) {
+  // Toggle for automatic stage progression
+  // Set to true to enable automatic progression, false for manual only
+  const AUTO_ADVANCE_STAGES = true;
+
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null);
   const [onlinePresenceData, setOnlinePresenceData] = useState<OnlinePresenceResult | null>(null);
   const [showInitialLoading, setShowInitialLoading] = useState(true);
+  const [allAgentsDeployed, setAllAgentsDeployed] = useState(false);
   const scraperTriggeredRef = useRef(false); // Prevent duplicate scraper triggers
   const websiteScreenshotTriggeredRef = useRef(false); // Prevent duplicate website screenshot triggers
   const stage4AutoProgressRef = useRef(false); // Track if we've already auto-progressed from stage 4
   const analyzersTriggeredRef = useRef(false); // Prevent duplicate analyzer triggers
   const igScraperStartedRef = useRef(false); // Prevent duplicate Instagram scraper starts
   const fbScraperStartedRef = useRef(false); // Prevent duplicate Facebook scraper starts
+  const competitorsPreloadedRef = useRef(false); // Track if competitors have been pre-loaded
+  const reviewsPreloadedRef = useRef(false); // Track if reviews have been pre-loaded
+  const photosPreloadedRef = useRef(false); // Track if photos have been pre-loaded
   
   // Track analyzer completion status
   const [analyzersComplete, setAnalyzersComplete] = useState({
@@ -602,42 +610,90 @@ export default function ReportScanClient({
     }
   }, [scanId, allAnalyzersComplete, analyzersComplete.gbp, analyzersComplete.website, analyzersComplete.aiAnalysis]);
 
-  // Show initial loading screen for at least 6 seconds
+  // Handle when all agents are deployed
   useEffect(() => {
-    const startTime = Date.now();
-    const minDisplayTime = 6000; // 6 seconds minimum (extended from 3)
-
-    const checkAndHide = () => {
-      const elapsed = Date.now() - startTime;
-      if (elapsed >= minDisplayTime) {
+    if (allAgentsDeployed) {
+      // Wait 2 seconds after all agents are deployed before showing first stage
+      const timeout = setTimeout(() => {
         setShowInitialLoading(false);
-      } else {
-        setTimeout(checkAndHide, minDisplayTime - elapsed);
+      }, 2000);
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [allAgentsDeployed]);
+  
+  // Pre-load competitors data while user is on stage 0 (Your online profile review)
+  useEffect(() => {
+    // Only pre-load if we haven't already and we're on stage 0 or initial loading
+    if (competitorsPreloadedRef.current) return;
+    
+    // Check if we already have cached data
+    const cachedData = localStorage.getItem(`competitors_${scanId}`);
+    if (cachedData) {
+      competitorsPreloadedRef.current = true;
+      return;
+    }
+    
+    // Pre-fetch competitors data in the background
+    const preloadCompetitors = async () => {
+      try {
+        const response = await fetch(
+          `/api/places/competitors?placeId=${encodeURIComponent(placeId)}`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          // Store in localStorage for StageCompetitorMap to use
+          localStorage.setItem(`competitors_${scanId}`, JSON.stringify(data));
+          competitorsPreloadedRef.current = true;
+          console.log('[PRELOAD] Competitors data pre-loaded successfully');
+        }
+      } catch (error) {
+        console.error('[PRELOAD] Failed to pre-load competitors:', error);
+        // Don't block UI if pre-load fails
       }
     };
-
-    // Also check if competitors are ready (Stage 0)
-    const checkCompetitorsReady = () => {
-      // Check if we have competitors data or if enough time has passed
-      const competitorsReady = localStorage.getItem(`competitors_${scanId}`);
-      if (competitorsReady) {
-        checkAndHide();
+    
+    preloadCompetitors();
+  }, [placeId, scanId]);
+  
+  // Pre-load reviews data while user is on stage 1 (competitors)
+  useEffect(() => {
+    // Only pre-load if we haven't already and we're on stage 1
+    if (reviewsPreloadedRef.current) return;
+    
+    // Check if we already have cached data
+    const cachedData = localStorage.getItem(`reviews_${scanId}`);
+    if (cachedData) {
+      reviewsPreloadedRef.current = true;
+      return;
+    }
+    
+    // Pre-fetch reviews data in the background
+    const preloadReviews = async () => {
+      try {
+        const response = await fetch(
+          `/api/places/reviews?placeId=${encodeURIComponent(placeId)}`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          // Store in localStorage for StageReviewSentiment to use
+          localStorage.setItem(`reviews_${scanId}`, JSON.stringify(data));
+          reviewsPreloadedRef.current = true;
+          console.log('[PRELOAD] Reviews data pre-loaded successfully');
+        }
+      } catch (error) {
+        console.error('[PRELOAD] Failed to pre-load reviews:', error);
+        // Don't block UI if pre-load fails
       }
     };
-
-    // Check every 500ms
-    const interval = setInterval(() => {
-      checkCompetitorsReady();
-    }, 500);
-
-    // Fallback: hide after 10 seconds max (extended from 5)
-    setTimeout(() => {
-      clearInterval(interval);
-      setShowInitialLoading(false);
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [scanId]);
+    
+    // Only preload when user is on competitors stage (stage 1)
+    if (currentStep === 1) {
+      preloadReviews();
+    }
+  }, [placeId, scanId, currentStep]);
   
   // Helper function to extract username from social URL
   function extractUsernameFromUrl(url: string, platform: 'instagram' | 'facebook'): string | null {
@@ -682,10 +738,10 @@ export default function ReportScanClient({
 
   // Build step list
   const steps = [
-    { id: 0, label: `${name} & competitors` },
-    { id: 1, label: "Google business profile" },
-    { id: 2, label: "Google review sentiment" },
-    { id: 3, label: "Photo quality and quantity" },
+    { id: 0, label: "Your online profile review" },
+    { id: 1, label: `${name} competitors` },
+    { id: 2, label: "Review sentiment scoring" },
+    { id: 3, label: "Image quality and quantity" },
     { id: 4, label: "Online presence analysis" },
   ];
 
@@ -777,32 +833,37 @@ export default function ReportScanClient({
             <div className="flex-1 relative overflow-hidden min-h-[600px]">
               {/* Initial AI Agents Loading Screen */}
               {showInitialLoading ? (
-                <AIAgentLoadingScreen businessName={name} />
+                <AIAgentLoadingScreen 
+                  businessName={name}
+                  onAllAgentsDeployed={() => setAllAgentsDeployed(true)}
+                />
               ) : currentStep === 0 ? (
-                // Competitors - Real Google Map (Owner.com style - no card wrapper)
+                // Google Business Profile step
                 <div className="absolute inset-0">
-                  <AIAgentModal stage={0} stageName={`${name} & competitors`} />
-                  <StageCompetitorMap 
-                    placeId={placeId} 
-                    name={name}
+                  <AIAgentModal stage={0} stageName="Your online profile review" />
+                  <ScanLineOverlay />
+                  <StageGoogleBusinessProfile 
+                    placeId={placeId}
+                    scanId={scanId}
                     onComplete={() => {
-                      // Automatically move to next stage when competitors finish loading
-                      if (currentStep === 0) {
+                      // Automatically move to next stage after 4 scans
+                      if (AUTO_ADVANCE_STAGES && currentStep === 0) {
                         handleNext();
                       }
                     }}
                   />
                 </div>
               ) : currentStep === 1 ? (
-                // Google Business Profile step
+                // Competitors - Real Google Map (Owner.com style - no card wrapper)
                 <div className="absolute inset-0">
-                  <AIAgentModal stage={1} stageName="Google business profile" />
-                  <ScanLineOverlay />
-                  <StageGoogleBusinessProfile 
-                    placeId={placeId}
+                  <AIAgentModal stage={1} stageName={`${name} competitors`} />
+                  <StageCompetitorMap 
+                    placeId={placeId} 
+                    name={name}
+                    scanId={scanId}
                     onComplete={() => {
-                      // Automatically move to next stage after 4 scans
-                      if (currentStep === 1) {
+                      // Automatically move to next stage when competitors finish loading
+                      if (AUTO_ADVANCE_STAGES && currentStep === 1) {
                         handleNext();
                       }
                     }}
@@ -811,13 +872,14 @@ export default function ReportScanClient({
               ) : currentStep === 2 ? (
                 // Google Review Sentiment step
                 <div className="absolute inset-0">
-                  <AIAgentModal stage={2} stageName="Google review sentiment" />
+                  <AIAgentModal stage={2} stageName="Review sentiment scoring" />
                   <ScanLineOverlay />
                   <StageReviewSentiment 
                     placeId={placeId}
+                    scanId={scanId}
                     onComplete={() => {
                       // Automatically move to next stage after 8.5 seconds
-                      if (currentStep === 2) {
+                      if (AUTO_ADVANCE_STAGES && currentStep === 2) {
                         handleNext();
                       }
                     }}
@@ -826,13 +888,14 @@ export default function ReportScanClient({
               ) : currentStep === 3 ? (
                 // Photo quality and quantity step
                 <div className="absolute inset-0">
-                  <AIAgentModal stage={3} stageName="Photo quality and quantity" />
+                  <AIAgentModal stage={3} stageName="Image quality and quantity" />
                   <ScanLineOverlay />
                   <StagePhotoCollage 
                     placeId={placeId}
+                    scanId={scanId}
                     onComplete={() => {
                       // Automatically move to next stage after all photos load and 3 seconds pass
-                      if (currentStep === 3) {
+                      if (AUTO_ADVANCE_STAGES && currentStep === 3) {
                         handleNext();
                       }
                     }}

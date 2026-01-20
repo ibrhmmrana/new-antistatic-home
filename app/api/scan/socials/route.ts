@@ -1267,17 +1267,34 @@ function normalizeFacebookUrl(url: string): string | null {
       return null;
     }
     
-    // Reject root facebook.com with no page
-    if (pathname === '/' || pathname === '') {
+    // Reject root facebook.com with no page or invalid paths
+    if (pathname === '/' || pathname === '' || pathname.length <= 1) {
+      return null;
+    }
+    
+    // Additional check: reject if pathname only has special segments (like /pages/ with no actual page)
+    const pathSegments = pathname.split('/').filter(s => s.length > 0);
+    if (pathSegments.length === 0 || (pathSegments.length === 1 && pathSegments[0] === 'pages')) {
       return null;
     }
     
     // Clean up the URL
     let cleanUrl = urlObj.toString();
     
+    // Final safety check: reject if URL is just the root domain
+    if (cleanUrl === 'https://www.facebook.com/' || cleanUrl === 'https://www.facebook.com' || 
+        cleanUrl === 'https://facebook.com/' || cleanUrl === 'https://facebook.com') {
+      return null;
+    }
+    
     // Ensure it ends with / for consistency (unless it's a /page/ URL)
     if (!cleanUrl.endsWith('/') && !cleanUrl.includes('/page/')) {
       cleanUrl += '/';
+    }
+    
+    // One more check after adding trailing slash
+    if (cleanUrl === 'https://www.facebook.com/' || cleanUrl === 'https://facebook.com/') {
+      return null;
     }
     
     return cleanUrl;
@@ -1375,26 +1392,240 @@ function scoreSearchResult(
 }
 
 /**
+ * Scores a social media URL directly (not from search results).
+ * Used for links extracted from websites.
+ * Higher score = better match.
+ */
+function scoreSocialUrl(
+  url: string,
+  businessName: string,
+  platform: SocialPlatform,
+  source: 'website' | 'cse'
+): number {
+  let score = 0;
+  const businessNameLower = businessName.toLowerCase();
+  
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname.toLowerCase();
+    const pathSegments = pathname.split('/').filter(s => s.length > 0);
+    
+    // Extract username/handle from URL
+    const username = pathSegments[0] || '';
+    
+    // Check if username contains business name (or parts of it)
+    const businessWords = businessNameLower.split(/\s+/).filter(w => w.length > 2);
+    let nameMatchCount = 0;
+    for (const word of businessWords) {
+      if (username.includes(word)) {
+        nameMatchCount++;
+      }
+    }
+    if (nameMatchCount > 0) {
+      score += nameMatchCount * 2; // More matching words = higher score
+    }
+    
+    // Prefer clean profile URLs (single segment)
+    if (pathSegments.length === 1) {
+      score += 2;
+    } else if (pathSegments.length === 2 && pathSegments[1] === '') {
+      score += 2;
+    }
+    
+    // Source reliability: website links are slightly more trusted (but need cross-validation)
+    if (source === 'website') {
+      score += 1;
+    } else if (source === 'cse') {
+      score += 1.5; // CSE results are pre-filtered by Google
+    }
+    
+  } catch {
+    // Invalid URL
+    return 0;
+  }
+  
+  return score;
+}
+
+/**
+ * Checks if two URLs point to the same social media account.
+ * Accounts for variations in URL format (trailing slashes, www, etc.)
+ */
+function urlsMatch(url1: string, url2: string): boolean {
+  try {
+    const normalize = (url: string): string => {
+      const u = new URL(url);
+      u.search = '';
+      u.hash = '';
+      let path = u.pathname.toLowerCase().replace(/\/$/, '');
+      return `${u.hostname.toLowerCase()}${path}`;
+    };
+    
+    return normalize(url1) === normalize(url2);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verifies and selects the best social media link for a platform.
+ * Requires cross-validation between sources - if sources disagree, we need high confidence.
+ * 
+ * @param candidates - Array of candidate links with their source and score
+ * @param businessName - Business name for additional validation
+ * @param platform - Platform being verified
+ * @returns The verified URL, or null if verification fails
+ */
+function verifyAndSelectSocialLink(
+  candidates: Array<{ url: string; source: 'website' | 'cse'; score: number }>,
+  businessName: string,
+  platform: SocialPlatform
+): string | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+  
+  // Group candidates by URL (normalized)
+  const urlGroups = new Map<string, Array<{ url: string; source: 'website' | 'cse'; score: number }>>();
+  
+  for (const candidate of candidates) {
+    let matched = false;
+    for (const [normalizedUrl, group] of Array.from(urlGroups.entries())) {
+      if (urlsMatch(candidate.url, normalizedUrl)) {
+        group.push(candidate);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      urlGroups.set(candidate.url, [candidate]);
+    }
+  }
+  
+  // Score each unique URL based on:
+  // 1. Number of sources that found it (cross-validation)
+  // 2. Average score from all sources
+  // 3. Highest individual score
+  
+  const urlScores = new Map<string, { 
+    url: string; 
+    sourceCount: number; 
+    avgScore: number; 
+    maxScore: number;
+    sources: Array<'website' | 'cse'>;
+  }>();
+  
+  for (const [url, group] of Array.from(urlGroups.entries())) {
+    const sources = new Set(group.map(c => c.source));
+    const scores = group.map(c => c.score);
+    const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const maxScore = Math.max(...scores);
+    
+    urlScores.set(url, {
+      url: group[0].url, // Use first URL in group (they're all equivalent)
+      sourceCount: sources.size,
+      avgScore,
+      maxScore,
+      sources: Array.from(sources) as Array<'website' | 'cse'>,
+    });
+  }
+  
+  // Verification rules:
+  // 1. If only one source found it, require high score (>= 5)
+  // 2. If multiple sources found it, require moderate score (>= 4)
+  // 3. Prefer URLs found by multiple sources (cross-validation)
+  // 4. If sources disagree (different URLs), require very high confidence (>= 6) and prefer CSE
+  
+  const verifiedCandidates: Array<{
+    url: string;
+    finalScore: number;
+    reason: string;
+  }> = [];
+  
+  for (const [url, data] of Array.from(urlScores.entries())) {
+    let verified = false;
+    let finalScore = data.avgScore;
+    let reason = '';
+    
+    // Cross-validated (found by multiple sources)
+    if (data.sourceCount > 1) {
+      if (data.avgScore >= 4) {
+        verified = true;
+        finalScore = data.avgScore + 2; // Bonus for cross-validation
+        reason = `Cross-validated by ${data.sourceCount} sources`;
+      }
+    } 
+    // Single source - require higher confidence
+    else {
+      if (data.maxScore >= 5) {
+        verified = true;
+        finalScore = data.maxScore;
+        reason = `High confidence from ${data.sources[0]}`;
+      }
+    }
+    
+    if (verified) {
+      verifiedCandidates.push({ url: data.url, finalScore, reason });
+    }
+  }
+  
+  // If we have verified candidates, select the best one
+  if (verifiedCandidates.length > 0) {
+    // Sort by final score (descending)
+    verifiedCandidates.sort((a, b) => b.finalScore - a.finalScore);
+    const best = verifiedCandidates[0];
+    console.log(`[SOCIAL VERIFIER] ✅ Verified ${platform}: ${best.url} (${best.reason}, score: ${best.finalScore.toFixed(1)})`);
+    return best.url;
+  }
+  
+  // If sources disagree (multiple different URLs), check if any has very high confidence
+  if (urlScores.size > 1) {
+    const highConfidence = Array.from(urlScores.values())
+      .filter(d => d.maxScore >= 6)
+      .sort((a, b) => b.maxScore - a.maxScore);
+    
+    if (highConfidence.length > 0) {
+      // Prefer CSE results when sources disagree (they're pre-filtered by Google)
+      const csePreferred = highConfidence.find(d => d.sources.includes('cse')) || highConfidence[0];
+      const selectedUrl = Array.from(urlGroups.entries())
+        .find(([url]) => urlsMatch(url, csePreferred.url))?.[1]?.[0]?.url;
+      
+      if (selectedUrl) {
+        console.log(`[SOCIAL VERIFIER] ⚠️ Sources disagree, but high confidence CSE result: ${selectedUrl} (score: ${csePreferred.maxScore})`);
+        return selectedUrl;
+      }
+    }
+    
+    console.log(`[SOCIAL VERIFIER] ❌ Sources disagree and no high-confidence match. Rejecting ${platform} links.`);
+    return null;
+  }
+  
+  console.log(`[SOCIAL VERIFIER] ❌ No verified candidates for ${platform}. Rejecting.`);
+  return null;
+}
+
+/**
  * Extracts social media links using Google Custom Search API.
+ * Returns all candidates with scores for cross-validation.
  * 
  * This approach avoids CAPTCHAs by using Google's official API instead of scraping.
  * 
  * @param businessName - The name of the business
  * @param address - The full address of the business (can be partial, e.g., just city)
  * @param platformsToSearch - Optional array of platforms to search for. If not provided, searches for both.
- * @returns Promise resolving to an object with social media links
+ * @returns Promise resolving to an object with social media links (best candidates only, for backward compatibility)
  */
 async function extractSocialLinksViaGoogleCse(
   businessName: string,
   address: string,
   platformsToSearch?: SocialPlatform[]
-): Promise<{ socialLinks: SocialLink[] }> {
+): Promise<{ socialLinks: SocialLink[]; candidates?: Array<{ url: string; platform: SocialPlatform; score: number }> }> {
   const apiKey = process.env.GOOGLE_CSE_API_KEY;
   const cx = process.env.GOOGLE_CSE_CX;
   
   if (!apiKey || !cx) {
     console.log(`[SOCIAL EXTRACTOR] Google CSE API not configured, skipping API search`);
-    return { socialLinks: [] };
+    return { socialLinks: [], candidates: [] };
   }
   
   // Default to both platforms if not specified
@@ -1402,6 +1633,7 @@ async function extractSocialLinksViaGoogleCse(
   console.log(`[SOCIAL EXTRACTOR] Using Google CSE API to search for: ${platforms.join(', ')}`);
   
   const socialLinks: SocialLink[] = [];
+  const allCandidates: Array<{ url: string; platform: SocialPlatform; score: number }> = [];
   const seenUrls = new Set<string>();
   
   // Extract just the city/area from the address for more focused searches
@@ -1418,10 +1650,10 @@ async function extractSocialLinksViaGoogleCse(
   if (platforms.includes('facebook')) {
     const facebookCandidates: Array<{ url: string; score: number }> = [];
     
-    // Use site: restriction as primary query for accurate results
+    // Use natural language search queries
     const facebookQueries = [
-      `site:facebook.com "${businessName}" ${shortAddress}`,
-      `site:facebook.com ${businessName}`,
+      `"${businessName}" ${shortAddress} facebook`,
+      `${businessName} ${shortAddress} facebook`,
     ];
     
     for (const query of facebookQueries) {
@@ -1437,12 +1669,13 @@ async function extractSocialLinksViaGoogleCse(
         seenUrls.add(normalized);
         const score = scoreSearchResult(item, businessName, 'facebook');
         
-        // Only accept candidates with minimum score
+        // Store all candidates (even low-scoring ones) for cross-validation
+        facebookCandidates.push({ url: normalized, score });
+        allCandidates.push({ url: normalized, platform: 'facebook', score });
         if (score >= MIN_SCORE_THRESHOLD) {
-          facebookCandidates.push({ url: normalized, score });
           console.log(`[SOCIAL EXTRACTOR] Facebook candidate: ${normalized} (score: ${score})`);
         } else {
-          console.log(`[SOCIAL EXTRACTOR] Rejected Facebook (low score ${score}): ${normalized}`);
+          console.log(`[SOCIAL EXTRACTOR] Facebook candidate (low score ${score}): ${normalized}`);
         }
       }
       
@@ -1467,10 +1700,10 @@ async function extractSocialLinksViaGoogleCse(
   if (platforms.includes('instagram')) {
     const instagramCandidates: Array<{ url: string; score: number }> = [];
     
-    // Use site: restriction as primary query for accurate results
+    // Use natural language search queries
     const instagramQueries = [
-      `site:instagram.com "${businessName}" ${shortAddress}`,
-      `site:instagram.com ${businessName}`,
+      `"${businessName}" ${shortAddress} instagram`,
+      `${businessName} ${shortAddress} instagram`,
     ];
     
     for (const query of instagramQueries) {
@@ -1486,12 +1719,13 @@ async function extractSocialLinksViaGoogleCse(
         seenUrls.add(normalized);
         const score = scoreSearchResult(item, businessName, 'instagram');
         
-        // Only accept candidates with minimum score
+        // Store all candidates (even low-scoring ones) for cross-validation
+        instagramCandidates.push({ url: normalized, score });
+        allCandidates.push({ url: normalized, platform: 'instagram', score });
         if (score >= MIN_SCORE_THRESHOLD) {
-          instagramCandidates.push({ url: normalized, score });
           console.log(`[SOCIAL EXTRACTOR] Instagram candidate: ${normalized} (score: ${score})`);
         } else {
-          console.log(`[SOCIAL EXTRACTOR] Rejected Instagram (low score ${score}): ${normalized}`);
+          console.log(`[SOCIAL EXTRACTOR] Instagram candidate (low score ${score}): ${normalized}`);
         }
       }
       
@@ -1512,8 +1746,8 @@ async function extractSocialLinksViaGoogleCse(
     }
   }
   
-  console.log(`[SOCIAL EXTRACTOR] Google CSE API found ${socialLinks.length} social links`);
-  return { socialLinks };
+  console.log(`[SOCIAL EXTRACTOR] Google CSE API found ${socialLinks.length} social links (${allCandidates.length} total candidates)`);
+  return { socialLinks, candidates: allCandidates };
 }
 
 function extractPlatformFromUrl(url: string): string | null {
@@ -1599,17 +1833,29 @@ export async function POST(request: NextRequest) {
       
       let socialLinks: { platform: string; url: string }[] = [];
       
-      // STEP 1: Try to extract social links from the business website first
+      // STEP 1: Extract social links from website (if available)
+      const websiteCandidates: Array<{ url: string; platform: SocialPlatform; source: 'website' | 'cse'; score: number }> = [];
+      
       if (websiteUrlToUse) {
         console.log(`[API] Step 1: Extracting social links from website: ${websiteUrlToUse}`);
         try {
           const websiteLinks = await extractSocialLinksFromWebsite(websiteUrlToUse);
-          socialLinks = cleanAndDeduplicateSocialLinks(websiteLinks);
-          console.log(`[API] Found ${socialLinks.length} social links from website`);
+          const cleanedWebsiteLinks = cleanAndDeduplicateSocialLinks(websiteLinks);
+          console.log(`[API] Found ${cleanedWebsiteLinks.length} social links from website`);
           
-          // Log which platforms we found
-          const foundPlatforms = socialLinks.map(l => l.platform);
-          console.log(`[API] Platforms found on website: ${foundPlatforms.join(', ') || 'none'}`);
+          // Score each website link
+          for (const link of cleanedWebsiteLinks) {
+            if (link.platform === 'facebook' || link.platform === 'instagram') {
+              const score = scoreSocialUrl(link.url, businessName, link.platform as SocialPlatform, 'website');
+              websiteCandidates.push({
+                url: link.url,
+                platform: link.platform as SocialPlatform,
+                source: 'website',
+                score,
+              });
+              console.log(`[API] Website candidate: ${link.platform} -> ${link.url} (score: ${score})`);
+            }
+          }
         } catch (websiteError) {
           console.error(`[API] Website scraping failed:`, websiteError);
         }
@@ -1617,41 +1863,83 @@ export async function POST(request: NextRequest) {
         console.log(`[API] Step 1: Skipped (no website URL provided)`);
       }
       
-      // STEP 2: Identify missing platforms
-      const foundPlatforms = new Set(socialLinks.map(l => l.platform));
-      const missingPlatforms: SocialPlatform[] = [];
+      // STEP 2: Always use Google CSE API to find social links (for cross-validation)
+      console.log(`[API] Step 2: Using Google CSE API to find social links (for cross-validation)`);
+      const cseCandidates: Array<{ url: string; platform: SocialPlatform; source: 'website' | 'cse'; score: number }> = [];
       
-      if (!foundPlatforms.has('facebook')) {
-        missingPlatforms.push('facebook');
-      }
-      if (!foundPlatforms.has('instagram')) {
-        missingPlatforms.push('instagram');
-      }
-      
-      // STEP 3: Use Google CSE API to find missing platforms
-      if (missingPlatforms.length > 0) {
-        console.log(`[API] Step 2: Using Google CSE API to find missing platforms: ${missingPlatforms.join(', ')}`);
-        try {
-          const cseResult = await extractSocialLinksViaGoogleCse(businessName, address, missingPlatforms);
-          const cseLinks = cleanAndDeduplicateSocialLinks(cseResult.socialLinks);
-          console.log(`[API] Found ${cseLinks.length} additional social links from Google CSE API`);
+      try {
+        const cseResult = await extractSocialLinksViaGoogleCse(businessName, address, ['facebook', 'instagram']);
+        
+        // Use candidates if available (for cross-validation), otherwise fall back to socialLinks
+        if (cseResult.candidates && cseResult.candidates.length > 0) {
+          console.log(`[API] Found ${cseResult.candidates.length} CSE candidates for cross-validation`);
           
-          // Merge with existing links (website links take priority)
-          for (const link of cseLinks) {
-            if (!foundPlatforms.has(link.platform)) {
-              socialLinks.push(link);
-              foundPlatforms.add(link.platform);
-              console.log(`[API] Added from Google CSE: ${link.platform} -> ${link.url}`);
+          // Use the scores from CSE (they're already calculated)
+          for (const candidate of cseResult.candidates) {
+            cseCandidates.push({
+              url: candidate.url,
+              platform: candidate.platform,
+              source: 'cse',
+              score: candidate.score,
+            });
+            console.log(`[API] CSE candidate: ${candidate.platform} -> ${candidate.url} (score: ${candidate.score})`);
+          }
+        } else {
+          // Fallback: use socialLinks and score them
+          const cleanedCseLinks = cleanAndDeduplicateSocialLinks(cseResult.socialLinks);
+          console.log(`[API] Found ${cleanedCseLinks.length} social links from Google CSE API (fallback mode)`);
+          
+          for (const link of cleanedCseLinks) {
+            if (link.platform === 'facebook' || link.platform === 'instagram') {
+              const score = scoreSocialUrl(link.url, businessName, link.platform as SocialPlatform, 'cse');
+              cseCandidates.push({
+                url: link.url,
+                platform: link.platform as SocialPlatform,
+                source: 'cse',
+                score,
+              });
+              console.log(`[API] CSE candidate: ${link.platform} -> ${link.url} (score: ${score})`);
             }
           }
-        } catch (cseError) {
-          console.error(`[API] Google CSE API failed:`, cseError);
         }
-      } else {
-        console.log(`[API] Step 2: Skipped (all platforms found on website)`);
+      } catch (cseError) {
+        console.error(`[API] Google CSE API failed:`, cseError);
       }
       
-      console.log(`[API] Final social links count: ${socialLinks.length}`);
+      // STEP 3: Verify and select the best link for each platform using cross-validation
+      console.log(`[API] Step 3: Verifying and selecting best links with cross-validation`);
+      const verifiedLinks: Array<{ platform: SocialPlatform; url: string }> = [];
+      
+      for (const platform of ['facebook', 'instagram'] as SocialPlatform[]) {
+        // Collect all candidates for this platform
+        const allCandidates = [
+          ...websiteCandidates.filter(c => c.platform === platform),
+          ...cseCandidates.filter(c => c.platform === platform),
+        ];
+        
+        if (allCandidates.length === 0) {
+          console.log(`[API] No candidates found for ${platform}`);
+          continue;
+        }
+        
+        // Verify and select the best link
+        const verifiedUrl = verifyAndSelectSocialLink(
+          allCandidates.map(c => ({ url: c.url, source: c.source, score: c.score })),
+          businessName,
+          platform
+        );
+        
+        if (verifiedUrl) {
+          verifiedLinks.push({ platform, url: verifiedUrl });
+          console.log(`[API] ✅ Verified ${platform}: ${verifiedUrl}`);
+        } else {
+          console.log(`[API] ❌ Verification failed for ${platform} - rejecting all candidates`);
+        }
+      }
+      
+      // Use only verified links
+      socialLinks = verifiedLinks;
+      console.log(`[API] Final verified social links count: ${socialLinks.length}`);
 
     // Initialize partial result in cache before starting screenshots
     // This allows frontend to poll and get incremental updates

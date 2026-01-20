@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 interface StageCompetitorMapProps {
   placeId: string;
   name: string;
+  scanId?: string;
   onComplete?: () => void;
 }
 
@@ -38,6 +39,7 @@ const MIN_COMPETITORS = 3;
 export default function StageCompetitorMap({
   placeId,
   name,
+  scanId,
   onComplete,
 }: StageCompetitorMapProps) {
   const [data, setData] = useState<CompetitorsData | null>(null);
@@ -70,16 +72,45 @@ export default function StageCompetitorMap({
     libraries,
   });
 
-  // Always fit bounds with padding; ensure min zoom to keep markers visible
-  const applyFitBounds = useCallback((mapInstance: google.maps.Map, bounds: google.maps.LatLngBounds) => {
+  // Fit bounds with padding
+  const applyFitBounds = useCallback((mapInstance: google.maps.Map, bounds: google.maps.LatLngBounds, padding = 80) => {
     mapInstance.fitBounds(bounds, {
-      top: 80,
-      right: 80,
-      bottom: 80,
-      left: 80,
+      top: padding,
+      right: padding,
+      bottom: padding,
+      left: padding,
     });
-    // Do not override zoom after fitBounds to ensure both business and distant competitors stay visible
   }, []);
+
+  // Focus on business + a single competitor (for each new competitor appearance)
+  // Uses large padding to ensure both markers are within the center ~20% of the screen
+  const focusOnBusinessAndCompetitor = useCallback((mapInstance: google.maps.Map, competitorLocation: { lat: number; lng: number }) => {
+    if (!data?.target?.location) return;
+    
+    const focusBounds = new google.maps.LatLngBounds();
+    const businessLatLng = new google.maps.LatLng(data.target.location.lat, data.target.location.lng);
+    const competitorLatLng = new google.maps.LatLng(competitorLocation.lat, competitorLocation.lng);
+    
+    focusBounds.extend(businessLatLng);
+    focusBounds.extend(competitorLatLng);
+    
+    // Get map container dimensions to calculate percentage-based padding
+    const mapDiv = mapInstance.getDiv();
+    const width = mapDiv?.offsetWidth || 800;
+    const height = mapDiv?.offsetHeight || 600;
+    
+    // To keep markers within center ~20% of screen, we need ~40% padding on each side
+    // This ensures both markers are comfortably within the center viewing area
+    const horizontalPadding = Math.round(width * 0.35); // 35% padding on left and right
+    const verticalPadding = Math.round(height * 0.35);   // 35% padding on top and bottom
+    
+    mapInstance.fitBounds(focusBounds, {
+      top: verticalPadding,
+      right: horizontalPadding,
+      bottom: verticalPadding,
+      left: horizontalPadding,
+    });
+  }, [data?.target?.location]);
 
   // Initialize map
   const onMapLoad = useCallback((mapInstance: google.maps.Map) => {
@@ -87,11 +118,34 @@ export default function StageCompetitorMap({
     boundsRef.current = new google.maps.LatLngBounds();
   }, []);
 
-  // Fetch competitors data
+  // Fetch competitors data (check localStorage first if pre-loaded)
   useEffect(() => {
     if (!isLoaded) return;
 
     const fetchCompetitors = async () => {
+      // First, check if data was pre-loaded in localStorage
+      if (scanId) {
+        try {
+          const cachedData = localStorage.getItem(`competitors_${scanId}`);
+          if (cachedData) {
+            const competitorsData: CompetitorsData = JSON.parse(cachedData);
+            
+            // Validate cached data
+            if (competitorsData.target?.location && competitorsData.competitors) {
+              console.log("[competitors] Using pre-loaded data from localStorage");
+              setData(competitorsData);
+              // Set status to "plotting" to skip loading screen and start showing competitors
+              // The map initialization effect will handle the rest
+              setStatus("plotting");
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("[competitors] Failed to parse cached data, fetching fresh:", e);
+        }
+      }
+      
+      // If no cached data, fetch from API
       setStatus("finding");
       setError(null);
       try {
@@ -117,6 +171,11 @@ export default function StageCompetitorMap({
           throw new Error("Target location not found in response");
         }
 
+        // Store in localStorage for future use
+        if (scanId) {
+          localStorage.setItem(`competitors_${scanId}`, JSON.stringify(competitorsData));
+        }
+
         setData(competitorsData);
       } catch (err: any) {
         console.error("Error fetching competitors:", err);
@@ -126,7 +185,7 @@ export default function StageCompetitorMap({
     };
 
     fetchCompetitors();
-  }, [isLoaded, placeId]);
+  }, [isLoaded, placeId, scanId]);
 
   // Extract suburb from address
   const extractSuburb = (address: string): string => {
@@ -408,20 +467,32 @@ export default function StageCompetitorMap({
         badgeOverlay.setMap(map);
         competitorInfoWindowsRef.current.push(badgeOverlay as any);
 
-        // Extend bounds; keep both business and competitors in frame via fitBounds only (no extra panning)
-        if (boundsRef.current && map) {
+        // Extend the full bounds (for final view)
+        if (boundsRef.current) {
           boundsRef.current.extend(competitor.location);
-          const isLast = updated.length === data.competitors.length;
-          // Fit to all markers (keeps business + competitors)
-          applyFitBounds(map, boundsRef.current);
-          
-          // If this is the last competitor, call onComplete after a short delay
-          if (isLast && !onCompleteCalledRef.current) {
-            onCompleteCalledRef.current = true;
-            setTimeout(() => {
-              onComplete?.();
-            }, 500);
+        }
+        
+        const isLast = updated.length === data.competitors.length;
+        
+        // Focus map on business + this new competitor (so both are visible and centered)
+        if (map) {
+          if (isLast) {
+            // On last competitor, fit to all bounds so user sees the full picture
+            if (boundsRef.current) {
+              applyFitBounds(map, boundsRef.current);
+            }
+          } else {
+            // For each new competitor, focus on just business + this competitor
+            focusOnBusinessAndCompetitor(map, competitor.location);
           }
+        }
+        
+        // If this is the last competitor, call onComplete after a short delay
+        if (isLast && !onCompleteCalledRef.current) {
+          onCompleteCalledRef.current = true;
+          setTimeout(() => {
+            onComplete?.();
+          }, 500);
         }
 
         return updated;
@@ -429,7 +500,7 @@ export default function StageCompetitorMap({
     }, dropDelay);
 
     return () => clearTimeout(timer);
-  }, [data, map, status, competitorsVisible, applyFitBounds, onComplete]);
+  }, [data, map, status, competitorsVisible, applyFitBounds, focusOnBusinessAndCompetitor, onComplete]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -473,18 +544,34 @@ export default function StageCompetitorMap({
     );
   }
 
-  // Show skeleton while loading or waiting for target coords
-  if (!isLoaded || !data || !data.target?.location) {
+  // Show skeleton only if map is not loaded
+  if (!isLoaded) {
     return (
       <div className="w-full h-full bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
-          <p className="text-sm text-gray-600">
-            {status === "loading" ? "Loading map..." : "Finding competitors..."}
-          </p>
+          <p className="text-sm text-gray-600">Loading map...</p>
         </div>
       </div>
     );
+  }
+  
+  // If we don't have data yet and we're not already plotting (i.e., data was pre-loaded), show loading
+  // If status is "plotting", it means data was pre-loaded, so skip the loading screen
+  if ((!data || !data.target?.location) && status !== "plotting") {
+    return (
+      <div className="w-full h-full bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+          <p className="text-sm text-gray-600">Finding competitors...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // If status is "plotting" but data isn't ready yet (shouldn't happen, but safety check)
+  if (status === "plotting" && (!data || !data.target?.location)) {
+    return null; // Don't show loading screen, data should be available momentarily
   }
 
   // Only render map once we have target coordinates

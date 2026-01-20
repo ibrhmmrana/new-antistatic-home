@@ -6,6 +6,7 @@ import Image from "next/image";
 
 interface StageGoogleBusinessProfileProps {
   placeId: string;
+  scanId?: string;
   onComplete?: () => void;
 }
 
@@ -22,15 +23,29 @@ interface PlaceDetails {
   photoRef: string | null;
   website: string | null;
   url: string | null;
+  phoneNumber: string | null;
+  openingHours: {
+    open_now?: boolean;
+    weekday_text?: string[];
+    periods?: Array<{
+      open: { day: number; time: string };
+      close?: { day: number; time: string };
+    }>;
+  } | null;
 }
 
 export default function StageGoogleBusinessProfile({
   placeId,
+  scanId,
   onComplete,
 }: StageGoogleBusinessProfileProps) {
   const [data, setData] = useState<PlaceDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Sequential reveal state
+  const [revealedItems, setRevealedItems] = useState<number>(0);
+  const revealStartedRef = useRef(false);
   const scanCountRef = useRef(0);
 
   useEffect(() => {
@@ -61,6 +76,24 @@ export default function StageGoogleBusinessProfile({
 
     fetchDetails();
   }, [placeId]);
+
+  // Sequential reveal of findings (1.5s between each)
+  useEffect(() => {
+    if (loading || error || !data || revealStartedRef.current) return;
+    
+    revealStartedRef.current = true;
+    const REVEAL_DELAY = 1500; // 1.5 seconds between each item
+    
+    // Items to reveal: description, phone, website, openingHours
+    const totalMainItems = 4;
+    
+    // Reveal main items one by one
+    for (let i = 1; i <= totalMainItems; i++) {
+      setTimeout(() => {
+        setRevealedItems(i);
+      }, i * REVEAL_DELAY);
+    }
+  }, [loading, error, data]);
 
   // Track scan loop and call onComplete after ~8.5 seconds
   useEffect(() => {
@@ -250,24 +283,145 @@ export default function StageGoogleBusinessProfile({
                   {data.userRatingsTotal !== 1 ? "s" : ""})
                 </span>
               )}
-              {data.categoryLabel && (
-                <span className="text-sm text-gray-600 ml-auto">
-                  {data.categoryLabel}
-                </span>
+              {data.types && data.types.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap ml-auto">
+                  {data.types
+                    .filter((type) => {
+                      // Filter out generic types
+                      const genericTypes = [
+                        "point_of_interest",
+                        "establishment",
+                        "premise",
+                        "street_address",
+                        "route",
+                        "locality",
+                        "political",
+                        "administrative_area_level_1",
+                        "administrative_area_level_2",
+                        "country",
+                      ];
+                      return !genericTypes.includes(type);
+                    })
+                    .map((type) => {
+                      // Convert snake_case to Title Case
+                      const formatted = type
+                        .split("_")
+                        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                        .join(" ");
+                      return formatted;
+                    })
+                    .map((category, idx) => (
+                      <span
+                        key={idx}
+                        className="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded-md"
+                      >
+                        {category}
+                      </span>
+                    ))}
+                </div>
               )}
             </div>
 
-            {/* Description */}
-            {data.description ? (
-              <p className="text-sm text-gray-700 leading-relaxed">
-                {data.description}
-              </p>
-            ) : (
-              <div className="flex items-center gap-2 text-amber-600">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                <span className="text-sm">No description found</span>
+            {/* Description - Item 1 */}
+            {revealedItems >= 1 && (
+              <div className="finding-reveal mb-4">
+                {data.description ? (
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    {data.description}
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-2 text-red-600">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    <span className="text-sm">No description found</span>
+                  </div>
+                )}
               </div>
             )}
+
+            {/* Contact Information */}
+            <div className="space-y-3 mb-4">
+              {/* Phone Number - Item 2 */}
+              {revealedItems >= 2 && (
+                <div className="finding-reveal">
+                  {data.phoneNumber ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-700">Phone:</span>
+                      <a 
+                        href={`tel:${data.phoneNumber.replace(/\s/g, '')}`}
+                        className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                      >
+                        {data.phoneNumber}
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-red-600">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span className="text-sm">Phone number not found</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Website - Item 3 */}
+              {revealedItems >= 3 && (
+                <div className="finding-reveal">
+                  {data.website ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-700">Website:</span>
+                      <a 
+                        href={data.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:text-blue-800 hover:underline truncate max-w-md"
+                      >
+                        {data.website}
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-red-600">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span className="text-sm">Website not found</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Opening Hours - Item 4 */}
+              {revealedItems >= 4 && (
+                <div className="finding-reveal">
+                  {data.openingHours ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">Opening Hours:</span>
+                        {data.openingHours.open_now !== undefined && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            data.openingHours.open_now 
+                              ? 'bg-green-100 text-green-700' 
+                              : 'bg-red-100 text-red-700'
+                          }`}>
+                            {data.openingHours.open_now ? 'Open now' : 'Closed now'}
+                          </span>
+                        )}
+                      </div>
+                      {data.openingHours.weekday_text && data.openingHours.weekday_text.length > 0 && (
+                        <div className="pl-0 space-y-1">
+                          {data.openingHours.weekday_text.map((day, idx) => (
+                            <div key={idx} className="text-sm text-gray-600">
+                              {day}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-red-600">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span className="text-sm">Opening hours not found</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
