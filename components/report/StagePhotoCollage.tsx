@@ -321,8 +321,8 @@ export default function StagePhotoCollage({
 
     if (containerWidth > 0 && containerHeight > 0) {
       const offset = calculateCenteringOffset(slots, containerWidth, containerHeight);
-      // Shift the entire canvas up by subtracting a vertical offset
-      const verticalShift = 60; // Pixels to shift up
+      // Shift the entire canvas vertically
+      const verticalShift = -40; // Negative value shifts down
       setCenteringOffset({
         deltaX: offset.deltaX,
         deltaY: offset.deltaY - verticalShift,
@@ -343,8 +343,8 @@ export default function StagePhotoCollage({
 
       if (containerWidth > 0 && containerHeight > 0) {
         const offset = calculateCenteringOffset(slots, containerWidth, containerHeight);
-        // Shift the entire canvas up by subtracting a vertical offset
-        const verticalShift = 60; // Pixels to shift up
+        // Shift the entire canvas vertically
+        const verticalShift = -40; // Negative value shifts down
         setCenteringOffset({
           deltaX: offset.deltaX,
           deltaY: offset.deltaY - verticalShift,
