@@ -37,6 +37,7 @@ interface InstagramPost {
     username: string;
     userId: string;
   };
+  comments?: InstagramComment[]; // Optional comments array
 }
 
 interface InstagramComment {
