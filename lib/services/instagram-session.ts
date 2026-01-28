@@ -144,17 +144,60 @@ export class InstagramSessionService {
       page = await context.newPage();
       steps.browser_launch = 'success';
 
-      // Step 2: Navigate to Instagram login
+      // Step 2: Navigate to Instagram login with proper wait conditions
       console.log('[SESSION] Navigating to Instagram login...');
+      
+      // Navigate and wait for DOM to be ready
       await page.goto('https://www.instagram.com/accounts/login/', {
-        waitUntil: 'networkidle',
+        waitUntil: 'domcontentloaded',
         timeout: 30000,
       });
 
-      // Wait for page to be fully interactive
-      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
-        console.log('[SESSION] Network idle timeout, continuing anyway...');
+      // Wait for page to actually load content (Instagram loads dynamically)
+      console.log('[SESSION] Waiting for page content to load...');
+      
+      // Wait for either the login form or any content to appear
+      try {
+        await Promise.race([
+          page.waitForSelector('input[name="username"], input[type="text"]', { timeout: 15000 }),
+          page.waitForSelector('body', { state: 'attached', timeout: 5000 }),
+        ]);
+      } catch (e) {
+        console.log('[SESSION] ⚠️ Initial wait timeout, checking page state...');
+      }
+      
+      // Additional wait for JavaScript to execute
+      await page.waitForTimeout(3000);
+      
+      // Check if page has actual content
+      const pageContent = await page.evaluate(() => {
+        return {
+          bodyHTML: document.body.innerHTML,
+          bodyText: document.body.innerText,
+          hasScripts: document.querySelectorAll('script').length,
+          title: document.title,
+        };
       });
+      
+      console.log(`[SESSION] Page state - Title: "${pageContent.title}", Scripts: ${pageContent.hasScripts}, Body length: ${pageContent.bodyHTML.length}`);
+      
+      // If page is empty, Instagram might be blocking or JavaScript isn't executing
+      if (pageContent.bodyHTML.length < 100 && pageContent.hasScripts === 0) {
+        console.log('[SESSION] ❌ Page appears empty - Instagram may be blocking or JavaScript disabled');
+        throw new Error('Instagram page loaded but appears empty. This may indicate: 1) Instagram is blocking automation, 2) JavaScript is not executing, 3) Rate limiting. Try again later or check account status.');
+      }
+      
+      if (pageContent.bodyHTML.length < 100) {
+        console.log('[SESSION] ⚠️ Page content is minimal, waiting longer for dynamic content...');
+        await page.waitForTimeout(5000);
+        
+        // Try waiting for specific Instagram elements
+        try {
+          await page.waitForSelector('input, form, [role="main"]', { timeout: 10000 });
+        } catch (e) {
+          console.log('[SESSION] ⚠️ Still no content after extended wait');
+        }
+      }
 
       // Check if page is available (Instagram sometimes shows "Page isn't available")
       const pageTitle = await page.title();
@@ -163,11 +206,43 @@ export class InstagramSessionService {
       
       if (pageTitle.includes("isn't available") || pageTitle.includes("Error") || pageTitle.includes("Page not found")) {
         console.log('[SESSION] ❌ Instagram shows error page, attempting refresh...');
-        await page.reload({ waitUntil: 'networkidle', timeout: 30000 });
-        await page.waitForTimeout(2000);
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(3000);
         const newTitle = await page.title();
         if (newTitle.includes("isn't available")) {
           throw new Error(`Instagram page unavailable: "${newTitle}". This may indicate rate limiting or account issues.`);
+        }
+      }
+      
+      // Final check: ensure we have actual content before proceeding
+      const finalContentCheck = await page.evaluate(() => document.body.innerHTML.length);
+      if (finalContentCheck < 100) {
+        // Try one more time with a longer wait - Instagram's React app might be slow to load
+        console.log('[SESSION] ⚠️ Page still empty, waiting for React app to load...');
+        await page.waitForTimeout(5000);
+        
+        // Check if React has loaded (Instagram uses React)
+        const reactLoaded = await page.evaluate(() => {
+          // Check for React root or Instagram's app container
+          return !!(
+            document.querySelector('#react-root') ||
+            document.querySelector('[id*="react"]') ||
+            document.querySelector('input[name="username"]') ||
+            document.body.innerHTML.length > 100
+          );
+        });
+        
+        if (!reactLoaded) {
+          // Log what we can see
+          const debugInfo = await page.evaluate(() => {
+            return {
+              bodyHTML: document.body.innerHTML,
+              scripts: Array.from(document.querySelectorAll('script')).map(s => s.src || 'inline'),
+              metaTags: Array.from(document.querySelectorAll('meta')).map(m => m.getAttribute('name') || m.getAttribute('property')),
+            };
+          });
+          console.log('[SESSION] ❌ React app not loaded. Debug info:', JSON.stringify(debugInfo, null, 2));
+          throw new Error('Instagram page is still empty after extended wait. This may indicate: 1) Instagram is blocking automation, 2) JavaScript execution issues in serverless environment, 3) Rate limiting. Try again later or use a different approach.');
         }
       }
 
