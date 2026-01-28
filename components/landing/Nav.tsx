@@ -25,10 +25,11 @@ export default function Nav() {
     >
       <div 
         className={`w-full flex items-center justify-between relative transition-all duration-500 ease-out overflow-hidden ${
-          isScrolled ? 'rounded-[50px]' : ''
+          isScrolled ? 'rounded-[50px] border' : ''
         }`}
         style={{
           padding: isScrolled ? '1.2rem 2.25rem' : '0',
+          borderColor: isScrolled ? '#3a82f6' : 'transparent',
         }}
       >
         {/* Background image when scrolled */}

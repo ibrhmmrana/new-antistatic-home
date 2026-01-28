@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { assembleReport } from "@/lib/report/assembleReport";
 import type { ReportSchema } from "@/lib/report/types";
@@ -59,6 +59,7 @@ export default function AnalysisPage() {
   // AI Analysis state
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+  const aiAnalysisTriggeredRef = useRef(false); // Prevent duplicate AI analysis API calls
 
   // Load cached analysis results from localStorage
   useEffect(() => {
@@ -180,6 +181,7 @@ export default function AnalysisPage() {
         instagram: igResult || undefined,
         facebook: fbResult || undefined,
       });
+      
       setReport(assembled);
     } catch (error) {
       console.error('[ANALYSIS PAGE] Failed to assemble report:', error);
@@ -188,11 +190,15 @@ export default function AnalysisPage() {
 
   // Trigger AI analysis when all data is available
   useEffect(() => {
-    if (!placeId || !placesDetails) return;
+    if (!placeId || !placesDetails) {
+      return;
+    }
     
     // Check if we have enough data for AI analysis
     const hasEnoughData = (igResult || fbResult || reviews.length > 0);
-    if (!hasEnoughData) return;
+    if (!hasEnoughData) {
+      return;
+    }
 
     // Check if already cached
     const cachedAiAnalysis = localStorage.getItem(`analysis_${scanId}_ai`);
@@ -204,6 +210,14 @@ export default function AnalysisPage() {
         console.error('[ANALYSIS PAGE] Failed to parse cached AI analysis:', e);
       }
     }
+
+    // Prevent duplicate API calls
+    if (aiAnalysisTriggeredRef.current) {
+      return;
+    }
+
+    // Mark as triggered to prevent duplicates
+    aiAnalysisTriggeredRef.current = true;
 
     // Trigger AI analysis
     setAiAnalysisLoading(true);
@@ -273,47 +287,15 @@ export default function AnalysisPage() {
       });
   }, [scanId, placeId, placesDetails, gbpAnalysis, igResult, fbResult, reviews, websiteResult, socialsData]);
 
-  // Show loading state while assembling report or waiting for AI analysis
-  const [waitingForAI, setWaitingForAI] = useState(true);
 
-  useEffect(() => {
-    // Check if AI analysis is complete
-    const aiCacheKey = `analysis_${scanId}_ai`;
-    const cachedAi = localStorage.getItem(aiCacheKey);
-    if (cachedAi) {
-      try {
-        const parsed = JSON.parse(cachedAi);
-        if (parsed && Object.keys(parsed).length > 0) {
-          setWaitingForAI(false);
-        }
-      } catch (e) {
-        // Ignore
-      }
-    }
-
-    // If AI analysis is being triggered, wait for it
-    if (aiAnalysisLoading) {
-      // Will be set to false when AI analysis completes
-    } else if (aiAnalysis) {
-      setWaitingForAI(false);
-    } else {
-      // If no AI analysis is running and we have enough data, mark as ready
-      // (AI analysis might not be needed if no social media/reviews)
-      const hasEnoughData = (igResult || fbResult || reviews.length > 0);
-      if (!hasEnoughData) {
-        setWaitingForAI(false);
-      }
-    }
-  }, [scanId, aiAnalysis, aiAnalysisLoading, igResult, fbResult, reviews.length]);
-
-  if (!report || waitingForAI) {
+  // Show loading state only while assembling report (not waiting for AI)
+  // AI analysis will load in the background and display when ready
+  if (!report) {
     return (
       <div className="min-h-screen bg-[#f6f7f8] flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">
-            {waitingForAI ? 'AI agents are finalizing your analysis...' : 'Assembling your report...'}
-          </p>
+          <p className="text-gray-600">Assembling your report...</p>
         </div>
       </div>
     );

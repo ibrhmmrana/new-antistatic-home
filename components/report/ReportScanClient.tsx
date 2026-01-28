@@ -774,71 +774,104 @@ export default function ReportScanClient({
     
   }, [onlinePresenceData, scanId]);
   
-  // Check if all analyzers are complete (including AI analysis)
+  // Mark analyzers as complete when they finish (for UI state, but don't wait for navigation)
   useEffect(() => {
-    const { gbp, website, instagram, facebook, aiAnalysis } = analyzersComplete;
-    const allComplete = gbp && website && instagram && facebook && aiAnalysis;
+    const { gbp, website, instagram, facebook } = analyzersComplete;
+    const allComplete = gbp && website && instagram && facebook;
+    
     if (allComplete && !allAnalyzersComplete) {
-      console.log('[ANALYZERS] ✅ All analyzers complete (including AI analysis)!');
-      setAllAnalyzersComplete(true);
+      console.log('[ANALYZERS] ✅ All core analyzers complete (GBP, website, Instagram, Facebook)!');
+      console.log('[ANALYZERS] ℹ️ AI analysis will load in background on analysis page');
       
-      // Navigate to analysis page when everything is complete
-      if (currentStep === 5 && !stage4AutoProgressRef.current) {
-        stage4AutoProgressRef.current = true;
-        console.log('[NAVIGATION] All analyzers including AI complete, navigating to analysis page...');
-        router.push(`/report/${scanId}/analysis?placeId=${encodeURIComponent(placeId)}&name=${encodeURIComponent(name)}&addr=${encodeURIComponent(addr)}`);
-      }
+      setAllAnalyzersComplete(true);
+      // Note: Navigation now happens immediately when Stage 5 appears, not when analyzers complete
     }
-  }, [analyzersComplete, allAnalyzersComplete, currentStep, scanId, placeId, name, addr, router]);
+  }, [analyzersComplete, allAnalyzersComplete]);
 
-  // Check for AI analysis completion
+  // AI analysis is no longer required for navigation - it loads in background on analysis page
+  // Removed polling logic to eliminate 60-second delay
+
+  // Navigate when Stage 5 appears AND analyzers complete (with minimum delay to show Stage 5)
+  // This ensures users see Stage 5 AND the report has data when it loads
+  const stage5NavigationRef = useRef(false);
+  const stage5AppearedTimeRef = useRef<number | null>(null);
+  const navigationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Track when Stage 5 appears
   useEffect(() => {
-    if (!allAnalyzersComplete && analyzersComplete.gbp && analyzersComplete.website) {
-      // Check if AI analysis is already cached
-      const aiCacheKey = `analysis_${scanId}_ai`;
-      const cachedAi = localStorage.getItem(aiCacheKey);
-      if (cachedAi) {
-        try {
-          const parsed = JSON.parse(cachedAi);
-          if (parsed && Object.keys(parsed).length > 0) {
-            console.log('[ANALYZERS] ✅ AI analysis already cached');
-            setAnalyzersComplete(prev => ({ ...prev, aiAnalysis: true }));
-            return;
-          }
-        } catch (e) {
-          console.error('[ANALYZERS] Failed to parse cached AI analysis:', e);
-        }
-      }
-
-      // Poll for AI analysis completion (it's triggered from analysis page)
-      const checkInterval = setInterval(() => {
-        const cached = localStorage.getItem(aiCacheKey);
-        if (cached) {
-          try {
-            const parsed = JSON.parse(cached);
-            if (parsed && Object.keys(parsed).length > 0) {
-              console.log('[ANALYZERS] ✅ AI analysis complete (polling)');
-              setAnalyzersComplete(prev => ({ ...prev, aiAnalysis: true }));
-              clearInterval(checkInterval);
-            }
-          } catch (e) {
-            // Ignore parse errors
-          }
-        }
-      }, 2000); // Check every 2 seconds
-
-      // Fallback: mark as complete after 60 seconds
-      setTimeout(() => {
-        clearInterval(checkInterval);
-        if (!analyzersComplete.aiAnalysis) {
-          console.log('[ANALYZERS] Fallback timeout - marking AI analysis as complete');
-          setAnalyzersComplete(prev => ({ ...prev, aiAnalysis: true }));
-        }
-      }, 60000);
-
-      return () => clearInterval(checkInterval);
+    if (currentStep === 5 && !stage5NavigationRef.current) {
+      stage5NavigationRef.current = true;
+      const stage5AppearedTime = Date.now();
+      stage5AppearedTimeRef.current = stage5AppearedTime;
+      
+      console.log('[NAVIGATION] Stage 5 appeared, waiting for analyzers to complete (min 4.5s delay)...');
     }
-  }, [scanId, allAnalyzersComplete, analyzersComplete.gbp, analyzersComplete.website, analyzersComplete.aiAnalysis]);
+  }, [currentStep, scanId, placeId]);
+  
+  // Navigate when analyzers complete AND minimum delay has passed
+  useEffect(() => {
+    // Cleanup any existing timeout
+    if (navigationTimeoutRef.current) {
+      clearTimeout(navigationTimeoutRef.current);
+      navigationTimeoutRef.current = null;
+    }
+    
+    if (currentStep === 5 && allAnalyzersComplete && stage5AppearedTimeRef.current) {
+      const elapsed = Date.now() - stage5AppearedTimeRef.current;
+      const minDelay = 4500; // Minimum 4.5 seconds to show Stage 5
+      const remainingDelay = Math.max(0, minDelay - elapsed);
+      
+      navigationTimeoutRef.current = setTimeout(() => {
+        console.log('[NAVIGATION] Analyzers complete, navigating to report page...');
+        
+        router.push(`/report/${scanId}/analysis?placeId=${encodeURIComponent(placeId)}&name=${encodeURIComponent(name)}&addr=${encodeURIComponent(addr)}`);
+        
+        // Reset refs to prevent duplicate navigation
+        stage5AppearedTimeRef.current = null;
+        navigationTimeoutRef.current = null;
+      }, remainingDelay);
+    }
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (navigationTimeoutRef.current) {
+        clearTimeout(navigationTimeoutRef.current);
+        navigationTimeoutRef.current = null;
+      }
+    };
+  }, [currentStep, allAnalyzersComplete, scanId, placeId, name, addr, router]);
+
+  // Track timing: log when last stage (stage 5) appears and every 3 seconds after
+  const lastStageTimingRef = useRef<{ logged: boolean; intervalId: NodeJS.Timeout | null }>({
+    logged: false,
+    intervalId: null,
+  });
+
+  useEffect(() => {
+    if (currentStep === 5 && !lastStageTimingRef.current.logged) {
+      // First time stage 5 appears
+      lastStageTimingRef.current.logged = true;
+      const stage5StartTime = Date.now();
+      
+      console.log('[TIMING] ⏱️ Last stage (Stage 5) appeared at:', new Date(stage5StartTime).toISOString());
+      
+      // Set up interval to log every 3 seconds
+      lastStageTimingRef.current.intervalId = setInterval(() => {
+        const elapsed = Date.now() - stage5StartTime;
+        const elapsedSeconds = Math.floor(elapsed / 1000);
+        
+        console.log(`[TIMING] ⏱️ ${elapsedSeconds}s elapsed since last stage appeared`);
+      }, 3000);
+    }
+    
+    // Cleanup interval when component unmounts or stage changes
+    return () => {
+      if (lastStageTimingRef.current.intervalId) {
+        clearInterval(lastStageTimingRef.current.intervalId);
+        lastStageTimingRef.current.intervalId = null;
+      }
+    };
+  }, [currentStep]);
 
   // Note: allAgentsDeployed callback is kept for potential future use
   // but deployment screen is now controlled by currentStep === 0
