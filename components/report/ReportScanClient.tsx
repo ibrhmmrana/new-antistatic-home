@@ -12,7 +12,6 @@ import ScanLineOverlay from "./ScanLineOverlay";
 import AIAgentLoadingScreen from "./AIAgentLoadingScreen";
 import AIAgentModal from "./AIAgentModal";
 import EmailVerificationModal from "./EmailVerificationModal";
-import { isEmailVerified } from "@/lib/email-verification";
 
 interface ReportScanClientProps {
   scanId: string;
@@ -53,6 +52,8 @@ export default function ReportScanClient({
   const [allAgentsDeployed, setAllAgentsDeployed] = useState(false);
   const [showEmailVerification, setShowEmailVerification] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
+  const [userProvidedUsernames, setUserProvidedUsernames] = useState<{ instagram?: string; facebook?: string } | null>(null);
+  const [gbpExtractedUsernames, setGbpExtractedUsernames] = useState<{ instagram?: string; facebook?: string } | null>(null);
   const scraperTriggeredRef = useRef(false); // Prevent duplicate scraper triggers
   const websiteScreenshotTriggeredRef = useRef(false); // Prevent duplicate website screenshot triggers
   const stage4AutoProgressRef = useRef(false); // Track if we've already auto-progressed from stage 4
@@ -101,44 +102,113 @@ export default function ReportScanClient({
     }
   };
 
-  // Check if email is already verified on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const verified = isEmailVerified(placeId) || document.cookie.includes("email_proof");
-      if (verified) {
-        setEmailVerified(true);
-      }
-    }
-  }, [placeId]);
-
   // Show email verification modal when agents are deployed (stage 0)
+  // Always show verification modal on every run, regardless of previous verification
   useEffect(() => {
-    if (currentStep === 0 && allAgentsDeployed && !emailVerified && !showEmailVerification) {
+    if (currentStep === 0 && allAgentsDeployed && !showEmailVerification) {
       // Wait a moment after agents deploy, then show modal
       const timer = setTimeout(() => {
         setShowEmailVerification(true);
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [currentStep, allAgentsDeployed, emailVerified, showEmailVerification, placeId]);
+  }, [currentStep, allAgentsDeployed, showEmailVerification]);
 
-  // Fetch place details on mount (but delay triggers until stage 1)
+  // Fetch place details and extract social links using ALL strategies on mount
   useEffect(() => {
-    // Only fetch place details, don't trigger screenshots/scrapers until stage 1
-    const fetchDetails = async () => {
+    const fetchDetailsAndExtractSocials = async () => {
+      let fetchedPlaceDetails: PlaceDetails | null = null;
+      
       try {
+        // Fetch place details first
         const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
         if (response.ok) {
           const data = await response.json();
+          fetchedPlaceDetails = data;
           setPlaceDetails(data);
         }
       } catch (error) {
         console.error("Failed to fetch place details:", error);
       }
+
+      // Extract social links using ALL strategies (website, GBP, Google CSE)
+      // This runs immediately on page load to prefilled usernames in the modal
+      // The extraction was also triggered from the landing page button, but we check here too
+      try {
+        // Use the full social extraction API (all strategies: website, GBP, Google CSE)
+        // This extracts usernames but does NOT trigger full analysis
+        const socialResponse = await fetch('/api/scan/socials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            businessName: name,
+            address: addr,
+            scanId: `${scanId}_social_extract`, // Use different scanId to avoid conflicts
+            websiteUrl: fetchedPlaceDetails?.website || null, // Use website from place details if available
+          }),
+        });
+
+        if (socialResponse.ok) {
+          const socialData = await socialResponse.json();
+          console.log('[SOCIAL EXTRACTION] API response:', {
+            hasSocialLinks: !!socialData.socialLinks,
+            socialLinksCount: socialData.socialLinks?.length || 0,
+            socialLinks: socialData.socialLinks?.map((l: any) => ({ platform: l.platform, url: l.url })) || [],
+          });
+          
+          if (socialData.socialLinks && socialData.socialLinks.length > 0) {
+            // Extract usernames from URLs using the same method as the scraper
+            const extracted: { instagram?: string; facebook?: string } = {};
+            
+            const igLink = socialData.socialLinks.find((l: any) => l.platform === 'instagram');
+            if (igLink && igLink.url) {
+              console.log('[SOCIAL EXTRACTION] Processing Instagram URL:', igLink.url);
+              const username = extractUsernameFromUrl(igLink.url, 'instagram');
+              if (username) {
+                extracted.instagram = username;
+                console.log('[SOCIAL EXTRACTION] ✅ Found Instagram username:', username, 'from URL:', igLink.url);
+              } else {
+                console.log('[SOCIAL EXTRACTION] ⚠️ Failed to extract Instagram username from URL:', igLink.url);
+              }
+            } else {
+              console.log('[SOCIAL EXTRACTION] ⚠️ No Instagram link found in socialLinks');
+            }
+            
+            const fbLink = socialData.socialLinks.find((l: any) => l.platform === 'facebook');
+            if (fbLink && fbLink.url) {
+              console.log('[SOCIAL EXTRACTION] Processing Facebook URL:', fbLink.url);
+              const username = extractUsernameFromUrl(fbLink.url, 'facebook');
+              if (username) {
+                extracted.facebook = username;
+                console.log('[SOCIAL EXTRACTION] ✅ Found Facebook username:', username, 'from URL:', fbLink.url);
+              } else {
+                console.log('[SOCIAL EXTRACTION] ⚠️ Failed to extract Facebook username from URL:', fbLink.url);
+              }
+            } else {
+              console.log('[SOCIAL EXTRACTION] ⚠️ No Facebook link found in socialLinks');
+            }
+            
+            if (Object.keys(extracted).length > 0) {
+              setGbpExtractedUsernames(extracted);
+              console.log('[SOCIAL EXTRACTION] ✅ Successfully extracted usernames:', extracted);
+            } else {
+              console.log('[SOCIAL EXTRACTION] ⚠️ No usernames extracted from social links (extraction failed)');
+            }
+          } else {
+            console.log('[SOCIAL EXTRACTION] ⚠️ No social links found in API response');
+          }
+        } else {
+          const errorText = await socialResponse.text();
+          console.error('[SOCIAL EXTRACTION] API returned error:', socialResponse.status, errorText);
+        }
+      } catch (socialError) {
+        console.error('[SOCIAL EXTRACTION] Failed to extract social links:', socialError);
+        // Don't block - this is just for prefilling
+      }
     };
 
-    fetchDetails();
-  }, [placeId]);
+    fetchDetailsAndExtractSocials();
+  }, [placeId, name, addr, scanId]);
 
   // Trigger website screenshot and scraper when user reaches stage 1 AND email is verified
   useEffect(() => {
@@ -242,6 +312,16 @@ export default function ReportScanClient({
       }
 
       try {
+        // Use user-provided usernames if available (from modal confirmation)
+        // Otherwise, let the API extract from URLs
+        const initialSocialLinks = [];
+        if (userProvidedUsernames?.instagram) {
+          initialSocialLinks.push({ platform: 'instagram', url: `https://www.instagram.com/${userProvidedUsernames.instagram}/` });
+        }
+        if (userProvidedUsernames?.facebook) {
+          initialSocialLinks.push({ platform: 'facebook', url: `https://www.facebook.com/${userProvidedUsernames.facebook}/` });
+        }
+
         const response = await fetch('/api/scan/socials', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -250,6 +330,7 @@ export default function ReportScanClient({
             address: addr,
             scanId,
             websiteUrl, // Pass website URL from GBP API
+            initialSocialLinks: initialSocialLinks.length > 0 ? initialSocialLinks : undefined, // Use approved usernames
           }),
         });
 
@@ -319,7 +400,7 @@ export default function ReportScanClient({
     if (placeDetails?.website) {
       captureWebsiteScreenshot(placeDetails.website);
     }
-  }, [currentStep, emailVerified, placeId, name, addr, scanId, placeDetails]);
+  }, [currentStep, emailVerified, placeId, name, addr, scanId, placeDetails, userProvidedUsernames]);
 
   // Trigger all analyzers during onboarding (runs in background, stores results in localStorage)
   // Only trigger when user reaches stage 1 (Your online profile review) AND email is verified
@@ -515,14 +596,91 @@ export default function ReportScanClient({
     return () => clearTimeout(timeout);
   }, [currentStep, emailVerified, placeId, scanId, placeDetails, onlinePresenceData]);
   
-  // Watch for onlinePresenceData changes and trigger social scrapers IMMEDIATELY (in parallel)
-  // This runs independently of the main analyzer effect to ensure scrapers start ASAP
+  // Trigger scrapers using user-provided usernames (if available) or extracted from URLs
   useEffect(() => {
+    // Priority 1: Use user-provided usernames if available
+    if (userProvidedUsernames) {
+      // Trigger Instagram scraper with user-provided username
+      if (userProvidedUsernames.instagram && !igScraperStartedRef.current) {
+        const username = userProvidedUsernames.instagram;
+        const igCacheKey = `analysis_${scanId}_instagram`;
+        const existingIg = localStorage.getItem(igCacheKey);
+        if (!existingIg) {
+          igScraperStartedRef.current = true;
+          console.log('[SCRAPERS] 🚀 Starting Instagram scraper with USER-PROVIDED username:', username);
+          (async () => {
+            try {
+              const response = await fetch("/api/test/instagram-scrape", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username }),
+              });
+              if (response.ok) {
+                const data = await response.json();
+                localStorage.setItem(igCacheKey, JSON.stringify(data));
+                console.log('[SCRAPERS] ✅ Instagram scraper complete');
+              }
+            } catch (error) {
+              console.error('[SCRAPERS] ❌ Instagram scraper failed:', error);
+            } finally {
+              setAnalyzersComplete(prev => ({ ...prev, instagram: true }));
+            }
+          })();
+        } else {
+          console.log('[SCRAPERS] Instagram already cached');
+          setAnalyzersComplete(prev => ({ ...prev, instagram: true }));
+        }
+      }
+      
+      // Trigger Facebook scraper with user-provided username
+      if (userProvidedUsernames.facebook && !fbScraperStartedRef.current) {
+        const username = userProvidedUsernames.facebook;
+        const fbCacheKey = `analysis_${scanId}_facebook`;
+        const existingFb = localStorage.getItem(fbCacheKey);
+        if (!existingFb) {
+          fbScraperStartedRef.current = true;
+          console.log('[SCRAPERS] 🚀 Starting Facebook scraper with USER-PROVIDED username:', username);
+          (async () => {
+            try {
+              const response = await fetch("/api/test/facebook-scrape", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username }),
+              });
+              if (response.ok) {
+                const data = await response.json();
+                localStorage.setItem(fbCacheKey, JSON.stringify(data));
+                console.log('[SCRAPERS] ✅ Facebook scraper complete');
+              }
+            } catch (error) {
+              console.error('[SCRAPERS] ❌ Facebook scraper failed:', error);
+            } finally {
+              setAnalyzersComplete(prev => ({ ...prev, facebook: true }));
+            }
+          })();
+        } else {
+          console.log('[SCRAPERS] Facebook already cached');
+          setAnalyzersComplete(prev => ({ ...prev, facebook: true }));
+        }
+      }
+      
+      // Mark as complete if username not provided
+      if (!userProvidedUsernames.instagram) {
+        setAnalyzersComplete(prev => ({ ...prev, instagram: true }));
+      }
+      if (!userProvidedUsernames.facebook) {
+        setAnalyzersComplete(prev => ({ ...prev, facebook: true }));
+      }
+      
+      return; // Don't proceed with URL extraction if user provided usernames
+    }
+    
+    // Priority 2: Fall back to extracting from URLs if no user-provided usernames
     if (!onlinePresenceData?.socialLinks || onlinePresenceData.socialLinks.length === 0) {
       return;
     }
     
-    console.log('[SCRAPERS] onlinePresenceData has social links, triggering scrapers in parallel...');
+    console.log('[SCRAPERS] No user-provided usernames, extracting from URLs...');
     
     // Check if we have Instagram/Facebook links
     const igLink = onlinePresenceData.socialLinks.find(l => l.platform === 'instagram');
@@ -752,20 +910,75 @@ export default function ReportScanClient({
   function extractUsernameFromUrl(url: string, platform: 'instagram' | 'facebook'): string | null {
     try {
       const urlObj = new URL(url);
-      const pathname = urlObj.pathname;
-      const parts = pathname.replace(/^\/|\/$/g, '').split('/');
       
       if (platform === 'instagram') {
-        if (parts[0] && parts[0] !== 'p' && parts[0] !== 'reel' && parts[0] !== 'stories') {
-          return parts[0];
+        // Ensure it's an Instagram URL
+        if (!urlObj.hostname.includes('instagram.com')) {
+          return null;
+        }
+        
+        const pathname = urlObj.pathname.toLowerCase();
+        
+        // Reject non-profile URLs
+        const rejectedPatterns = ['/p/', '/reel/', '/tv/', '/explore/', '/accounts/', '/stories/', '/direct/'];
+        for (const pattern of rejectedPatterns) {
+          if (pathname.includes(pattern)) {
+            return null;
+          }
+        }
+        
+        // Extract username from pathname (first path segment)
+        const pathParts = pathname.replace(/^\/|\/$/g, '').split('/').filter(p => p.length > 0);
+        if (pathParts[0] && pathParts[0].length > 0) {
+          return pathParts[0];
         }
       } else if (platform === 'facebook') {
-        if (parts[0] && parts[0] !== 'pages' && parts[0] !== 'profile' && parts[0] !== 'people') {
-          return parts[0];
+        // CRITICAL: Only accept facebook.com domains
+        const hostname = urlObj.hostname.toLowerCase();
+        if (!hostname.includes('facebook.com')) {
+          return null;
+        }
+        
+        const pathname = urlObj.pathname.toLowerCase();
+        const pathParts = pathname.replace(/^\/|\/$/g, '').split('/').filter(p => p.length > 0);
+        
+        // Reject non-profile URLs
+        const rejectedPatterns = ['/groups/', '/photo.php', '/photos/', '/posts/', '/reel/', '/watch/', '/events/', '/marketplace/', '/share/', '/sharer/', '/sharer.php', '/story.php', '/hashtag/', '/help/', '/policies/', '/login', '/recover/'];
+        for (const pattern of rejectedPatterns) {
+          if (pathname.includes(pattern)) {
+            return null;
+          }
+        }
+        
+        // Reject if it has fbid in query (photo/post links)
+        if (url.toLowerCase().includes('fbid=')) {
+          return null;
+        }
+        
+        // Reject root facebook.com with no page
+        if (pathParts.length === 0) {
+          return null;
+        }
+        
+        // Handle /pages/ URLs: /pages/PageName/ID -> extract PageName
+        if (pathParts[0] === 'pages' && pathParts[1]) {
+          return pathParts[1];
+        }
+        
+        // Reject special paths
+        const rejectedPaths = ['profile', 'people', 'login', 'signup', 'home', 'watch', 'marketplace'];
+        if (pathParts[0] && rejectedPaths.includes(pathParts[0])) {
+          return null;
+        }
+        
+        // Extract username (first path segment)
+        if (pathParts[0] && pathParts[0].length > 0) {
+          return pathParts[0];
         }
       }
       return null;
-    } catch {
+    } catch (error) {
+      console.error('[USERNAME EXTRACTION] Error extracting username:', error);
       return null;
     }
   }
@@ -993,15 +1206,31 @@ export default function ReportScanClient({
           // Don't allow closing - user must verify to continue
           // setShowEmailVerification(false);
         }}
-        onVerified={() => {
+        prefilledUsernames={gbpExtractedUsernames || undefined}
+        onVerified={(socialUsernames) => {
           setEmailVerified(true);
           setShowEmailVerification(false);
-          // Start analysis and move to stage 1
-          startAnalysis();
+          // Store user-provided usernames (use confirmed prefilled ones or newly entered ones)
+          // These are the FINAL approved usernames that will be used for analysis
+          if (socialUsernames) {
+            setUserProvidedUsernames(socialUsernames);
+            console.log('[MODAL] User approved usernames:', socialUsernames);
+          } else if (gbpExtractedUsernames) {
+            // If user confirmed prefilled usernames, use them
+            setUserProvidedUsernames(gbpExtractedUsernames);
+            console.log('[MODAL] User confirmed prefilled usernames:', gbpExtractedUsernames);
+          }
+          // Move to stage 1 first, then start analysis
+          // The analysis will trigger automatically via useEffect when currentStep === 1 && emailVerified === true
           setCurrentStep(1);
+          // Start analysis after a brief delay to ensure state is updated
+          setTimeout(() => {
+            startAnalysis();
+          }, 100);
         }}
         placeId={placeId}
         placeName={name}
+        prefilledUsernames={gbpExtractedUsernames || undefined}
       />
     </div>
   );

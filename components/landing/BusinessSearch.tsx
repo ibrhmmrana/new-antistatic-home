@@ -196,13 +196,30 @@ export default function BusinessSearch() {
     // Generate scan ID
     const scanId = generateScanId();
     
-    // Navigate to report page - analysis will start when user reaches stage 1
+    // Navigate immediately - don't wait for anything
     const params = new URLSearchParams({
       placeId: selectedPlace.place_id,
       name: selectedPlace.primary_text,
       addr: selectedPlace.secondary_text,
     });
     router.push(`/report/${scanId}?${params.toString()}`);
+    
+    // Trigger full social extraction in the background (all strategies: website, GBP, Google CSE)
+    // This runs concurrently and results will be prefilled in the modal when ready
+    // Don't await - let it run in background
+    fetch('/api/scan/socials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        businessName: selectedPlace.primary_text,
+        address: selectedPlace.secondary_text,
+        scanId: `${scanId}_social_extract`, // Use different scanId to avoid conflicts
+        websiteUrl: null, // Will be extracted from GBP
+      }),
+    }).catch((error) => {
+      console.error('[SOCIAL EXTRACTION] Failed to trigger extraction:', error);
+      // Don't block - extraction failure is non-critical
+    });
   };
 
   // Close dropdown when clicking outside

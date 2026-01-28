@@ -52,6 +52,7 @@ async function sendEmailViaSES(email: string, code: string): Promise<void> {
   });
 
   const fromEmail = process.env.SES_FROM_EMAIL || "noreply@antistatic.ai";
+  const fromEmailWithName = `Antistatic <${fromEmail}>`;
   const subject = "Your Antistatic Verification Code";
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -67,7 +68,7 @@ async function sendEmailViaSES(email: string, code: string): Promise<void> {
   const textBody = `Your verification code is: ${code}\n\nThis code will expire in 10 minutes.\n\nIf you didn't request this code, please ignore this email.`;
 
   const command = new SendEmailCommand({
-    Source: fromEmail,
+    Source: fromEmailWithName,
     Destination: {
       ToAddresses: [email],
     },

@@ -1906,8 +1906,12 @@ export async function POST(request: NextRequest) {
         console.error(`[API] Google CSE API failed:`, cseError);
       }
       
-      // STEP 3: Verify and select the best link for each platform using cross-validation
-      console.log(`[API] Step 3: Verifying and selecting best links with cross-validation`);
+      // STEP 3: Verify and select the best link for each platform
+      // For username-only extraction, use lenient verification (just pick best candidate)
+      // For full analysis, use strict cross-validation
+      const isUsernameOnlyExtraction = scanId && scanId.includes('_social_extract');
+      
+      console.log(`[API] Step 3: ${isUsernameOnlyExtraction ? 'Selecting best candidates (lenient mode)' : 'Verifying and selecting best links with cross-validation'}`);
       const verifiedLinks: Array<{ platform: SocialPlatform; url: string }> = [];
       
       for (const platform of ['facebook', 'instagram'] as SocialPlatform[]) {
@@ -1922,24 +1926,42 @@ export async function POST(request: NextRequest) {
           continue;
         }
         
-        // Verify and select the best link
-        const verifiedUrl = verifyAndSelectSocialLink(
-          allCandidates.map(c => ({ url: c.url, source: c.source, score: c.score })),
-          businessName,
-          platform
-        );
+        let verifiedUrl: string | null = null;
+        
+        if (isUsernameOnlyExtraction) {
+          // Lenient mode: just pick the highest scoring candidate (minimum score 3)
+          allCandidates.sort((a, b) => b.score - a.score);
+          const bestCandidate = allCandidates[0];
+          
+          if (bestCandidate.score >= 3) {
+            verifiedUrl = bestCandidate.url;
+            console.log(`[API] ✅ Selected ${platform} (lenient): ${verifiedUrl} (score: ${bestCandidate.score})`);
+          } else {
+            console.log(`[API] ⚠️ Best ${platform} candidate score too low: ${bestCandidate.score} (min: 3)`);
+          }
+        } else {
+          // Strict mode: use full verification with cross-validation
+          verifiedUrl = verifyAndSelectSocialLink(
+            allCandidates.map(c => ({ url: c.url, source: c.source, score: c.score })),
+            businessName,
+            platform
+          );
+          
+          if (verifiedUrl) {
+            console.log(`[API] ✅ Verified ${platform}: ${verifiedUrl}`);
+          } else {
+            console.log(`[API] ❌ Verification failed for ${platform} - rejecting all candidates`);
+          }
+        }
         
         if (verifiedUrl) {
           verifiedLinks.push({ platform, url: verifiedUrl });
-          console.log(`[API] ✅ Verified ${platform}: ${verifiedUrl}`);
-        } else {
-          console.log(`[API] ❌ Verification failed for ${platform} - rejecting all candidates`);
         }
       }
       
-      // Use only verified links
+      // Use verified/selected links
       socialLinks = verifiedLinks;
-      console.log(`[API] Final verified social links count: ${socialLinks.length}`);
+      console.log(`[API] Final ${isUsernameOnlyExtraction ? 'selected' : 'verified'} social links count: ${socialLinks.length}`);
 
     // Initialize partial result in cache before starting screenshots
     // This allows frontend to poll and get incremental updates
@@ -1959,6 +1981,38 @@ export async function POST(request: NextRequest) {
         scraperCache.set(scanId, { ...cached, partialResult: initialPartialResult });
         console.log(`[API] Initialized partial result for incremental updates`);
       }
+    }
+
+    // Check if this is username-only extraction (no screenshots needed)
+    // Note: isUsernameOnlyExtraction is already defined above in Step 3
+    if (isUsernameOnlyExtraction) {
+      console.log(`[API] Username-only extraction mode - skipping screenshots`);
+      // Return early with just the links, no screenshots
+      const result = {
+        success: true,
+        businessName,
+        address,
+        socialLinks: socialLinks.map(link => ({
+          platform: link.platform,
+          url: link.url,
+          screenshot: null,
+        })),
+        websiteUrl: websiteUrlToUse,
+        websiteScreenshot: null,
+        count: socialLinks.length,
+        scanId,
+      };
+      
+      // Cache the result
+      if (scanId) {
+        scraperCache.set(scanId, { status: 'completed', result });
+        // Clean up cache after 1 hour to prevent memory leaks
+        setTimeout(() => {
+          scraperCache.delete(scanId);
+        }, 3600000); // 1 hour
+      }
+      
+      return result;
     }
 
     // Capture screenshots in PARALLEL for social media (Facebook and Instagram)
