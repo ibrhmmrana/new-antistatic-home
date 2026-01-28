@@ -505,7 +505,63 @@ export default function ReportScanClient({
             }
           }
         } else {
-          setAnalyzersComplete(prev => ({ ...prev, website: true })); // No website to analyze
+          // FIX: Even without website, we can still analyze search visibility and competitors
+          // Get place details if not available
+          let placeDetailsForAnalysis = placeDetails;
+          if (!placeDetailsForAnalysis && placeId) {
+            try {
+              const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
+              if (response.ok) {
+                placeDetailsForAnalysis = await response.json();
+              }
+            } catch (error) {
+              console.warn('[ANALYZERS] Failed to fetch place details for search visibility:', error);
+            }
+          }
+          
+          if (placeDetailsForAnalysis && placeId) {
+            // Trigger search visibility and competitor analysis (no website required)
+            const websiteCacheKey = `analysis_${scanId}_website`;
+            const existingWebsite = localStorage.getItem(websiteCacheKey);
+            if (!existingWebsite) {
+              fetch("/api/scan/search-visibility", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  placeId,
+                  placeName: placeDetailsForAnalysis.name,
+                  placeAddress: placeDetailsForAnalysis.formatted_address,
+                  placeTypes: placeDetailsForAnalysis.types,
+                  latlng: placeDetailsForAnalysis.geometry?.location ? { 
+                    lat: placeDetailsForAnalysis.geometry.location.lat, 
+                    lng: placeDetailsForAnalysis.geometry.location.lng 
+                  } : null,
+                  rating: placeDetailsForAnalysis.rating,
+                  reviewCount: placeDetailsForAnalysis.user_ratings_total,
+                }),
+              })
+                .then(res => res.json())
+                .then(analysisData => {
+                  if (analysisData && !analysisData.error) {
+                    // Store as website result (even though there's no website) so assembleReport can use it
+                    const websiteResultData = {
+                      search_visibility: analysisData.search_visibility,
+                      competitors_snapshot: analysisData.competitors_snapshot,
+                      business_identity: analysisData.business_identity,
+                      scrape_metadata: {
+                        timestamp: new Date().toISOString(),
+                      },
+                    };
+                    localStorage.setItem(websiteCacheKey, JSON.stringify(websiteResultData));
+                  }
+                })
+                .catch(err => {
+                  console.error('[ANALYZERS] Search visibility/competitors analysis failed:', err);
+                });
+            }
+          }
+          
+          setAnalyzersComplete(prev => ({ ...prev, website: true })); // Mark complete (even if no website)
         }
       };
       

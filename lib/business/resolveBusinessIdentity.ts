@@ -754,3 +754,122 @@ export async function resolveBusinessIdentity(params: {
   
   return result;
 }
+
+/**
+ * Build BusinessIdentity from placeId/GBP data (no website required)
+ * Used for search visibility and competitor analysis when website is not available
+ */
+export async function buildBusinessIdentityFromPlaceId(params: {
+  placeId: string;
+  placeName?: string;
+  placeAddress?: string;
+  placeTypes?: string[];
+  latlng?: { lat: number; lng: number } | null;
+  rating?: number | null;
+  reviewCount?: number;
+}): Promise<BusinessIdentity> {
+  const { placeId, placeName, placeAddress, placeTypes = [], latlng, rating, reviewCount = 0 } = params;
+  const debug: string[] = [];
+  
+  debug.push(`Building identity from placeId: ${placeId}`);
+  
+  // Fetch full place details if not all data provided
+  let fullPlaceDetails: any = null;
+  if (!placeName || !placeAddress || !latlng) {
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+    if (apiKey) {
+      try {
+        const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
+        url.searchParams.set('place_id', placeId);
+        url.searchParams.set('fields', 'name,formatted_address,geometry,types,rating,user_ratings_total,address_components');
+        url.searchParams.set('key', apiKey);
+        
+        const response = await fetch(url.toString());
+        const data = await response.json();
+        
+        if (data.status === 'OK' && data.result) {
+          fullPlaceDetails = data.result;
+          debug.push('Fetched full place details from Places API');
+        }
+      } catch (error) {
+        debug.push(`Failed to fetch place details: ${error instanceof Error ? error.message : 'Unknown'}`);
+      }
+    }
+  }
+  
+  // Use provided data or fetched data
+  const name = placeName || fullPlaceDetails?.name || 'Business';
+  const address = placeAddress || fullPlaceDetails?.formatted_address || '';
+  const location = latlng || (fullPlaceDetails?.geometry?.location ? {
+    lat: fullPlaceDetails.geometry.location.lat,
+    lng: fullPlaceDetails.geometry.location.lng,
+  } : null);
+  const types = placeTypes.length > 0 ? placeTypes : (fullPlaceDetails?.types || []);
+  const placeRating = rating ?? (fullPlaceDetails?.rating || null);
+  const reviews = reviewCount || (fullPlaceDetails?.user_ratings_total || 0);
+  
+  // Parse address components
+  let locationSuburb: string | null = null;
+  let locationCity: string | null = null;
+  let locationCountry: string | null = null;
+  
+  if (fullPlaceDetails?.address_components) {
+    const { suburb, city, country } = extractAddressComponents(fullPlaceDetails.address_components);
+    locationSuburb = suburb;
+    locationCity = city;
+    locationCountry = country;
+  } else if (address) {
+    const parsed = parseAddress(address);
+    locationSuburb = parsed.suburb;
+    locationCity = parsed.city;
+    locationCountry = parsed.country;
+  }
+  
+  // Build location label
+  let locationLabel: string | null = null;
+  if (locationSuburb && locationCity) {
+    locationLabel = `${locationSuburb}, ${locationCity}`;
+  } else if (locationCity) {
+    locationLabel = locationCity;
+  } else if (locationSuburb) {
+    locationLabel = locationSuburb;
+  } else if (address) {
+    // Fallback: use address parts
+    const parts = address.split(',').map(s => s.trim());
+    if (parts.length > 1) {
+      locationLabel = parts.slice(0, -1).join(', '); // Exclude country
+    }
+  }
+  
+  // Get category from types
+  const categoryLabel = getCategoryFromTypes(types);
+  
+  // Get service keywords from category family
+  const family = resolveCategoryFamily(categoryLabel, types);
+  const serviceKeywords = getAllowedServiceKeywords(family).slice(0, 8);
+  
+  debug.push(`Built identity: ${name} (${categoryLabel})`);
+  debug.push(`Location: ${locationLabel || 'Unknown'}`);
+  debug.push(`Service keywords: ${serviceKeywords.length} from family "${family}"`);
+  
+  const identity: BusinessIdentity = {
+    website_host: '', // No website
+    business_name: name,
+    category_label: categoryLabel,
+    service_keywords: serviceKeywords,
+    location_label: locationLabel,
+    location_suburb: locationSuburb,
+    location_city: locationCity,
+    location_country: locationCountry || 'South Africa',
+    latlng: location,
+    place_id: placeId,
+    place_types: types,
+    rating: placeRating,
+    review_count: reviews,
+    sources: { gbp: false, places: true, website: false },
+    confidence: location ? 'high' : 'medium',
+    debug_info: debug,
+  };
+  
+  return identity;
+}

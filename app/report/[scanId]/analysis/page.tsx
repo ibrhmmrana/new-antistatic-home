@@ -74,6 +74,10 @@ export default function AnalysisPage() {
       } catch (error) {
         console.error('[ANALYSIS PAGE] Failed to parse website cache:', error);
       }
+    } else {
+      // FIX: Trigger website crawler if cache doesn't exist and we have a website URL
+      // This handles cases where analysis page is accessed directly or onboarding didn't complete
+      // We'll check for website URL after placesDetails is loaded (see useEffect below)
     }
     
     // Load GBP analysis
@@ -146,6 +150,67 @@ export default function AnalysisPage() {
         .then(data => {
           if (!data.error) {
             setPlacesDetails(data);
+            
+            // FIX: Trigger analyses - website crawler if website exists, search visibility/competitors always
+            if (!cachedWebsite) {
+              if (data.website) {
+                // Trigger website crawler (includes search visibility and competitors)
+                fetch("/api/scan/website", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ 
+                    url: data.website, 
+                    maxDepth: 2,
+                    maxPages: 10 
+                  }),
+                })
+                  .then(res => res.json())
+                  .then(crawlData => {
+                    if (crawlData && !crawlData.error) {
+                      // Store in cache and update state
+                      localStorage.setItem(`analysis_${scanId}_website`, JSON.stringify(crawlData));
+                      setWebsiteResult(crawlData);
+                    }
+                  })
+                  .catch(err => {
+                    console.error('[ANALYSIS PAGE] Website crawler failed:', err);
+                  });
+              } else {
+                // No website - trigger search visibility and competitor analysis independently
+                fetch("/api/scan/search-visibility", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    placeId,
+                    placeName: data.name,
+                    placeAddress: data.formatted_address,
+                    placeTypes: data.types,
+                    latlng: data.geometry?.location ? { lat: data.geometry.location.lat, lng: data.geometry.location.lng } : null,
+                    rating: data.rating,
+                    reviewCount: data.user_ratings_total,
+                  }),
+                })
+                  .then(res => res.json())
+                  .then(analysisData => {
+                    if (analysisData && !analysisData.error) {
+                      // Store as website result (even though there's no website) so assembleReport can use it
+                      const websiteResultData = {
+                        search_visibility: analysisData.search_visibility,
+                        competitors_snapshot: analysisData.competitors_snapshot,
+                        business_identity: analysisData.business_identity,
+                        scrape_metadata: {
+                          timestamp: new Date().toISOString(),
+                        },
+                      };
+                      localStorage.setItem(`analysis_${scanId}_website`, JSON.stringify(websiteResultData));
+                      setWebsiteResult(websiteResultData);
+                    }
+                  })
+                  .catch(err => {
+                    console.error('[ANALYSIS PAGE] Search visibility/competitors analysis failed:', err);
+                  });
+              }
+            }
           }
         })
         .catch(() => {});
@@ -167,15 +232,31 @@ export default function AnalysisPage() {
 
   // Assemble standardized report whenever data changes
   useEffect(() => {
-    if (!placeId) return;
+    if (!placeId) {
+      return;
+    }
     
     try {
+      // FIX: Read websiteResult from localStorage directly to avoid race condition
+      // State updates are async, so we read from cache synchronously here
+      let websiteCrawlData = websiteResult;
+      if (!websiteCrawlData) {
+        const cachedWebsite = localStorage.getItem(`analysis_${scanId}_website`);
+        if (cachedWebsite) {
+          try {
+            websiteCrawlData = JSON.parse(cachedWebsite);
+          } catch (e) {
+            // Ignore parse errors, will use undefined
+          }
+        }
+      }
+      
       const assembled = assembleReport({
         placeId,
         placeName: placesDetails?.name || gbpAnalysis?.analysis?.businessName || null,
         placeAddress: placesDetails?.formatted_address || null,
         placesDetails: placesDetails || undefined,
-        websiteCrawl: websiteResult || undefined,
+        websiteCrawl: websiteCrawlData || undefined,
         gbpAnalysis: gbpAnalysis?.analysis || undefined,
         socials: socialsData || undefined,
         instagram: igResult || undefined,

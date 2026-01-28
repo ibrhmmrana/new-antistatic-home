@@ -1773,7 +1773,7 @@ export async function POST(request: NextRequest) {
   try {
     // Parse the request body
     const body = await request.json();
-    const { businessName, address, scanId: bodyScanId, websiteUrl: providedWebsiteUrl } = body;
+    const { businessName, address, scanId: bodyScanId, websiteUrl: providedWebsiteUrl, initialSocialLinks } = body;
     scanId = bodyScanId; // Store for error handling
 
     // Validate required parameters
@@ -1788,6 +1788,7 @@ export async function POST(request: NextRequest) {
     }
     
     console.log(`[API] Received websiteUrl from request: ${providedWebsiteUrl || 'none'}`);
+    console.log(`[API] Received initialSocialLinks: ${initialSocialLinks ? `${initialSocialLinks.length} links (user-provided)` : 'none'}`);
 
     // CRITICAL: Prevent duplicate execution using in-memory cache
     if (scanId) {
@@ -1821,17 +1822,41 @@ export async function POST(request: NextRequest) {
 
     // Create the scraper execution promise
     const scraperPromise = (async () => {
-      // APPROACH: 
-      // 1. First try to extract social links from the business website (fastest, most reliable)
-      // 2. If any platforms are missing, use Google CSE API to find them
-      
-      console.log(`[API] Extracting social links for: "${businessName}" at "${address}"`);
-      
       // Use provided website URL
       const websiteUrlToUse = providedWebsiteUrl || null;
       console.log(`[API] Website URL: ${websiteUrlToUse || 'none'}`);
       
+      // Check if this is username-only extraction (no screenshots needed)
+      const isUsernameOnlyExtraction = scanId && scanId.includes('_social_extract');
+      
+      // PRIORITY: If user provided social links in the modal, use them directly
+      // Only do extraction/verification if user didn't provide any links
       let socialLinks: { platform: string; url: string }[] = [];
+      
+      if (initialSocialLinks && Array.isArray(initialSocialLinks) && initialSocialLinks.length > 0) {
+        console.log(`[API] ✅ Using user-provided social links (skipping extraction/verification)`);
+        const userProvidedLinks = initialSocialLinks.map((link: any) => ({
+          platform: link.platform,
+          url: link.url,
+        }));
+        
+        // Validate that links are for supported platforms
+        const validLinks = userProvidedLinks.filter((link: any) => 
+          link.platform === 'instagram' || link.platform === 'facebook'
+        );
+        
+        console.log(`[API] User provided ${validLinks.length} valid social links:`, 
+          validLinks.map((l: any) => `${l.platform}: ${l.url}`).join(', '));
+        
+        // Use user-provided links directly - no extraction or verification needed
+        socialLinks = validLinks;
+        console.log(`[API] Using ${socialLinks.length} user-provided social links (skipping extraction)`);
+      } else {
+        // APPROACH (only if no user-provided links): 
+        // 1. First try to extract social links from the business website (fastest, most reliable)
+        // 2. If any platforms are missing, use Google CSE API to find them
+        
+        console.log(`[API] No user-provided links - extracting social links for: "${businessName}" at "${address}"`);
       
       // STEP 1: Extract social links from website (if available)
       const websiteCandidates: Array<{ url: string; platform: SocialPlatform; source: 'website' | 'cse'; score: number }> = [];
@@ -1909,8 +1934,6 @@ export async function POST(request: NextRequest) {
       // STEP 3: Verify and select the best link for each platform
       // For username-only extraction, use lenient verification (just pick best candidate)
       // For full analysis, use strict cross-validation
-      const isUsernameOnlyExtraction = scanId && scanId.includes('_social_extract');
-      
       console.log(`[API] Step 3: ${isUsernameOnlyExtraction ? 'Selecting best candidates (lenient mode)' : 'Verifying and selecting best links with cross-validation'}`);
       const verifiedLinks: Array<{ platform: SocialPlatform; url: string }> = [];
       
@@ -1959,9 +1982,10 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      // Use verified/selected links
-      socialLinks = verifiedLinks;
-      console.log(`[API] Final ${isUsernameOnlyExtraction ? 'selected' : 'verified'} social links count: ${socialLinks.length}`);
+        // Use verified/selected links
+        socialLinks = verifiedLinks;
+        console.log(`[API] Final ${isUsernameOnlyExtraction ? 'selected' : 'verified'} social links count: ${socialLinks.length}`);
+      }
 
     // Initialize partial result in cache before starting screenshots
     // This allows frontend to poll and get incremental updates
@@ -1984,7 +2008,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if this is username-only extraction (no screenshots needed)
-    // Note: isUsernameOnlyExtraction is already defined above in Step 3
     if (isUsernameOnlyExtraction) {
       console.log(`[API] Username-only extraction mode - skipping screenshots`);
       // Return early with just the links, no screenshots
