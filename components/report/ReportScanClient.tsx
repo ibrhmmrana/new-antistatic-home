@@ -43,7 +43,7 @@ export default function ReportScanClient({
 }: ReportScanClientProps) {
   // Toggle for automatic stage progression
   // Set to true to enable automatic progression, false for manual only
-  const AUTO_ADVANCE_STAGES = false;
+  const AUTO_ADVANCE_STAGES = true;
 
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
@@ -607,18 +607,23 @@ export default function ReportScanClient({
         const existingIg = localStorage.getItem(igCacheKey);
         if (!existingIg) {
           igScraperStartedRef.current = true;
-          console.log('[SCRAPERS] 🚀 Starting Instagram scraper with USER-PROVIDED username:', username);
+          console.log('[SCRAPERS] 🚀 Starting Instagram API scraper with USER-PROVIDED username:', username);
           (async () => {
             try {
-              const response = await fetch("/api/test/instagram-scrape", {
+              const response = await fetch("/api/test/instagram-api", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username }),
+                body: JSON.stringify({ 
+                  username,
+                  includeComments: false // Don't need comments for analysis
+                }),
               });
               if (response.ok) {
                 const data = await response.json();
-                localStorage.setItem(igCacheKey, JSON.stringify(data));
-                console.log('[SCRAPERS] ✅ Instagram scraper complete');
+                // Transform new API response to expected format
+                const transformed = transformInstagramApiResponse(data);
+                localStorage.setItem(igCacheKey, JSON.stringify(transformed));
+                console.log('[SCRAPERS] ✅ Instagram API scraper complete');
               }
             } catch (error) {
               console.error('[SCRAPERS] ❌ Instagram scraper failed:', error);
@@ -694,21 +699,26 @@ export default function ReportScanClient({
         const existingIg = localStorage.getItem(igCacheKey);
         if (!existingIg) {
           igScraperStartedRef.current = true; // Mark as started BEFORE async call
-          console.log('[SCRAPERS] 🚀 Starting Instagram scraper NOW for:', username);
+          console.log('[SCRAPERS] 🚀 Starting Instagram API scraper NOW for:', username);
           (async () => {
             try {
-              const response = await fetch("/api/test/instagram-scrape", {
+              const response = await fetch("/api/test/instagram-api", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username }),
+                body: JSON.stringify({ 
+                  username,
+                  includeComments: false // Don't need comments for analysis
+                }),
               });
               if (response.ok) {
                 const data = await response.json();
-                localStorage.setItem(igCacheKey, JSON.stringify(data));
-                console.log('[SCRAPERS] ✅ Instagram scraper complete');
+                // Transform new API response to expected format
+                const transformed = transformInstagramApiResponse(data);
+                localStorage.setItem(igCacheKey, JSON.stringify(transformed));
+                console.log('[SCRAPERS] ✅ Instagram API scraper complete');
               }
             } catch (error) {
-              console.error('[SCRAPERS] ❌ Instagram scraper failed:', error);
+              console.error('[SCRAPERS] ❌ Instagram API scraper failed:', error);
             } finally {
               setAnalyzersComplete(prev => ({ ...prev, instagram: true }));
             }
@@ -907,6 +917,27 @@ export default function ReportScanClient({
   }, [placeId, scanId, currentStep]);
   
   // Helper function to extract username from social URL
+  /**
+   * Transforms the new Instagram API response to the format expected by the report analysis
+   * New API returns: { profile: InstagramProfile, posts: InstagramPost[], scrapedAt: string }
+   * Expected format: { profile: { biography, website, category, followerCount }, posts: [{ date, likeCount, commentCount }] }
+   */
+  function transformInstagramApiResponse(apiResponse: any): any {
+    return {
+      profile: {
+        biography: apiResponse.profile?.biography || null,
+        website: apiResponse.profile?.website || null,
+        category: apiResponse.profile?.category || null,
+        followerCount: apiResponse.profile?.followerCount || null,
+      },
+      posts: (apiResponse.posts || []).map((post: any) => ({
+        date: post.takenAt ? new Date(post.takenAt * 1000).toISOString() : null, // Convert Unix timestamp to ISO string
+        likeCount: post.likeCount || null,
+        commentCount: post.commentCount || null,
+      })),
+    };
+  }
+
   function extractUsernameFromUrl(url: string, platform: 'instagram' | 'facebook'): string | null {
     try {
       const urlObj = new URL(url);

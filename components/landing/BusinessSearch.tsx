@@ -415,7 +415,7 @@ export default function BusinessSearch() {
       {/* Analyse Button - Below search bar */}
       <button
         onClick={handleGetReport}
-        className="h-12 md:h-14 px-8 md:px-10 rounded-[25px] font-medium text-base md:text-lg transition-all flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600 shadow-md hover:shadow-lg"
+        className="h-12 md:h-14 px-8 md:px-10 rounded-[25px] font-medium text-base md:text-lg transition-all flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600 shadow-md hover:shadow-lg active:scale-95"
         style={{
           cursor: selectedPlace ? 'pointer' : 'not-allowed',
           pointerEvents: selectedPlace ? 'auto' : 'none'

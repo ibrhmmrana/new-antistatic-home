@@ -810,19 +810,30 @@ function buildSocialPresenceSection(
     }
     
     // Recent activity
-    if (posts.length > 0 && posts[0].date) {
-      const lastPostDate = new Date(posts[0].date).getTime();
-      const daysSince = (now - lastPostDate) / (24 * 60 * 60 * 1000);
-      
-      checks.push({
-        key: 'ig_recent_activity',
-        label: 'Recent activity',
-        status: daysSince <= 14 ? 'good' : daysSince <= 30 ? 'warn' : 'bad',
-        whyItMatters: 'Recent activity shows your business is active and engaged',
-        whatWeFound: `${Math.round(daysSince)} days since last post`,
-        whatWeWereLookingFor: 'At least 1 post in the last 14 days',
-        howToFix: 'Post new content at least every 2 weeks to maintain visibility',
-      });
+    // Check first 4 posts to find the most recent (pinned posts may not be the most recent)
+    if (posts.length > 0) {
+      const postsToCheck = posts.slice(0, 4).filter(p => p.date); // Get first 4 posts with valid dates
+      if (postsToCheck.length > 0) {
+        // Find the most recent post by comparing dates
+        const mostRecentPost = postsToCheck.reduce((latest, current) => {
+          const latestDate = new Date(latest.date!).getTime();
+          const currentDate = new Date(current.date!).getTime();
+          return currentDate > latestDate ? current : latest;
+        });
+        
+        const lastPostDate = new Date(mostRecentPost.date!).getTime();
+        const daysSince = (now - lastPostDate) / (24 * 60 * 60 * 1000);
+        
+        checks.push({
+          key: 'ig_recent_activity',
+          label: 'Recent activity',
+          status: daysSince <= 14 ? 'good' : daysSince <= 30 ? 'warn' : 'bad',
+          whyItMatters: 'Recent activity shows your business is active and engaged',
+          whatWeFound: `${Math.round(daysSince)} days since last post`,
+          whatWeWereLookingFor: 'At least 1 post in the last 14 days',
+          howToFix: 'Post new content at least every 2 weeks to maintain visibility',
+        });
+      }
     }
   }
   
@@ -870,19 +881,30 @@ function buildSocialPresenceSection(
     });
     
     // Recent activity
-    if (posts.length > 0 && posts[0].date) {
-      const lastPostDate = new Date(posts[0].date).getTime();
-      const daysSince = (now - lastPostDate) / (24 * 60 * 60 * 1000);
-      
-      checks.push({
-        key: 'fb_recent_activity',
-        label: 'Recent activity',
-        status: daysSince <= 14 ? 'good' : daysSince <= 30 ? 'warn' : 'bad',
-        whyItMatters: 'Recent activity shows your business is active and engaged',
-        whatWeFound: `${Math.round(daysSince)} days since last post`,
-        whatWeWereLookingFor: 'At least 1 post in the last 14 days',
-        howToFix: 'Post new content at least every 2 weeks to maintain visibility',
-      });
+    // Check first 4 posts to find the most recent (pinned posts may not be the most recent)
+    if (posts.length > 0) {
+      const postsToCheck = posts.slice(0, 4).filter(p => p.date); // Get first 4 posts with valid dates
+      if (postsToCheck.length > 0) {
+        // Find the most recent post by comparing dates
+        const mostRecentPost = postsToCheck.reduce((latest, current) => {
+          const latestDate = new Date(latest.date!).getTime();
+          const currentDate = new Date(current.date!).getTime();
+          return currentDate > latestDate ? current : latest;
+        });
+        
+        const lastPostDate = new Date(mostRecentPost.date!).getTime();
+        const daysSince = (now - lastPostDate) / (24 * 60 * 60 * 1000);
+        
+        checks.push({
+          key: 'fb_recent_activity',
+          label: 'Recent activity',
+          status: daysSince <= 14 ? 'good' : daysSince <= 30 ? 'warn' : 'bad',
+          whyItMatters: 'Recent activity shows your business is active and engaged',
+          whatWeFound: `${Math.round(daysSince)} days since last post`,
+          whatWeWereLookingFor: 'At least 1 post in the last 14 days',
+          howToFix: 'Post new content at least every 2 weeks to maintain visibility',
+        });
+      }
     }
   }
   
