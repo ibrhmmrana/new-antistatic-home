@@ -46,7 +46,7 @@ export default function Nav() {
         
         {/* Content */}
         <div className="relative z-10 w-full flex items-center justify-between">
-          {/* Logo */}
+        {/* Logo */}
         <Link href="/" className="flex items-center">
           <Image
             src="/images/antistatic logo on white.svg"

@@ -18,13 +18,13 @@ export default function Home() {
       <div className="relative -mt-20 md:-mt-24 lg:-mt-28">
         {/* Background Gradient - only for hero */}
         <div className="absolute inset-0 z-0">
-          <Image
+        <Image
             src="/images/background color.svg"
-            alt="Background"
-            fill
-            priority
-            className="object-cover"
-            quality={90}
+          alt="Background"
+          fill
+          priority
+          className="object-cover"
+          quality={90}
           />
         </div>
         <div className="relative z-10 pt-20 md:pt-24 lg:pt-28">

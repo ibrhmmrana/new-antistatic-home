@@ -48,9 +48,9 @@ export default function AIAgentLoadingScreen({ businessName, onAllAgentsDeployed
         [indices[i], indices[j]] = [indices[j], indices[i]];
       }
       
-      // Deploy all agents one by one with random delays
+      // Deploy all agents one by one with random delays (slowed down)
       indices.forEach((agentIdx, deployOrder) => {
-        const delay = 2000 + deployOrder * 600 + Math.random() * 1000; // 2s + (order * 0.6s) + random 0-1s
+        const delay = 3000 + deployOrder * 1500 + Math.random() * 2000; // 3s + (order * 1.5s) + random 0-2s
         const timeout = setTimeout(() => {
           setDeployedAgents(prev => {
             const newSet = new Set(Array.from(prev));
@@ -62,8 +62,8 @@ export default function AIAgentLoadingScreen({ businessName, onAllAgentsDeployed
       });
     };
 
-    // Start deploying after 2 seconds
-    const timeout = setTimeout(deployAgents, 2000);
+    // Start deploying after 1 second
+    const timeout = setTimeout(deployAgents, 1000);
     timeoutsRef.current.push(timeout);
     
     return () => {

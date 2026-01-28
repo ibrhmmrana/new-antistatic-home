@@ -11,6 +11,8 @@ import StageOnlinePresence from "./StageOnlinePresence";
 import ScanLineOverlay from "./ScanLineOverlay";
 import AIAgentLoadingScreen from "./AIAgentLoadingScreen";
 import AIAgentModal from "./AIAgentModal";
+import EmailVerificationModal from "./EmailVerificationModal";
+import { isEmailVerified } from "@/lib/email-verification";
 
 interface ReportScanClientProps {
   scanId: string;
@@ -42,14 +44,15 @@ export default function ReportScanClient({
 }: ReportScanClientProps) {
   // Toggle for automatic stage progression
   // Set to true to enable automatic progression, false for manual only
-  const AUTO_ADVANCE_STAGES = true;
+  const AUTO_ADVANCE_STAGES = false;
 
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null);
   const [onlinePresenceData, setOnlinePresenceData] = useState<OnlinePresenceResult | null>(null);
-  const [showInitialLoading, setShowInitialLoading] = useState(true);
   const [allAgentsDeployed, setAllAgentsDeployed] = useState(false);
+  const [showEmailVerification, setShowEmailVerification] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
   const scraperTriggeredRef = useRef(false); // Prevent duplicate scraper triggers
   const websiteScreenshotTriggeredRef = useRef(false); // Prevent duplicate website screenshot triggers
   const stage4AutoProgressRef = useRef(false); // Track if we've already auto-progressed from stage 4
@@ -70,9 +73,79 @@ export default function ReportScanClient({
   });
   const [allAnalyzersComplete, setAllAnalyzersComplete] = useState(false);
 
-  // Fetch place details on mount and trigger website screenshot immediately
+  // Start analysis function - called after email verification
+  const startAnalysis = async () => {
+    try {
+      // Call the protected analysis start endpoint
+      const response = await fetch("/api/public/analysis/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include", // Include cookies
+        body: JSON.stringify({
+          scanId,
+          placeId,
+          placeName: name,
+          address: addr,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to start analysis:", await response.text());
+        return;
+      }
+
+      const data = await response.json();
+      console.log("[ANALYSIS] Started:", data.jobId);
+    } catch (error) {
+      console.error("Error starting analysis:", error);
+    }
+  };
+
+  // Check if email is already verified on mount
   useEffect(() => {
-    // Function to capture website screenshot immediately
+    if (typeof window !== "undefined") {
+      const verified = isEmailVerified(placeId) || document.cookie.includes("email_proof");
+      if (verified) {
+        setEmailVerified(true);
+      }
+    }
+  }, [placeId]);
+
+  // Show email verification modal when agents are deployed (stage 0)
+  useEffect(() => {
+    if (currentStep === 0 && allAgentsDeployed && !emailVerified && !showEmailVerification) {
+      // Wait a moment after agents deploy, then show modal
+      const timer = setTimeout(() => {
+        setShowEmailVerification(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentStep, allAgentsDeployed, emailVerified, showEmailVerification, placeId]);
+
+  // Fetch place details on mount (but delay triggers until stage 1)
+  useEffect(() => {
+    // Only fetch place details, don't trigger screenshots/scrapers until stage 1
+    const fetchDetails = async () => {
+      try {
+        const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
+        if (response.ok) {
+          const data = await response.json();
+          setPlaceDetails(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch place details:", error);
+      }
+    };
+
+    fetchDetails();
+  }, [placeId]);
+
+  // Trigger website screenshot and scraper when user reaches stage 1 AND email is verified
+  useEffect(() => {
+    if (currentStep < 1) return; // Don't trigger until stage 1
+    if (!emailVerified) return; // Don't trigger until email is verified
+    
+    // Function to capture website screenshot
     const captureWebsiteScreenshot = async (websiteUrl: string) => {
       // Prevent duplicate execution
       if (websiteScreenshotTriggeredRef.current) {
@@ -145,29 +218,10 @@ export default function ReportScanClient({
       }
     };
 
-    const fetchDetails = async () => {
-      try {
-        const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
-        if (response.ok) {
-          const data = await response.json();
-          setPlaceDetails(data);
-          
-          // Immediately capture website screenshot if website URL is available
-          if (data.website) {
-            captureWebsiteScreenshot(data.website);
-          }
-        } else {
-        }
-      } catch (error) {
-        console.error("Failed to fetch place details:", error);
-      }
-    };
 
-    fetchDetails();
-
-    // Trigger scraper API call immediately when report page loads
+    // Trigger scraper API call when user reaches stage 1
     // This runs in the background: extracts links, then captures all screenshots in parallel
-    // Results are stored and available when user reaches stage 4
+    // Results are stored and available when user reaches stage 5 (Online presence analysis)
     const triggerScraper = async () => {
       // Wait for placeDetails to be fetched so we can pass the website URL
       // If placeDetails is not yet available, we'll fetch it here
@@ -260,10 +314,18 @@ export default function ReportScanClient({
       scraperTriggeredRef.current = true; // Mark as triggered
       triggerScraper();
     }
-  }, [placeId, name, addr, scanId]);
+    
+    // Capture website screenshot if website URL is available
+    if (placeDetails?.website) {
+      captureWebsiteScreenshot(placeDetails.website);
+    }
+  }, [currentStep, emailVerified, placeId, name, addr, scanId, placeDetails]);
 
   // Trigger all analyzers during onboarding (runs in background, stores results in localStorage)
+  // Only trigger when user reaches stage 1 (Your online profile review) AND email is verified
   useEffect(() => {
+    if (currentStep < 1) return; // Don't trigger until stage 1
+    if (!emailVerified) return; // Don't trigger until email is verified
     if (analyzersTriggeredRef.current) return; // Already triggered
     
     const triggerAnalyzers = async () => {
@@ -451,7 +513,7 @@ export default function ReportScanClient({
     }, 1000);
     
     return () => clearTimeout(timeout);
-  }, [placeId, scanId, placeDetails, onlinePresenceData]);
+  }, [currentStep, emailVerified, placeId, scanId, placeDetails, onlinePresenceData]);
   
   // Watch for onlinePresenceData changes and trigger social scrapers IMMEDIATELY (in parallel)
   // This runs independently of the main analyzer effect to ensure scrapers start ASAP
@@ -553,7 +615,7 @@ export default function ReportScanClient({
       setAllAnalyzersComplete(true);
       
       // Navigate to analysis page when everything is complete
-      if (currentStep === 4 && !stage4AutoProgressRef.current) {
+      if (currentStep === 5 && !stage4AutoProgressRef.current) {
         stage4AutoProgressRef.current = true;
         console.log('[NAVIGATION] All analyzers including AI complete, navigating to analysis page...');
         router.push(`/report/${scanId}/analysis?placeId=${encodeURIComponent(placeId)}&name=${encodeURIComponent(name)}&addr=${encodeURIComponent(addr)}`);
@@ -610,17 +672,8 @@ export default function ReportScanClient({
     }
   }, [scanId, allAnalyzersComplete, analyzersComplete.gbp, analyzersComplete.website, analyzersComplete.aiAnalysis]);
 
-  // Handle when all agents are deployed
-  useEffect(() => {
-    if (allAgentsDeployed) {
-      // Wait 2 seconds after all agents are deployed before showing first stage
-      const timeout = setTimeout(() => {
-        setShowInitialLoading(false);
-      }, 2000);
-      
-      return () => clearTimeout(timeout);
-    }
-  }, [allAgentsDeployed]);
+  // Note: allAgentsDeployed callback is kept for potential future use
+  // but deployment screen is now controlled by currentStep === 0
   
   // Pre-load competitors data while user is on stage 0 (Your online profile review)
   useEffect(() => {
@@ -720,7 +773,7 @@ export default function ReportScanClient({
   // Manual navigation handlers - NO automatic progression
   // Steps only change when user clicks Previous/Next buttons or clicks on a step item
   const handleNext = () => {
-    if (currentStep < 4) {
+    if (currentStep < 5) {
       setCurrentStep((prev) => prev + 1);
     }
   };
@@ -738,11 +791,12 @@ export default function ReportScanClient({
 
   // Build step list
   const steps = [
-    { id: 0, label: "Your online profile review" },
-    { id: 1, label: `${name} competitors` },
-    { id: 2, label: "Review sentiment scoring" },
-    { id: 3, label: "Image quality and quantity" },
-    { id: 4, label: "Online presence analysis" },
+    { id: 0, label: "Deploying agents" },
+    { id: 1, label: "Your online profile review" },
+    { id: 2, label: `${name} competitors` },
+    { id: 3, label: "Review sentiment scoring" },
+    { id: 4, label: "Image quality and quantity" },
+    { id: 5, label: "Online presence analysis" },
   ];
 
   const getStepIcon = (stepId: number) => {
@@ -810,13 +864,13 @@ export default function ReportScanClient({
               Previous
             </button>
             <span className="text-xs text-gray-500">
-              Step {currentStep + 1} of 5
+              Step {currentStep + 1} of 6
             </span>
             <button
               onClick={handleNext}
-              disabled={currentStep === 4}
+              disabled={currentStep === 5}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                currentStep === 4
+                currentStep === 5
                   ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                   : "bg-blue-600 text-white hover:bg-blue-700"
               }`}
@@ -831,13 +885,13 @@ export default function ReportScanClient({
       <div className="flex-1 flex flex-col relative overflow-hidden">
             {/* Preview Area */}
             <div className="flex-1 relative overflow-hidden min-h-[600px]">
-              {/* Initial AI Agents Loading Screen */}
-              {showInitialLoading ? (
+              {/* Stage 0: Deploying agents */}
+              {currentStep === 0 ? (
                 <AIAgentLoadingScreen 
                   businessName={name}
                   onAllAgentsDeployed={() => setAllAgentsDeployed(true)}
                 />
-              ) : currentStep === 0 ? (
+              ) : currentStep === 1 ? (
                 // Google Business Profile step
                 <div className="absolute inset-0">
                   <AIAgentModal stage={0} stageName="Your online profile review" />
@@ -847,13 +901,13 @@ export default function ReportScanClient({
                     scanId={scanId}
                     onComplete={() => {
                       // Automatically move to next stage after 4 scans
-                      if (AUTO_ADVANCE_STAGES && currentStep === 0) {
+                      if (AUTO_ADVANCE_STAGES && currentStep === 1) {
                         handleNext();
                       }
                     }}
                   />
                 </div>
-              ) : currentStep === 1 ? (
+              ) : currentStep === 2 ? (
                 // Competitors - Real Google Map (Owner.com style - no card wrapper)
                 <div className="absolute inset-0">
                   <AIAgentModal stage={1} stageName={`${name} competitors`} />
@@ -863,13 +917,13 @@ export default function ReportScanClient({
                     scanId={scanId}
                     onComplete={() => {
                       // Automatically move to next stage when competitors finish loading
-                      if (AUTO_ADVANCE_STAGES && currentStep === 1) {
+                      if (AUTO_ADVANCE_STAGES && currentStep === 2) {
                         handleNext();
                       }
                     }}
                   />
                 </div>
-              ) : currentStep === 2 ? (
+              ) : currentStep === 3 ? (
                 // Google Review Sentiment step
                 <div className="absolute inset-0">
                   <AIAgentModal stage={2} stageName="Review sentiment scoring" />
@@ -879,13 +933,13 @@ export default function ReportScanClient({
                     scanId={scanId}
                     onComplete={() => {
                       // Automatically move to next stage after 8.5 seconds
-                      if (AUTO_ADVANCE_STAGES && currentStep === 2) {
+                      if (AUTO_ADVANCE_STAGES && currentStep === 3) {
                         handleNext();
                       }
                     }}
                   />
                 </div>
-              ) : currentStep === 3 ? (
+              ) : currentStep === 4 ? (
                 // Photo quality and quantity step
                 <div className="absolute inset-0">
                   <AIAgentModal stage={3} stageName="Image quality and quantity" />
@@ -895,13 +949,13 @@ export default function ReportScanClient({
                     scanId={scanId}
                     onComplete={() => {
                       // Automatically move to next stage after all photos load and 3 seconds pass
-                      if (AUTO_ADVANCE_STAGES && currentStep === 3) {
+                      if (AUTO_ADVANCE_STAGES && currentStep === 4) {
                         handleNext();
                       }
                     }}
                   />
                 </div>
-              ) : currentStep === 4 ? (
+              ) : currentStep === 5 ? (
                 // Step 4: Online presence analysis
                 <div className="absolute inset-0">
                   <AIAgentModal stage={4} stageName="Online presence analysis" />
@@ -931,6 +985,24 @@ export default function ReportScanClient({
               )}
         </div>
       </div>
+
+      {/* Email Verification Modal */}
+      <EmailVerificationModal
+        isOpen={showEmailVerification}
+        onClose={() => {
+          // Don't allow closing - user must verify to continue
+          // setShowEmailVerification(false);
+        }}
+        onVerified={() => {
+          setEmailVerified(true);
+          setShowEmailVerification(false);
+          // Start analysis and move to stage 1
+          startAnalysis();
+          setCurrentStep(1);
+        }}
+        placeId={placeId}
+        placeName={name}
+      />
     </div>
   );
 }

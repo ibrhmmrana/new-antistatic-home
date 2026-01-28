@@ -124,11 +124,11 @@ export default function BusinessSearch() {
       console.error("Error fetching place details:", error);
       // Fallback to basic info if API fails
       setPlaceDetails({
-        name: prediction.primary_text,
+      name: prediction.primary_text,
         rating: null,
         address: prediction.secondary_text,
         photoUrl: null,
-      });
+    });
     } finally {
       setIsLoadingDetails(false);
     }
@@ -196,23 +196,7 @@ export default function BusinessSearch() {
     // Generate scan ID
     const scanId = generateScanId();
     
-    // Trigger social media search immediately (don't wait for report page)
-    // This runs in the background and results will be available when user reaches GBP stage
-    fetch('/api/scan/socials', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        businessName: selectedPlace.primary_text,
-        address: selectedPlace.secondary_text,
-        scanId,
-        websiteUrl: null, // We don't have website yet, but API can still search
-      }),
-    }).catch(err => {
-      console.error('[BUSINESS-SEARCH] Failed to trigger social media search:', err);
-      // Don't block navigation if search fails
-    });
-    
-    // Navigate to report page
+    // Navigate to report page - analysis will start when user reaches stage 1
     const params = new URLSearchParams({
       placeId: selectedPlace.place_id,
       name: selectedPlace.primary_text,
@@ -283,11 +267,11 @@ export default function BusinessSearch() {
           const hasGlobal = globalResults.length > 0;
 
           return (
-            <div
-              ref={dropdownRef}
-              className="absolute left-0 top-[calc(100%+8px)] w-full z-50 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
-            >
-              <ul className="max-h-[320px] overflow-y-auto py-1">
+          <div
+            ref={dropdownRef}
+            className="absolute left-0 top-[calc(100%+8px)] w-full z-50 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
+          >
+            <ul className="max-h-[320px] overflow-y-auto py-1">
                 {/* Local results section */}
                 {hasLocal && localResults.map(({ prediction, index }) => (
                   <li
@@ -316,31 +300,31 @@ export default function BusinessSearch() {
 
                 {/* Global results section */}
                 {hasGlobal && globalResults.map(({ prediction, index }) => (
-                  <li
-                    key={prediction.place_id}
-                    data-prediction-index={index}
-                    role="option"
-                    aria-selected={highlightedIndex === index}
-                    onClick={() => handleSelect(prediction)}
-                    onMouseEnter={() => setHighlightedIndex(index)}
-                    className={`cursor-pointer px-4 py-3 text-left transition-colors border-b border-gray-100 last:border-b-0 ${
-                      highlightedIndex === index
-                        ? "bg-gray-100"
-                        : "bg-white hover:bg-gray-50"
-                    }`}
-                  >
-                    <div className="text-[14px] font-medium text-gray-900 leading-5">
-                      {prediction.primary_text}
+                <li
+                  key={prediction.place_id}
+                  data-prediction-index={index}
+                  role="option"
+                  aria-selected={highlightedIndex === index}
+                  onClick={() => handleSelect(prediction)}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  className={`cursor-pointer px-4 py-3 text-left transition-colors border-b border-gray-100 last:border-b-0 ${
+                    highlightedIndex === index
+                      ? "bg-gray-100"
+                      : "bg-white hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="text-[14px] font-medium text-gray-900 leading-5">
+                    {prediction.primary_text}
+                  </div>
+                  {prediction.secondary_text && (
+                    <div className="mt-0.5 text-[12px] text-gray-500 leading-4">
+                      {prediction.secondary_text}
                     </div>
-                    {prediction.secondary_text && (
-                      <div className="mt-0.5 text-[12px] text-gray-500 leading-4">
-                        {prediction.secondary_text}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
           );
         })()}
       </div>
