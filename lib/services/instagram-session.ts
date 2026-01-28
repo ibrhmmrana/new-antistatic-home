@@ -3,7 +3,8 @@
  * Handles automatic login, session extraction, validation, and webhook integration
  */
 
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { chromium as playwrightChromium, Browser, BrowserContext, Page } from 'playwright-core';
+import chromium from '@sparticuz/chromium';
 
 export interface InstagramSession {
   sessionid: string;
@@ -80,22 +81,40 @@ export class InstagramSessionService {
 
     try {
       // Step 1: Launch browser
+      // Check if we're in a serverless environment (Vercel)
+      const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
+      const isServerless = isVercel || process.env.AWS_LAMBDA_FUNCTION_NAME;
+      
       // Check if headful mode is enabled (useful for debugging)
+      // Note: Headful mode doesn't work on serverless environments, so force headless
       const envValue = process.env.INSTAGRAM_AUTOMATION_HEADLESS;
-      const headlessMode = envValue !== 'false'; // 'false' string means headful (visible browser)
+      const headlessMode = isServerless ? true : (envValue !== 'false'); // Force headless on serverless
       const modeText = headlessMode ? 'headless' : 'headful';
-      console.log(`[SESSION] Environment INSTAGRAM_AUTOMATION_HEADLESS="${envValue}"`);
+      console.log(`[SESSION] Environment: isServerless=${isServerless}, INSTAGRAM_AUTOMATION_HEADLESS="${envValue}"`);
       console.log(`[SESSION] Launching ${modeText} browser (headless=${headlessMode})...`);
       
-      browser = await chromium.launch({
-        headless: headlessMode,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-dev-shm-usage',
-        ],
-      });
+      // Use serverless Chromium on Vercel/serverless, regular Playwright locally
+      if (isServerless) {
+        // Configure Chromium for serverless
+        chromium.setGraphicsMode(false);
+        
+        browser = await playwrightChromium.launch({
+          args: chromium.args,
+          executablePath: await chromium.executablePath(),
+          headless: true, // Always headless on serverless
+        });
+      } else {
+        // Local development: use regular Playwright
+        browser = await playwrightChromium.launch({
+          headless: headlessMode,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-dev-shm-usage',
+          ],
+        });
+      }
 
       context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

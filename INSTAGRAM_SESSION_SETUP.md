@@ -11,21 +11,26 @@
 
 ## 🚀 Quick Start
 
-### 1. Install Playwright Browsers
+### 1. Install Dependencies
 
-**Important:** Playwright browsers must be installed separately. They are automatically installed via the `postinstall` script when you run `npm install`, but if you encounter browser errors, run:
-
+**For Local Development:**
 ```bash
-npx playwright install chromium
+npm install
+# Playwright browsers are automatically installed via postinstall script
 ```
 
-**For Production Servers:** If deploying to a server and browsers aren't installed, SSH into the server and run:
+**For Vercel/Serverless:**
+- No additional setup needed! The code automatically uses `@sparticuz/chromium` for serverless environments
+- The `postinstall` script is skipped on Vercel (not needed)
+- Browser binaries are bundled with `@sparticuz/chromium`
+
+**For Traditional Servers (non-serverless):**
+If deploying to a traditional server and browsers aren't installed, SSH into the server and run:
 ```bash
 cd /path/to/your/app
-npx playwright install chromium
+npm install
+# Or manually: npx playwright install chromium
 ```
-
-Or ensure your deployment process runs `npm install` which will trigger the `postinstall` script automatically.
 
 ### 2. Add Environment Variables to `.env.local`
 
@@ -161,21 +166,20 @@ Add `INSTAGRAM_2FA_BACKUP_CODE` to `.env.local`.
 - Verify file is writable
 - Check server logs for errors
 
-### Browser Installation Error
+### Browser Installation Error (Fixed for Vercel)
 
 **Error:** `Executable doesn't exist at .../chromium_headless_shell-...`
 
-**Solution:** Playwright browsers are not installed on the server. Run:
+**Solution:** This has been fixed! The code now automatically detects serverless environments (Vercel) and uses `@sparticuz/chromium` instead of requiring Playwright browser binaries.
 
-```bash
-npx playwright install chromium
-```
+**How it works:**
+- **On Vercel/Serverless:** Automatically uses `playwright-core` + `@sparticuz/chromium` (no browser installation needed)
+- **On Local/Traditional Servers:** Uses regular Playwright (requires `npx playwright install chromium`)
 
-**For Production:** If you can't SSH into the server, ensure your deployment process includes:
-1. Running `npm install` (which triggers the `postinstall` script)
-2. Or manually adding `npx playwright install chromium` to your deployment script
-
-**Note:** The `postinstall` script in `package.json` should automatically install browsers, but some deployment platforms may skip postinstall scripts or require explicit configuration.
+**If you still see this error:**
+1. Make sure `@sparticuz/chromium` is installed: `npm install @sparticuz/chromium`
+2. For traditional servers (not Vercel), run: `npx playwright install chromium`
+3. Check that `playwright-core` is installed: `npm install playwright-core`
 
 ## 📚 Full Documentation
 
