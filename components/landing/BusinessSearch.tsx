@@ -8,11 +8,20 @@ import { debounce } from "@/lib/utils/debounce";
 import type { Prediction, SelectedPlace } from "@/lib/types";
 import { generateScanId } from "@/lib/report/generateScanId";
 
+interface PlaceDetails {
+  name: string;
+  rating: number | null;
+  address: string;
+  photoUrl: string | null;
+}
+
 export default function BusinessSearch() {
   const [inputValue, setInputValue] = useState("");
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<SelectedPlace | null>(null);
+  const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
@@ -63,6 +72,7 @@ export default function BusinessSearch() {
       setPredictions([]);
       setIsOpen(false);
       setSelectedPlace(null);
+      setPlaceDetails(null);
     }
   }, [inputValue, debouncedFetch, selectedPlace]);
 
@@ -72,20 +82,56 @@ export default function BusinessSearch() {
     // Clear selected place if user is typing something different
     if (selectedPlace && value !== selectedPlace.primary_text) {
       setSelectedPlace(null);
+      setPlaceDetails(null);
     }
     if (!value) {
       setSelectedPlace(null);
+      setPlaceDetails(null);
     }
   };
 
-  const handleSelect = (prediction: Prediction) => {
+  const handleSelect = async (prediction: Prediction) => {
     setSelectedPlace(prediction);
     setInputValue(prediction.primary_text);
     setPredictions([]);
     setIsOpen(false);
     setHighlightedIndex(-1);
+    setPlaceDetails(null);
     // Prevent autocomplete from re-opening after selection
     inputRef.current?.blur();
+
+    // Fetch place details
+    setIsLoadingDetails(true);
+    try {
+      const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(prediction.place_id)}`);
+      const data = await response.json();
+      
+      if (response.ok && data) {
+        // Get photo URL
+        let photoUrl = null;
+        if (data.photoRef) {
+          photoUrl = `/api/places/photo?ref=${encodeURIComponent(data.photoRef)}&maxw=400`;
+        }
+        
+        setPlaceDetails({
+          name: data.name || prediction.primary_text,
+          rating: data.rating || null,
+          address: data.address || prediction.secondary_text,
+          photoUrl,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching place details:", error);
+      // Fallback to basic info if API fails
+      setPlaceDetails({
+        name: prediction.primary_text,
+        rating: null,
+        address: prediction.secondary_text,
+        photoUrl: null,
+      });
+    } finally {
+      setIsLoadingDetails(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -143,7 +189,8 @@ export default function BusinessSearch() {
     }
   };
 
-  const handleGetReport = async () => {
+  const handleGetReport = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
     if (!selectedPlace) return;
 
     // Generate scan ID
@@ -211,7 +258,7 @@ export default function BusinessSearch() {
           onFocus={() => {
             if (predictions.length > 0) setIsOpen(true);
           }}
-          placeholder="Find your business name"
+          placeholder="Search for your business"
           className="h-16 md:h-20 w-full pl-14 pr-5 rounded-[25px] border border-gray-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder:text-gray-400 text-lg"
           aria-expanded={isOpen}
           aria-autocomplete="list"
@@ -297,16 +344,81 @@ export default function BusinessSearch() {
           );
         })()}
       </div>
+
+      {/* Business Card - Shown when business is selected */}
+      {(placeDetails || isLoadingDetails) && (
+        <div className="w-full rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          {isLoadingDetails ? (
+            <div className="p-6 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : placeDetails && (
+            <div className="flex flex-col sm:flex-row">
+              {/* Business Image */}
+              {placeDetails.photoUrl ? (
+                <div className="w-full sm:w-48 h-48 sm:h-auto flex-shrink-0">
+                  <Image
+                    src={placeDetails.photoUrl}
+                    alt={placeDetails.name}
+                    width={192}
+                    height={192}
+                    className="w-full h-full object-cover"
+                    unoptimized
+                  />
+                </div>
+              ) : (
+                <div className="w-full sm:w-48 h-48 sm:h-auto flex-shrink-0 bg-gray-100 flex items-center justify-center">
+                  <Search className="w-12 h-12 text-gray-400" />
+                </div>
+              )}
+              
+              {/* Business Info */}
+              <div className="flex-1 p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  {placeDetails.name}
+                </h3>
+                
+                {placeDetails.rating !== null && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-lg font-semibold text-gray-900">
+                      {placeDetails.rating.toFixed(1)}
+                    </span>
+                    <div className="flex items-center">
+                      {[...Array(5)].map((_, i) => (
+                        <svg
+                          key={i}
+                          className={`w-5 h-5 ${
+                            i < Math.round(placeDetails.rating!)
+                              ? "text-yellow-400 fill-current"
+                              : "text-gray-300"
+                          }`}
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                        >
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <p className="text-gray-600 text-sm">
+                  {placeDetails.address}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       
       {/* Analyse Button - Below search bar */}
       <button
         onClick={handleGetReport}
-        disabled={!selectedPlace}
-        className={`h-12 md:h-14 px-8 md:px-10 rounded-[25px] font-medium text-base md:text-lg transition-all flex items-center gap-2 bg-blue-500 text-white ${
-          selectedPlace
-            ? "hover:bg-blue-600 shadow-md hover:shadow-lg cursor-pointer"
-            : "cursor-not-allowed opacity-50"
-        }`}
+        className="h-12 md:h-14 px-8 md:px-10 rounded-[25px] font-medium text-base md:text-lg transition-all flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600 shadow-md hover:shadow-lg"
+        style={{
+          cursor: selectedPlace ? 'pointer' : 'not-allowed',
+          pointerEvents: selectedPlace ? 'auto' : 'none'
+        }}
       >
         <Image
           src="/icons/ai icon.svg"
