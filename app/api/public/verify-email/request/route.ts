@@ -3,9 +3,17 @@ import { createClient } from "@supabase/supabase-js";
 import { generateCode, hashCode } from "@/lib/email-verification";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+// Initialize Supabase client lazily to avoid build-time errors
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error("Supabase configuration is missing");
+  }
+  
+  return createClient(supabaseUrl, supabaseServiceKey);
+}
 
 // Rate limiting: track requests per IP + email (in-memory, simple approach)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -115,6 +123,7 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     // Insert challenge into database
+    const supabase = getSupabaseClient();
     const { data, error: dbError } = await supabase
       .from("email_verification_challenges")
       .insert({

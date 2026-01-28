@@ -32,7 +32,17 @@ async function verifyProofToken(request: NextRequest): Promise<ProofPayload | nu
     const secret = new TextEncoder().encode(EMAIL_PROOF_SECRET);
     const { payload } = await jwtVerify(token, secret);
     
-    return payload as ProofPayload;
+    // Validate payload structure
+    if (
+      typeof payload === 'object' &&
+      payload !== null &&
+      'email' in payload &&
+      'purpose' in payload &&
+      'challengeId' in payload
+    ) {
+      return payload as unknown as ProofPayload;
+    }
+    return null;
   } catch (error) {
     console.error("Token verification error:", error);
     return null;

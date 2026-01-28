@@ -3,9 +3,17 @@ import { createClient } from "@supabase/supabase-js";
 import { verifyCode } from "@/lib/email-verification";
 import { SignJWT } from "jose";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+// Initialize Supabase client lazily to avoid build-time errors
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error("Supabase configuration is missing");
+  }
+  
+  return createClient(supabaseUrl, supabaseServiceKey);
+}
 
 const EMAIL_PROOF_SECRET = process.env.EMAIL_PROOF_SECRET || "change-this-secret-in-production";
 
@@ -39,6 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch challenge from database
+    const supabase = getSupabaseClient();
     const { data: challenge, error: fetchError } = await supabase
       .from("email_verification_challenges")
       .select("*")
