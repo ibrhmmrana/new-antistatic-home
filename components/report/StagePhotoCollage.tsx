@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
 
@@ -11,9 +11,13 @@ interface StagePhotoCollageProps {
 }
 
 interface Photo {
-  ref: string;
+  /** Direct image URL from New Places API (v1) media endpoint; preferred. */
+  uri?: string;
+  /** Legacy photo_reference; used when uri is not present (e.g. cached data). */
+  ref?: string;
   width: number | null;
   height: number | null;
+  name?: string;
 }
 
 interface PhotosData {
@@ -253,6 +257,17 @@ export default function StagePhotoCollage({
   const [loadedImages, setLoadedImages] = useState<Set<number>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Displayable photos only (uri from New API or ref for legacy/cache); used for layout and effects
+  const photosToShow = useMemo(
+    () =>
+      data
+        ? data.photos
+            .filter((p) => p.uri || p.ref)
+            .slice(0, MAX_PHOTOS)
+        : [],
+    [data]
+  );
+
   useEffect(() => {
     const fetchPhotos = async () => {
       setLoading(true);
@@ -311,9 +326,8 @@ export default function StagePhotoCollage({
 
   // Calculate centering offset when data or container size changes
   useEffect(() => {
-    if (!data || !containerRef.current || data.photos.length === 0) return;
+    if (!data || !containerRef.current || photosToShow.length === 0) return;
 
-    const photosToShow = data.photos.slice(0, MAX_PHOTOS);
     const slots = getTemplate(photosToShow.length);
     
     const containerWidth = containerRef.current.clientWidth;
@@ -335,7 +349,6 @@ export default function StagePhotoCollage({
     if (!data || !containerRef.current) return;
 
     const handleResize = () => {
-      const photosToShow = data.photos.slice(0, MAX_PHOTOS);
       const slots = getTemplate(photosToShow.length);
       
       const containerWidth = containerRef.current?.clientWidth || 0;
@@ -354,11 +367,11 @@ export default function StagePhotoCollage({
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [data]);
+  }, [data, photosToShow]);
 
   // Progressive reveal: show photos one by one, waiting for each image to load
   useEffect(() => {
-    if (loading || error || !data || data.photos.length === 0) {
+    if (loading || error || !data || photosToShow.length === 0) {
       // Reset visible count and loaded images when loading or no data
       setVisibleCount(0);
       setLoadedImages(new Set());
@@ -376,22 +389,19 @@ export default function StagePhotoCollage({
 
     if (prefersReducedMotion) {
       // Show all instantly
-      const photosToShow = data.photos.slice(0, MAX_PHOTOS);
       setVisibleCount(photosToShow.length);
       return;
     }
 
     // Start with first image visible (it will load and trigger the next)
     setVisibleCount(1);
-  }, [loading, error, data]);
+  }, [loading, error, data, photosToShow]);
 
   // Handle progressive reveal based on image loads
   useEffect(() => {
-    if (loading || error || !data || data.photos.length === 0) return;
+    if (loading || error || !data || photosToShow.length === 0) return;
     if (visibleCount === 0) return;
 
-    const photosToShow = data.photos.slice(0, MAX_PHOTOS);
-    
     // If current visible image has loaded and there are more images, show the next one
     if (loadedImages.has(visibleCount - 1) && visibleCount < photosToShow.length) {
       // Wait 2 seconds before showing next image
@@ -401,13 +411,12 @@ export default function StagePhotoCollage({
       
       return () => clearTimeout(timer);
     }
-  }, [loadedImages, visibleCount, loading, error, data]);
+  }, [loadedImages, visibleCount, loading, error, data, photosToShow]);
 
   // Auto-advance to next stage after all images have loaded and 3 seconds have passed
   useEffect(() => {
-    if (loading || error || !data || data.photos.length === 0 || !onComplete) return;
+    if (loading || error || !data || photosToShow.length === 0 || !onComplete) return;
     
-    const photosToShow = data.photos.slice(0, MAX_PHOTOS);
     const totalPhotos = photosToShow.length;
     
     // Check if all images are visible and the last one has loaded
@@ -422,7 +431,7 @@ export default function StagePhotoCollage({
       
       return () => clearTimeout(timer);
     }
-  }, [visibleCount, loadedImages, loading, error, data, onComplete]);
+  }, [visibleCount, loadedImages, loading, error, data, photosToShow, onComplete]);
 
   if (loading) {
     return (
@@ -448,7 +457,7 @@ export default function StagePhotoCollage({
     );
   }
 
-  if (data.photos.length === 0) {
+  if (photosToShow.length === 0) {
     return (
       <div className="relative w-full h-full min-h-[600px] flex items-center justify-center">
         <div className="text-center max-w-md px-4">
@@ -458,8 +467,6 @@ export default function StagePhotoCollage({
     );
   }
 
-  // Cap at MAX_PHOTOS
-  const photosToShow = data.photos.slice(0, MAX_PHOTOS);
   const slots = getTemplate(photosToShow.length);
   
   // Determine variant for debug overlay
@@ -615,14 +622,16 @@ export default function StagePhotoCollage({
           // Get the reveal order position for this image (back to front)
           const revealPosition = revealOrder.get(index) ?? index;
           const isVisible = revealPosition < visibleCount;
-          // Use absolute URL for local development to avoid Next.js Image optimization issues
-          const photoUrl = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-            ? `${window.location.origin}/api/places/photo?ref=${encodeURIComponent(photo.ref)}&maxw=1400`
-            : `/api/places/photo?ref=${encodeURIComponent(photo.ref)}&maxw=1400`;
+          // Prefer direct URI from New API (1 request per image); fallback to legacy proxy for cached ref-only data
+          const photoUrl = photo.uri
+            ? photo.uri
+            : typeof window !== "undefined" && window.location.hostname === "localhost"
+              ? `${window.location.origin}/api/places/photo?ref=${encodeURIComponent(photo.ref ?? "")}&maxw=1400`
+              : `/api/places/photo?ref=${encodeURIComponent(photo.ref ?? "")}&maxw=1400`;
 
           return (
             <div
-              key={photo.ref}
+              key={photo.uri ?? photo.ref ?? index}
               className="absolute transition-[opacity,transform] duration-[600ms] ease-out will-change-[opacity,transform]"
               style={{
                 left: `${slot.leftPct}%`,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const MAX_PHOTOS = 18;
+const MEDIA_MAX_WIDTH_PX = 1600;
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -23,61 +24,95 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Request photos field along with name
-    const fields = ["name", "photos"].join(",");
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${apiKey}`;
-    
-    const response = await fetch(url, {
-      next: { revalidate: 3600 }, // Cache for 1 hour
+    // New Places API (v1): get place with photos and displayName
+    const placeUrl = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
+    const placeRes = await fetch(placeUrl, {
+      method: "GET",
+      headers: {
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "photos,displayName",
+      },
+      next: { revalidate: 3600 },
     });
 
-    if (!response.ok) {
-      throw new Error(`Google Places API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+    if (!placeRes.ok) {
+      const errText = await placeRes.text();
+      console.error("[places/photos] Place details error:", placeRes.status, errText.slice(0, 300));
       return NextResponse.json(
-        { error: data.error_message || "Failed to fetch place photos" },
-        { status: 400 }
+        { error: `Places API error: ${placeRes.status}` },
+        { status: placeRes.status >= 500 ? 502 : 400 }
       );
     }
 
-    const result = data.result || {};
-    const photos = result.photos || [];
-    
-    // Normalize and limit photos
-    const normalizedPhotos = photos
-      .slice(0, MAX_PHOTOS)
-      .map((photo: any) => ({
-        ref: photo.photo_reference,
-        width: photo.width || null,
-        height: photo.height || null,
-      }));
-
-    const responseData: any = {
-      placeId,
-      name: result.name || "",
-      photos: normalizedPhotos,
+    const place = (await placeRes.json()) as {
+      displayName?: { text?: string };
+      name?: string;
+      photos?: Array<{ name: string; widthPx?: number; heightPx?: number }>;
     };
 
-    // Dev-only debug info
+    const name =
+      (place.displayName?.text ?? place.name ?? "").trim() || "";
+    const photos = place.photos ?? [];
+
+    if (photos.length === 0) {
+      return NextResponse.json({
+        placeId,
+        name,
+        photos: [],
+        ...(process.env.NODE_ENV !== "production" && {
+          debug: { totalPhotosReturned: 0, placeId },
+        }),
+      });
+    }
+
+    // Fetch photoUri for each photo (New API media endpoint); run in parallel
+    const slice = photos.slice(0, MAX_PHOTOS);
+    const mediaFetches = slice.map(async (photo) => {
+      const mediaUrl = `https://places.googleapis.com/v1/${photo.name}/media?maxWidthPx=${MEDIA_MAX_WIDTH_PX}&skipHttpRedirect=true`;
+      const mediaRes = await fetch(mediaUrl, {
+        method: "GET",
+        headers: { "X-Goog-Api-Key": apiKey },
+        next: { revalidate: 3600 * 24 * 7 },
+      });
+
+      if (!mediaRes.ok) {
+        const errText = await mediaRes.text();
+        console.warn("[places/photos] Media error for", photo.name, mediaRes.status, errText.slice(0, 200));
+        return { uri: "", width: null, height: null, name: photo.name };
+      }
+
+      const media = (await mediaRes.json()) as { photoUri?: string };
+      const uri = (media.photoUri ?? "").trim();
+      return {
+        uri,
+        width: photo.widthPx ?? null,
+        height: photo.heightPx ?? null,
+        name: photo.name,
+      };
+    });
+
+    const normalizedPhotos = await Promise.all(mediaFetches);
+    const validPhotos = normalizedPhotos.filter((p) => p.uri);
+
+    const responseData: Record<string, unknown> = {
+      placeId,
+      name,
+      photos: validPhotos,
+    };
+
     if (process.env.NODE_ENV !== "production") {
       responseData.debug = {
-        totalPhotosReturned: normalizedPhotos.length,
+        totalPhotosReturned: validPhotos.length,
         placeId,
       };
     }
 
     return NextResponse.json(responseData);
   } catch (error) {
-    console.error("Error fetching place photos:", error);
+    console.error("[places/photos] Error:", error);
     return NextResponse.json(
       { error: "Failed to fetch place photos" },
       { status: 500 }
     );
   }
 }
-
-
