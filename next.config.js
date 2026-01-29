@@ -4,7 +4,11 @@ const nextConfig = {
   experimental: {
     // Next 14 uses this key to keep server-only packages external (not webpack-bundled).
     // This avoids build-time resolution of Playwright optional deps/assets (electron, chromium-bidi, recorder fonts/html).
-    serverComponentsExternalPackages: ["playwright-core", "@sparticuz/chromium"],
+    serverComponentsExternalPackages: [
+      "playwright-core", 
+      "@sparticuz/chromium",
+      "playwright", // Include playwright for good measure
+    ],
   },
   images: {
     remotePatterns: [

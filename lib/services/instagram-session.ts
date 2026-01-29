@@ -44,9 +44,29 @@ export class InstagramSessionService {
   }
 
   /**
+   * Get Vercel timeout based on plan detection
+   */
+  private getVercelTimeout(): number {
+    if (!process.env.VERCEL) return 60000; // Local: 60 seconds
+    
+    // Try to detect Vercel plan
+    const isHobby = process.env.VERCEL_ENV === 'preview' || !process.env.VERCEL_ENV;
+    const isPro = process.env.VERCEL_ENV === 'production';
+    
+    if (isHobby) {
+      console.log('[SESSION] ⚠️ Vercel Hobby plan detected (10s timeout)');
+      return 10000; // Hobby: 10 seconds
+    }
+    
+    // Default to Pro/Enterprise
+    console.log('[SESSION] ✅ Vercel Pro/Enterprise plan detected (60s timeout)');
+    return 60000; // Pro/Enterprise: 60 seconds
+  }
+
+  /**
    * Refreshes Instagram session by logging in with headless browser
    */
-  async refreshSession(): Promise<SessionRefreshResult> {
+  async refreshSession(options?: { headlessOverride?: boolean }): Promise<SessionRefreshResult> {
     const startTime = Date.now();
     const steps: SessionRefreshResult['steps'] = {};
 
@@ -78,28 +98,75 @@ export class InstagramSessionService {
     let browser: Browser | null = null;
     let context: BrowserContext | null = null;
     let page: Page | null = null;
+    
+    // Declare variables for error handling
+    let isServerless = false;
+    let executablePath: string | undefined;
 
     try {
-      // Step 1: Launch browser
-      // Check if headful mode is enabled (useful for debugging)
-      const envValue = process.env.INSTAGRAM_AUTOMATION_HEADLESS;
-      const headlessMode = envValue !== 'false'; // 'false' string means headful (visible browser)
-      const modeText = headlessMode ? 'headless' : 'headful';
-      console.log(`[SESSION] Environment INSTAGRAM_AUTOMATION_HEADLESS="${envValue}"`);
-      console.log(`[SESSION] Launching ${modeText} browser (headless=${headlessMode})...`);
+      // Step 1: Detect environment and configure browser
+      console.log('[SESSION] 🚀 Starting Instagram session refresh...');
       
       // Detect serverless environment (Vercel, AWS Lambda, etc.)
-      const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME || !!process.env.FUNCTION_TARGET;
+      isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME || !!process.env.FUNCTION_TARGET;
       const localExecutablePath = process.env.CHROME_EXECUTABLE_PATH;
       
-      // Use serverless-compatible Chromium if in serverless environment
-      const executablePath = isServerless
-        ? await chromium.executablePath()
-        : (localExecutablePath || undefined);
+      // Log production diagnostics
+      if (isServerless) {
+        console.log('[SESSION] 🏢 PRODUCTION ENVIRONMENT DETECTED');
+        console.log(`[SESSION] VERCEL: ${process.env.VERCEL}`);
+        console.log(`[SESSION] VERCEL_ENV: ${process.env.VERCEL_ENV || 'not set'}`);
+        console.log(`[SESSION] VERCEL_REGION: ${process.env.VERCEL_REGION || 'not set'}`);
+        console.log(`[SESSION] NODE_ENV: ${process.env.NODE_ENV}`);
+        console.log(`[SESSION] FUNCTION_TARGET: ${process.env.FUNCTION_TARGET || 'not set'}`);
+        console.log(`[SESSION] AWS_LAMBDA_FUNCTION_NAME: ${process.env.AWS_LAMBDA_FUNCTION_NAME || 'not set'}`);
+        console.log(`[SESSION] AWS_LAMBDA_FUNCTION_MEMORY_SIZE: ${process.env.AWS_LAMBDA_FUNCTION_MEMORY_SIZE || 'unknown'} MB`);
+        console.log(`[SESSION] INSTAGRAM_AUTOMATION_HEADLESS: ${process.env.INSTAGRAM_AUTOMATION_HEADLESS || 'not set'}`);
+        console.log(`[SESSION] Chromium args count: ${chromium.args.length}`);
+        console.log(`[SESSION] Chromium revision: ${chromium.revision || 'unknown'}`);
+      }
       
-      console.log(`[SESSION] Serverless environment: ${isServerless}, executable path: ${executablePath || 'default'}`);
+      // Determine headless mode - FORCE headless in serverless environments
+      const envValue = process.env.INSTAGRAM_AUTOMATION_HEADLESS;
+      const headlessMode = options?.headlessOverride !== undefined 
+        ? options.headlessOverride 
+        : (isServerless ? true : envValue !== 'false');
       
-      browser = await pwChromium.launch({
+      const modeText = headlessMode ? 'headless' : 'headful';
+      console.log(`[SESSION] Headless mode: ${headlessMode} (serverless: ${isServerless}, env override: ${options?.headlessOverride !== undefined ? options.headlessOverride : 'none'})`);
+      console.log(`[SESSION] Launching ${modeText} browser...`);
+      
+      // Get Chromium executable path with error handling
+      try {
+        if (isServerless) {
+          console.log('[SESSION] Getting serverless Chromium executable path...');
+          const chromiumPath = await chromium.executablePath();
+          
+          if (!chromiumPath) {
+            throw new Error('chromium.executablePath() returned null/undefined');
+          }
+          
+          console.log(`[SESSION] ✅ Chromium path resolved: ${chromiumPath}`);
+          executablePath = chromiumPath;
+        } else {
+          executablePath = localExecutablePath || undefined;
+          console.log(`[SESSION] Local Chromium path: ${executablePath || 'default (system)'}`);
+        }
+      } catch (pathError: any) {
+        console.error('[SESSION] ❌ Failed to get Chromium executable path:', pathError);
+        if (isServerless) {
+          throw new Error(`Chromium setup failed in serverless: ${pathError.message}. Check @sparticuz/chromium bundling.`);
+        }
+        throw pathError;
+      }
+      
+      // Determine timeout based on Vercel plan
+      const vercelTimeout = this.getVercelTimeout();
+      const browserTimeout = Math.min(60000, vercelTimeout - 5000); // Leave 5s buffer
+      console.log(`[SESSION] Timeout configured: ${browserTimeout}ms (Vercel limit: ${vercelTimeout}ms)`);
+      
+      // Build launch options with serverless optimizations
+      const launchOptions: any = {
         headless: headlessMode,
         args: [
           ...(isServerless ? chromium.args : []),
@@ -107,16 +174,57 @@ export class InstagramSessionService {
           '--disable-setuid-sandbox',
           '--disable-blink-features=AutomationControlled',
           '--disable-dev-shm-usage',
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
         ],
         executablePath,
-        timeout: 60000,
-      });
+        timeout: browserTimeout,
+      };
+      
+      // Add serverless-specific optimizations for memory and performance
+      if (isServerless) {
+        launchOptions.args.push(
+          '--single-process', // Reduces memory usage
+          '--no-zygote',
+          '--disable-gpu', // No GPU in serverless
+          '--disable-software-rasterizer',
+          '--disable-extensions',
+          '--disable-background-networking',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-breakpad',
+          '--disable-component-extensions-with-background-pages',
+          '--disable-default-apps',
+          '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+          '--disable-ipc-flooding-protection',
+          '--disable-renderer-backgrounding',
+          '--enable-features=NetworkService,NetworkServiceInProcess',
+          '--force-color-profile=srgb',
+          '--metrics-recording-only',
+          '--mute-audio',
+        );
+        
+        // Set smaller viewport to reduce memory
+        launchOptions.defaultViewport = { width: 1280, height: 720 };
+        
+        console.log(`[SESSION] Serverless optimizations applied (${launchOptions.args.length} args)`);
+      } else {
+        // Local development: add standard args
+        launchOptions.args.push(
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+        );
+      }
+      
+      console.log(`[SESSION] Launching browser with ${launchOptions.args.length} args...`);
+      browser = await pwChromium.launch(launchOptions);
 
+      // Create browser context with optimized viewport for serverless
+      const viewportConfig = isServerless 
+        ? { width: 1280, height: 720 } // Smaller viewport for serverless
+        : { width: 1920, height: 1080 }; // Full viewport for local
+      
       context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: 1920, height: 1080 },
+        viewport: viewportConfig,
         locale: 'en-US',
         timezoneId: 'America/New_York',
       });
@@ -301,11 +409,12 @@ export class InstagramSessionService {
         throw new Error('Could not find submit button. Instagram may have changed their login page structure.');
       }
       
-      // Wait for navigation after clicking
+      // Wait for navigation after clicking (with adaptive timeout)
+      const navigationTimeout = Math.min(30000, browserTimeout - 10000); // Leave 10s buffer
       try {
-        await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 });
+        await page.waitForNavigation({ waitUntil: 'networkidle', timeout: navigationTimeout });
       } catch (e) {
-        console.log('[SESSION] Navigation timeout, but continuing...');
+        console.log(`[SESSION] Navigation timeout (${navigationTimeout}ms), but continuing...`);
       }
 
       // Step 5: Handle 2FA if required
@@ -392,7 +501,31 @@ export class InstagramSessionService {
         duration_ms: Date.now() - startTime,
       };
     } catch (error: any) {
-      console.error('[SESSION] Error during session refresh:', error);
+      console.error('[SESSION] ❌ Error during session refresh:', error);
+      
+      // Provide detailed error for production debugging
+      if (isServerless) {
+        const diagnostics = {
+          error: error.message,
+          stack: error.stack,
+          isServerless: true,
+          vercelEnv: process.env.VERCEL_ENV,
+          nodeEnv: process.env.NODE_ENV,
+          chromiumPath: executablePath,
+          headlessMode,
+          timestamp: new Date().toISOString(),
+        };
+        
+        console.error('[SESSION] Production diagnostics:', JSON.stringify(diagnostics, null, 2));
+        
+        return {
+          success: false,
+          error: `Instagram login automation failed in production: ${error.message}. Check Vercel logs for details.`,
+          steps,
+          duration_ms: Date.now() - startTime,
+        };
+      }
+      
       return {
         success: false,
         error: error.message || 'Unknown error during session refresh',

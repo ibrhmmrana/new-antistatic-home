@@ -25,64 +25,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if headful mode is requested via query parameter or body
+    // Check if headful/headless mode is requested via query parameter
     const { searchParams } = new URL(request.url);
     const headfulParam = searchParams.get('headful');
     const headlessParam = searchParams.get('headless');
     
-    // Determine if we should override headless mode
+    // Determine headless override (but force headless in production)
+    let headlessOverride: boolean | undefined;
+    
     if (headfulParam === 'true' || headlessParam === 'false') {
-      // User wants headful mode (visible browser)
-      const originalValue = process.env.INSTAGRAM_AUTOMATION_HEADLESS;
-      process.env.INSTAGRAM_AUTOMATION_HEADLESS = 'false'; // false = headful (visible)
-      console.log(`[API] Overriding to headful mode (visible browser)`);
-      
-      try {
-        const result = await executeRefresh();
-        // Restore original value
-        if (originalValue !== undefined) {
-          process.env.INSTAGRAM_AUTOMATION_HEADLESS = originalValue;
-        } else {
-          delete process.env.INSTAGRAM_AUTOMATION_HEADLESS;
-        }
-        return result;
-      } catch (error) {
-        // Restore original value on error
-        if (originalValue !== undefined) {
-          process.env.INSTAGRAM_AUTOMATION_HEADLESS = originalValue;
-        } else {
-          delete process.env.INSTAGRAM_AUTOMATION_HEADLESS;
-        }
-        throw error;
+      // User wants headful mode (visible browser) - only allow locally
+      const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+      if (isServerless) {
+        console.log(`[API] ⚠️ Headful mode requested but forcing headless in production`);
+        headlessOverride = true;
+      } else {
+        console.log(`[API] Overriding to headful mode (visible browser)`);
+        headlessOverride = false;
       }
     } else if (headlessParam === 'true' || headfulParam === 'false') {
       // User explicitly wants headless mode
-      const originalValue = process.env.INSTAGRAM_AUTOMATION_HEADLESS;
-      process.env.INSTAGRAM_AUTOMATION_HEADLESS = 'true'; // true = headless (hidden)
       console.log(`[API] Overriding to headless mode (hidden browser)`);
-      
-      try {
-        const result = await executeRefresh();
-        // Restore original value
-        if (originalValue !== undefined) {
-          process.env.INSTAGRAM_AUTOMATION_HEADLESS = originalValue;
-        } else {
-          delete process.env.INSTAGRAM_AUTOMATION_HEADLESS;
-        }
-        return result;
-      } catch (error) {
-        // Restore original value on error
-        if (originalValue !== undefined) {
-          process.env.INSTAGRAM_AUTOMATION_HEADLESS = originalValue;
-        } else {
-          delete process.env.INSTAGRAM_AUTOMATION_HEADLESS;
-        }
-        throw error;
-      }
+      headlessOverride = true;
     }
 
-    console.log('[API] Starting Instagram session refresh...');
-    return await executeRefresh();
+    console.log(`[API] Starting Instagram session refresh (headless override: ${headlessOverride !== undefined ? headlessOverride : 'none'})...`);
+    return await executeRefresh(headlessOverride);
   } catch (error: any) {
     console.error('[API] Session refresh error:', error);
     return NextResponse.json(
@@ -96,11 +64,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function executeRefresh() {
+async function executeRefresh(headlessOverride?: boolean) {
   const startTime = Date.now();
 
   const sessionService = InstagramSessionService.getInstance();
-  const result = await sessionService.refreshSession();
+  const result = await sessionService.refreshSession({ headlessOverride });
 
   if (!result.success || !result.session) {
     return NextResponse.json(
