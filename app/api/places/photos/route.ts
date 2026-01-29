@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 const MAX_PHOTOS = 18;
 const MEDIA_MAX_WIDTH_PX = 1600;
+const PLACE_FETCH_TIMEOUT_MS = 12000;
+const MEDIA_FETCH_TIMEOUT_MS = 10000;
+
+export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -24,7 +28,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // New Places API (v1): get place with photos and displayName
+    // New Places API (v1): get place with photos and displayName (with timeout so we don't hang in prod)
     const placeUrl = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
     const placeRes = await fetch(placeUrl, {
       method: "GET",
@@ -32,6 +36,7 @@ export async function GET(request: NextRequest) {
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask": "photos,displayName",
       },
+      signal: AbortSignal.timeout(PLACE_FETCH_TIMEOUT_MS),
       next: { revalidate: 3600 },
     });
 
@@ -65,30 +70,36 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Fetch photoUri for each photo (New API media endpoint); run in parallel
+    // Fetch photoUri for each photo (New API media endpoint); run in parallel with per-request timeout
     const slice = photos.slice(0, MAX_PHOTOS);
     const mediaFetches = slice.map(async (photo) => {
-      const mediaUrl = `https://places.googleapis.com/v1/${photo.name}/media?maxWidthPx=${MEDIA_MAX_WIDTH_PX}&skipHttpRedirect=true`;
-      const mediaRes = await fetch(mediaUrl, {
-        method: "GET",
-        headers: { "X-Goog-Api-Key": apiKey },
-        next: { revalidate: 3600 * 24 * 7 },
-      });
+      try {
+        const mediaUrl = `https://places.googleapis.com/v1/${photo.name}/media?maxWidthPx=${MEDIA_MAX_WIDTH_PX}&skipHttpRedirect=true`;
+        const mediaRes = await fetch(mediaUrl, {
+          method: "GET",
+          headers: { "X-Goog-Api-Key": apiKey },
+          signal: AbortSignal.timeout(MEDIA_FETCH_TIMEOUT_MS),
+          next: { revalidate: 3600 * 24 * 7 },
+        });
 
-      if (!mediaRes.ok) {
-        const errText = await mediaRes.text();
-        console.warn("[places/photos] Media error for", photo.name, mediaRes.status, errText.slice(0, 200));
+        if (!mediaRes.ok) {
+          const errText = await mediaRes.text();
+          console.warn("[places/photos] Media error for", photo.name, mediaRes.status, errText.slice(0, 200));
+          return { uri: "", width: null, height: null, name: photo.name };
+        }
+
+        const media = (await mediaRes.json()) as { photoUri?: string };
+        const uri = (media.photoUri ?? "").trim();
+        return {
+          uri,
+          width: photo.widthPx ?? null,
+          height: photo.heightPx ?? null,
+          name: photo.name,
+        };
+      } catch (e) {
+        console.warn("[places/photos] Media fetch failed for", photo.name, e);
         return { uri: "", width: null, height: null, name: photo.name };
       }
-
-      const media = (await mediaRes.json()) as { photoUri?: string };
-      const uri = (media.photoUri ?? "").trim();
-      return {
-        uri,
-        width: photo.widthPx ?? null,
-        height: photo.heightPx ?? null,
-        name: photo.name,
-      };
     });
 
     const normalizedPhotos = await Promise.all(mediaFetches);
@@ -108,11 +119,13 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(responseData);
-  } catch (error) {
-    console.error("[places/photos] Error:", error);
+  } catch (error: unknown) {
+    const err = error as { name?: string; message?: string };
+    const isTimeout = err?.name === "AbortError" || String(err?.message ?? "").includes("timeout");
+    console.error("[places/photos] Error:", err?.message ?? error);
     return NextResponse.json(
-      { error: "Failed to fetch place photos" },
-      { status: 500 }
+      { error: isTimeout ? "Request timed out" : "Failed to fetch place photos" },
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }
