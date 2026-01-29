@@ -102,6 +102,7 @@ export class InstagramSessionService {
     // Declare variables for error handling
     let isServerless = false;
     let executablePath: string | undefined;
+    let headlessMode = true; // Default to headless
 
     try {
       // Step 1: Detect environment and configure browser
@@ -127,7 +128,7 @@ export class InstagramSessionService {
       
       // Determine headless mode - FORCE headless in serverless environments
       const envValue = process.env.INSTAGRAM_AUTOMATION_HEADLESS;
-      const headlessMode = options?.headlessOverride !== undefined 
+      headlessMode = options?.headlessOverride !== undefined 
         ? options.headlessOverride 
         : (isServerless ? true : envValue !== 'false');
       
