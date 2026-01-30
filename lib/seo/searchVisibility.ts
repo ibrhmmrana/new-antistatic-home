@@ -5,6 +5,8 @@
  * Updated with improved domain matching and competitor categorization
  */
 
+import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
+import { consumeBody } from "@/lib/net/consumeBody";
 import type { BusinessIdentity } from '@/lib/business/resolveBusinessIdentity';
 import { buildOwnerStyleQueries, type OwnerStyleQuery } from './buildOwnerStyleQueries';
 import { fetchMapPackForQuery, type MapPackResult, type MapPackResponse } from '@/lib/maps/fetchMapPackForQuery';
@@ -186,16 +188,18 @@ async function fetchCseResults(query: string): Promise<OrganicResult[]> {
     url.searchParams.set('q', query);
     url.searchParams.set('num', '10');
     
-    const response = await fetch(url.toString(), {
-      headers: { 'Accept': 'application/json' },
+    const response = await fetchWithTimeout(url.toString(), {
+      headers: { Accept: "application/json" },
+      timeoutMs: 10000,
+      retries: 2,
     });
-    
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.log(`[SEARCH-VIS] CSE API error: ${response.status} - ${errorText}`);
+      await consumeBody(response);
+      console.log(`[SEARCH-VIS] CSE API error: ${response.status}`);
       return [];
     }
-    
+
     const data = await response.json();
     
     if (!data.items || !Array.isArray(data.items)) {

@@ -6,6 +6,8 @@
  * 3. Website crawl data - fallback
  */
 
+import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
+import { consumeBody } from "@/lib/net/consumeBody";
 import {
   collectAndScoreCandidates,
   getBestBusinessName,
@@ -238,14 +240,21 @@ async function findPlaceByQuery(query: string): Promise<any | null> {
     url.searchParams.set('inputtype', 'textquery');
     url.searchParams.set('fields', 'place_id,name,formatted_address,geometry,types,rating,user_ratings_total,website');
     url.searchParams.set('key', apiKey);
-    
-    const response = await fetch(url.toString());
+
+    const response = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 10000,
+      retries: 2,
+    });
+    if (!response.ok) {
+      await consumeBody(response);
+      return null;
+    }
     const data = await response.json();
-    
+
     if (data.status === 'OK' && data.candidates && data.candidates.length > 0) {
       return data.candidates[0];
     }
-    
+
     return null;
   } catch (error) {
     console.error('[IDENTITY] Find place error:', error);
@@ -264,14 +273,21 @@ async function textSearchPlaces(query: string): Promise<any[]> {
     const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
     url.searchParams.set('query', query);
     url.searchParams.set('key', apiKey);
-    
-    const response = await fetch(url.toString());
+
+    const response = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 10000,
+      retries: 2,
+    });
+    if (!response.ok) {
+      await consumeBody(response);
+      return [];
+    }
     const data = await response.json();
-    
+
     if (data.status === 'OK' && Array.isArray(data.results)) {
       return data.results;
     }
-    
+
     return [];
   } catch (error) {
     console.error('[IDENTITY] Text search error:', error);
@@ -310,14 +326,21 @@ async function getPlaceDetails(placeId: string): Promise<any | null> {
     url.searchParams.set('place_id', placeId);
     url.searchParams.set('fields', 'name,formatted_address,geometry,types,rating,user_ratings_total,website,formatted_phone_number,opening_hours,address_components');
     url.searchParams.set('key', apiKey);
-    
-    const response = await fetch(url.toString());
+
+    const response = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 10000,
+      retries: 2,
+    });
+    if (!response.ok) {
+      await consumeBody(response);
+      return null;
+    }
     const data = await response.json();
-    
+
     if (data.status === 'OK' && data.result) {
       return data.result;
     }
-    
+
     return null;
   } catch (error) {
     console.error('[IDENTITY] Place details error:', error);
@@ -783,13 +806,19 @@ export async function buildBusinessIdentityFromPlaceId(params: {
         url.searchParams.set('place_id', placeId);
         url.searchParams.set('fields', 'name,formatted_address,geometry,types,rating,user_ratings_total,address_components');
         url.searchParams.set('key', apiKey);
-        
-        const response = await fetch(url.toString());
-        const data = await response.json();
-        
-        if (data.status === 'OK' && data.result) {
-          fullPlaceDetails = data.result;
-          debug.push('Fetched full place details from Places API');
+
+        const response = await fetchWithTimeout(url.toString(), {
+          timeoutMs: 10000,
+          retries: 2,
+        });
+        if (!response.ok) {
+          await consumeBody(response);
+        } else {
+          const data = await response.json();
+          if (data.status === 'OK' && data.result) {
+            fullPlaceDetails = data.result;
+            debug.push('Fetched full place details from Places API');
+          }
         }
       } catch (error) {
         debug.push(`Failed to fetch place details: ${error instanceof Error ? error.message : 'Unknown'}`);

@@ -4,9 +4,20 @@ import { getCompetitorSnapshot } from "@/lib/seo/competitors";
 import { buildBusinessIdentityFromPlaceId } from "@/lib/business/resolveBusinessIdentity";
 import type { SearchVisibilityResult } from "@/lib/seo/searchVisibility";
 import type { CompetitorsSnapshot } from "@/lib/seo/competitors";
+import { getRequestId } from "@/lib/net/requestId";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+const SEARCH_VISIBILITY_HARD_TIMEOUT_MS = 30000;
 
 export async function POST(request: NextRequest) {
+  const t0 = Date.now();
+  const rid = getRequestId(request);
+
   try {
+    console.log(`[RID ${rid}] search.visibility start`);
     const body = await request.json();
     const { placeId, placeName, placeAddress, placeTypes, latlng, rating, reviewCount, stage1Competitors } = body;
 
@@ -17,71 +28,99 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build business identity from placeId (no website required)
-    const businessIdentity = await buildBusinessIdentityFromPlaceId({
-      placeId,
-      placeName,
-      placeAddress,
-      placeTypes,
-      latlng,
-      rating,
-      reviewCount,
+    const timeoutPromise = new Promise<{ timeout: true }>((resolve) => {
+      setTimeout(() => resolve({ timeout: true }), SEARCH_VISIBILITY_HARD_TIMEOUT_MS);
     });
 
-    // Run search visibility analysis
-    let searchVisibility: SearchVisibilityResult;
-    try {
-      searchVisibility = await getSearchVisibility({
-        identity: businessIdentity,
-        maxQueries: 10,
-        hasMenuPage: false,
-        hasPricingPage: false,
+    const run = async () => {
+      console.log(`[RID ${rid}] search.visibility fetch identity`);
+      const businessIdentity = await buildBusinessIdentityFromPlaceId({
+        placeId,
+        placeName,
+        placeAddress,
+        placeTypes,
+        latlng,
+        rating,
+        reviewCount,
       });
-    } catch (svError) {
-      console.error('[SEARCH-VISIBILITY] Search visibility error:', svError);
-      searchVisibility = {
-        queries: [],
-        visibility_score: 0,
-        share_of_voice: 0,
-        branded_visibility: 0,
-        non_branded_visibility: 0,
-        top_competitor_domains: [],
-        directory_domains: [],
-        business_domains: [],
-        identity_used: {
-          business_name: businessIdentity.business_name,
-          location_label: businessIdentity.location_label,
-          service_keywords: businessIdentity.service_keywords,
-        },
-        error: svError instanceof Error ? svError.message : 'Unknown error',
-      };
+
+      console.log(`[RID ${rid}] search.visibility fetch search visibility`);
+      let searchVisibility: SearchVisibilityResult;
+      try {
+        searchVisibility = await getSearchVisibility({
+          identity: businessIdentity,
+          maxQueries: 10,
+          hasMenuPage: false,
+          hasPricingPage: false,
+        });
+      } catch (svError) {
+        console.error(`[RID ${rid}] search.visibility search visibility error`, svError);
+        searchVisibility = {
+          queries: [],
+          visibility_score: 0,
+          share_of_voice: 0,
+          branded_visibility: 0,
+          non_branded_visibility: 0,
+          top_competitor_domains: [],
+          directory_domains: [],
+          business_domains: [],
+          identity_used: {
+            business_name: businessIdentity.business_name,
+            location_label: businessIdentity.location_label,
+            service_keywords: businessIdentity.service_keywords,
+          },
+          error: svError instanceof Error ? svError.message : "Unknown error",
+        };
+      }
+
+      console.log(`[RID ${rid}] search.visibility fetch competitors`);
+      let competitorsSnapshot: CompetitorsSnapshot;
+      try {
+        competitorsSnapshot = await getCompetitorSnapshot({
+          identity: businessIdentity,
+          radiusMeters: 3000,
+          maxCompetitors: 8,
+          stage1Competitors: stage1Competitors || [],
+        });
+      } catch (compError) {
+        console.error(`[RID ${rid}] search.visibility competitor snapshot error`, compError);
+        competitorsSnapshot = {
+          competitors_places: [],
+          reputation_gap: null,
+          competitors_with_website: 0,
+          competitors_without_website: 0,
+          search_method: "none",
+          search_radius_meters: null,
+          search_queries_used: [],
+          location_used: null,
+          your_place_id: businessIdentity.place_id,
+          error: compError instanceof Error ? compError.message : "Unknown error",
+          debug_info: [],
+        };
+      }
+
+      return { businessIdentity, searchVisibility, competitorsSnapshot };
+    };
+
+    const result = await Promise.race([run(), timeoutPromise]);
+
+    if (result && "timeout" in result && result.timeout) {
+      console.error(`[RID ${rid}] search.visibility timeout after ${SEARCH_VISIBILITY_HARD_TIMEOUT_MS}ms`);
+      return NextResponse.json(
+        { rid, error: "Upstream timeout" },
+        { status: 504 }
+      );
     }
 
-    // Run competitor analysis
-    let competitorsSnapshot: CompetitorsSnapshot;
-    try {
-      competitorsSnapshot = await getCompetitorSnapshot({
-        identity: businessIdentity,
-        radiusMeters: 3000,
-        maxCompetitors: 8,
-        stage1Competitors: stage1Competitors || [],
-      });
-    } catch (compError) {
-      console.error('[SEARCH-VISIBILITY] Competitor snapshot error:', compError);
-      competitorsSnapshot = {
-        competitors_places: [],
-        reputation_gap: null,
-        competitors_with_website: 0,
-        competitors_without_website: 0,
-        search_method: 'none',
-        search_radius_meters: null,
-        search_queries_used: [],
-        location_used: null,
-        your_place_id: businessIdentity.place_id,
-        error: compError instanceof Error ? compError.message : 'Unknown error',
-        debug_info: [],
-      };
+    if (!result || "timeout" in result) {
+      return NextResponse.json(
+        { rid, error: "Upstream error" },
+        { status: 502 }
+      );
     }
+
+    const { businessIdentity, searchVisibility, competitorsSnapshot } = result;
+    console.log(`[RID ${rid}] search.visibility done`, { ms: Date.now() - t0 });
 
     return NextResponse.json({
       success: true,
@@ -90,10 +129,17 @@ export async function POST(request: NextRequest) {
       business_identity: businessIdentity,
     });
   } catch (error) {
-    console.error('[SEARCH-VISIBILITY] Error:', error);
+    const ms = Date.now() - t0;
+    const isTimeout =
+      error instanceof Error &&
+      (error.name === "AbortError" || /timeout|aborted/i.test(error.message));
+    console.error(`[RID ${rid}] search.visibility error`, { error, ms });
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      {
+        rid,
+        error: isTimeout ? "Upstream timeout" : (error instanceof Error ? error.message : "Unknown error"),
+      },
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }

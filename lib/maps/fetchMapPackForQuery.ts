@@ -3,6 +3,9 @@
  * Uses Places Text Search to get query-specific results (like Owner.com)
  */
 
+import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
+import { consumeBody } from "@/lib/net/consumeBody";
+
 export interface MapPackResult {
   place_id: string;
   name: string;
@@ -40,10 +43,17 @@ async function enrichPlaceDetails(placeId: string): Promise<Partial<MapPackResul
     url.searchParams.set('place_id', placeId);
     url.searchParams.set('fields', 'name,rating,user_ratings_total,formatted_address,website');
     url.searchParams.set('key', apiKey);
-    
-    const response = await fetch(url.toString());
+
+    const response = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 10000,
+      retries: 2,
+    });
+    if (!response.ok) {
+      await consumeBody(response);
+      return {};
+    }
     const data = await response.json();
-    
+
     if (data.status === 'OK' && data.result) {
       return {
         website: data.result.website || null,
@@ -52,7 +62,7 @@ async function enrichPlaceDetails(placeId: string): Promise<Partial<MapPackResul
         address: data.result.formatted_address || undefined,
       };
     }
-    
+
     return {};
   } catch (error) {
     console.error(`[MAP-PACK] Error enriching place ${placeId}:`, error);
@@ -98,10 +108,17 @@ export async function fetchMapPackForQuery(params: {
     url.searchParams.set('key', apiKey);
     
     console.log(`[MAP-PACK] Text search for: "${query}" near ${userLatLng.lat}, ${userLatLng.lng}`);
-    
-    const response = await fetch(url.toString());
+
+    const response = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 10000,
+      retries: 2,
+    });
+    if (!response.ok) {
+      await consumeBody(response);
+      return { rank: null, results: [] };
+    }
     const data = await response.json();
-    
+
     if (data.status !== 'OK' || !Array.isArray(data.results)) {
       console.log(`[MAP-PACK] Text search status: ${data.status}`);
       return { rank: null, results: [] };

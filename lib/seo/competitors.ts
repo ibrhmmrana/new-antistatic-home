@@ -5,6 +5,8 @@
  * Updated to use Nearby Search with lat/lng for accurate results
  */
 
+import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
+import { consumeBody } from "@/lib/net/consumeBody";
 import type { BusinessIdentity } from '@/lib/business/resolveBusinessIdentity';
 
 // Types
@@ -211,11 +213,13 @@ async function fetchAllNearbyPages(
   let pageCount = 0;
 
   while (pageCount < maxPages) {
-    const response = await fetch(currentUrl, {
-      next: { revalidate: 300 },
+    const response = await fetchWithTimeout(currentUrl, {
+      timeoutMs: 10000,
+      retries: 2,
     });
 
     if (!response.ok) {
+      await consumeBody(response);
       break;
     }
 
@@ -560,10 +564,17 @@ async function nearbySearch(params: {
     url.searchParams.set('key', apiKey);
     
     console.log(`[COMPETITORS] Nearby search: type=${type}, keyword=${keyword}, radius=${radius}m`);
-    
-    const response = await fetch(url.toString());
+
+    const response = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 10000,
+      retries: 2,
+    });
+    if (!response.ok) {
+      await consumeBody(response);
+      return [];
+    }
     const data = await response.json();
-    
+
     if (data.status === 'OK' && Array.isArray(data.results)) {
       console.log(`[COMPETITORS] Nearby found ${data.results.length} results`);
       return data.results;
@@ -594,10 +605,17 @@ async function textSearch(query: string, locationBias?: string): Promise<any[]> 
     url.searchParams.set('key', apiKey);
     
     console.log(`[COMPETITORS] Text search: "${query}"`);
-    
-    const response = await fetch(url.toString());
+
+    const response = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 10000,
+      retries: 2,
+    });
+    if (!response.ok) {
+      await consumeBody(response);
+      return [];
+    }
     const data = await response.json();
-    
+
     if (data.status === 'OK' && Array.isArray(data.results)) {
       return data.results;
     }
@@ -620,10 +638,17 @@ async function getPlaceDetails(placeId: string): Promise<any | null> {
     url.searchParams.set('place_id', placeId);
     url.searchParams.set('fields', 'name,rating,user_ratings_total,website,formatted_phone_number,formatted_address,opening_hours,types,geometry');
     url.searchParams.set('key', apiKey);
-    
-    const response = await fetch(url.toString());
+
+    const response = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 10000,
+      retries: 2,
+    });
+    if (!response.ok) {
+      await consumeBody(response);
+      return null;
+    }
     const data = await response.json();
-    
+
     if (data.status === 'OK' && data.result) {
       return data.result;
     }
