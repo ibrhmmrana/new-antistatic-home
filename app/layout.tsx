@@ -38,9 +38,9 @@ export const metadata: Metadata = {
   title: "Antistatic — AI Visibility Grader",
   description: "Get a free AI report on your Google presence, reviews, and website experience",
   icons: {
-    icon: "/icons/Antistatic-favicon.png",
-    shortcut: "/icons/Antistatic-favicon.png",
-    apple: "/icons/Antistatic-favicon.png",
+    icon: "/images/favicon.svg",
+    shortcut: "/images/favicon.svg",
+    apple: "/images/favicon.svg",
   },
 };
 

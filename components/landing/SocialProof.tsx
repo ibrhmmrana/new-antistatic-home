@@ -1,4 +1,8 @@
+"use client";
+
 import Image from "next/image";
+import ScrollReveal from "@/components/landing/ScrollReveal";
+import CountUp from "@/components/landing/CountUp";
 
 type Testimonial = {
   quote: string;
@@ -37,7 +41,7 @@ export default function SocialProof() {
       <div className="w-full px-6 md:px-8 lg:px-12">
         <div className="max-w-7xl mx-auto">
           {/* Tag */}
-          <div className="w-full flex justify-center">
+          <ScrollReveal className="w-full flex justify-center">
             <div
               className="inline-flex items-center justify-center w-fit px-5 py-2.5 rounded-full mb-6"
               style={{
@@ -50,9 +54,10 @@ export default function SocialProof() {
                 Social Proof
               </span>
             </div>
-          </div>
+          </ScrollReveal>
 
           {/* Headline */}
+          <ScrollReveal>
           <h2
             className="text-center font-bold text-4xl md:text-5xl lg:text-6xl mb-12 md:mb-16"
             style={{ lineHeight: "1.1" }}
@@ -61,9 +66,10 @@ export default function SocialProof() {
             <span className="text-black">unfair advantage</span>,{" "}
             <span style={{ color: "#666b82" }}>setting them up to win</span>
           </h2>
+          </ScrollReveal>
 
           {/* Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+          <ScrollReveal className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
             {testimonials.map((t) => (
               <div
                 key={t.name}
@@ -103,10 +109,10 @@ export default function SocialProof() {
                 </div>
               </div>
             ))}
-          </div>
+          </ScrollReveal>
 
           {/* Stats strip */}
-          <div
+          <ScrollReveal
             className="mt-10 md:mt-12 rounded-3xl p-8 md:p-10 lg:p-12 bg-white"
             style={{ border: "1px solid rgba(213, 226, 255, 1)" }}
           >
@@ -143,9 +149,11 @@ export default function SocialProof() {
                     increase
                   </div>
                   <div className="flex items-end gap-1">
-                    <span className="text-6xl font-semibold text-[#4F7DFF]">
-                      0.7
-                    </span>
+                    <CountUp
+                      value={0.7}
+                      decimals={1}
+                      className="text-6xl font-semibold text-[#4F7DFF]"
+                    />
                     <span className="text-2xl font-semibold text-[#4F7DFF] pb-1">
                       stars
                     </span>
@@ -159,9 +167,10 @@ export default function SocialProof() {
                     4.5+ stars
                   </div>
                   <div className="flex items-end gap-2">
-                    <span className="text-6xl font-semibold text-[#4F7DFF]">
-                      76
-                    </span>
+                    <CountUp
+                      value={76}
+                      className="text-6xl font-semibold text-[#4F7DFF]"
+                    />
                     <span className="text-2xl font-semibold text-[#4F7DFF] pb-1">
                       days
                     </span>
@@ -185,17 +194,17 @@ export default function SocialProof() {
                       retention
                     </div>
 
-                    <div
+                    <CountUp
+                      value={94}
+                      suffix="%"
                       className="font-semibold leading-none"
                       style={{ color: "#8B5CF6", fontSize: "64px" }}
-                    >
-                      94%
-                    </div>
+                    />
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </ScrollReveal>
         </div>
       </div>
     </section>

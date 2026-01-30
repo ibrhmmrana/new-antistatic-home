@@ -1,11 +1,14 @@
+"use client";
+
 import Image from "next/image";
+import ScrollReveal from "@/components/landing/ScrollReveal";
 
 export default function ProductFeatures() {
   return (
     <section className="relative w-full pt-8 md:pt-12 lg:pt-16 pb-4 md:pb-6 lg:pb-8">
       <div className="w-full">
         {/* Header Section */}
-        <div className="max-w-4xl mx-auto text-center mb-12 md:mb-16 px-6 md:px-8 lg:px-12">
+        <ScrollReveal className="max-w-4xl mx-auto text-center mb-12 md:mb-16 px-6 md:px-8 lg:px-12">
           {/* Product Tag */}
           <div className="inline-flex items-center justify-center w-fit px-5 py-2.5 rounded-full mb-6"
             style={{
@@ -33,10 +36,10 @@ export default function ProductFeatures() {
           <p className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto">
             A comprehensive suite designed to calibrate your commercial wellbeing.
           </p>
-        </div>
+        </ScrollReveal>
 
         {/* Feature Cards */}
-        <div className="flex flex-col lg:flex-row gap-0 w-full px-6 md:px-8 lg:px-12">
+        <ScrollReveal className="flex flex-col lg:flex-row gap-0 w-full px-6 md:px-8 lg:px-12">
           {/* Left Card - Competitor Radar */}
           <div className="relative w-full lg:w-1/2 flex-shrink-0 pt-4 pb-0 pl-4 pr-2 md:pt-6 md:pb-0 md:pl-6 md:pr-3">
             <Image
@@ -58,10 +61,10 @@ export default function ProductFeatures() {
               className="w-full h-auto"
             />
           </div>
-        </div>
+        </ScrollReveal>
 
         {/* Second Row of Feature Cards */}
-        <div className="flex flex-col lg:flex-row gap-0 w-full px-6 md:px-8 lg:px-12 mt-0">
+        <ScrollReveal className="flex flex-col lg:flex-row gap-0 w-full px-6 md:px-8 lg:px-12 mt-0">
           {/* Left Card - Creator Hub */}
           <div className="relative w-full lg:w-1/2 flex-shrink-0 pt-4 pb-4 pl-4 pr-2 md:pt-6 md:pb-6 md:pl-6 md:pr-3">
             <Image
@@ -83,7 +86,7 @@ export default function ProductFeatures() {
               className="w-full h-auto"
             />
           </div>
-        </div>
+        </ScrollReveal>
       </div>
     </section>
   );

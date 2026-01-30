@@ -5,11 +5,12 @@ import Pricing from "@/components/landing/Pricing";
 import SocialProof from "@/components/landing/SocialProof";
 import MetricsSection from "@/components/landing/MetricsSection";
 import Footer from "@/components/landing/Footer";
+import HeroImageGate from "@/components/landing/HeroImageGate";
 import Image from "next/image";
-import Link from "next/link";
 
 export default function Home() {
   return (
+    <HeroImageGate>
     <main className="relative min-h-screen">
       {/* Sticky Nav - outside hero container to stay sticky throughout */}
       <Nav />
@@ -57,6 +58,7 @@ export default function Home() {
         <Footer />
       </div>
     </main>
+    </HeroImageGate>
   );
 }
 

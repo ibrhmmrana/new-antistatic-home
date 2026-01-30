@@ -242,7 +242,7 @@ export default function BusinessSearch() {
   }, []);
 
   return (
-    <div className="relative w-full max-w-[720px] mx-auto text-left flex flex-col items-start gap-4">
+    <div className="relative w-full max-w-[720px] text-left flex flex-col items-start gap-4">
       {/* Search Input Wrapper - relative container for dropdown */}
       <div className="relative inline-block w-full">
         <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 z-10">

@@ -1,5 +1,8 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import ScrollReveal from "@/components/landing/ScrollReveal";
 
 export default function Footer() {
   return (
@@ -7,7 +10,7 @@ export default function Footer() {
       <div className="w-full px-6 md:px-8 lg:px-12">
         <div className="max-w-7xl mx-auto space-y-8 md:space-y-10 lg:space-y-12">
           {/* Call-to-action panel */}
-          <div className="relative rounded-[32px] overflow-hidden">
+          <ScrollReveal className="relative rounded-[32px] overflow-hidden">
             {/* Background image */}
             <div className="absolute inset-0">
               <Image
@@ -60,9 +63,9 @@ export default function Footer() {
                 </div>
               </div>
             </div>
-          </div>
+          </ScrollReveal>
 
-          {/* Bottom row */}
+          {/* Bottom row — no scroll animation */}
           <div className="flex flex-col md:flex-row items-center md:items-center justify-between gap-4 md:gap-6">
             {/* Logo */}
             <div className="order-2 md:order-1">

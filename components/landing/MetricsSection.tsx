@@ -1,4 +1,7 @@
+"use client";
+
 import Image from "next/image";
+import ScrollReveal from "@/components/landing/ScrollReveal";
 
 export default function MetricsSection() {
   return (
@@ -6,7 +9,7 @@ export default function MetricsSection() {
       <div className="w-full px-6 md:px-8 lg:px-12">
         <div className="max-w-7xl mx-auto">
           {/* Tag */}
-          <div className="w-full flex justify-center">
+          <ScrollReveal className="w-full flex justify-center">
             <div
               className="inline-flex items-center justify-center w-fit px-5 py-2.5 rounded-full mb-6"
               style={{
@@ -19,17 +22,19 @@ export default function MetricsSection() {
                 Metrics that matter
               </span>
             </div>
-          </div>
+          </ScrollReveal>
 
           {/* Headline */}
+          <ScrollReveal>
           <h2 className="text-center font-bold text-4xl md:text-5xl lg:text-6xl mb-12 md:mb-16">
             <span style={{ color: "#666b82" }}>"We don't sell generic improvements.</span>
             <br />
             <span className="text-black">We sell specific outcomes."</span>
           </h2>
+          </ScrollReveal>
 
           {/* Dashboard Screenshot */}
-          <div className="w-full flex justify-center">
+          <ScrollReveal className="w-full flex justify-center">
             <Image
               src="/images/dashboardScreenshot.svg"
               alt="Dashboard Screenshot"
@@ -37,10 +42,10 @@ export default function MetricsSection() {
               height={933}
               className="w-full max-w-7xl h-auto"
             />
-          </div>
+          </ScrollReveal>
 
           {/* Outcomes cards */}
-          <div className="mt-10 md:mt-12 lg:mt-14">
+          <ScrollReveal className="mt-10 md:mt-12 lg:mt-14">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
               <div
                 className="rounded-3xl p-8 md:p-10 bg-white"
@@ -119,7 +124,7 @@ export default function MetricsSection() {
                 </p>
               </div>
             </div>
-          </div>
+          </ScrollReveal>
         </div>
       </div>
     </section>
