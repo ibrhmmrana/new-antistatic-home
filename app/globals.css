@@ -109,8 +109,9 @@ body::-webkit-scrollbar {
   padding: var(--nav-pad-y) var(--nav-pad-x);
   border-radius: var(--nav-radius);
   background-color: var(--nav-bg);
+  box-shadow: none;
 
-  transition-property: padding, border-radius, background-color;
+  transition-property: padding, border-radius, background-color, box-shadow;
   transition-duration: 450ms;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -124,6 +125,7 @@ body::-webkit-scrollbar {
   --nav-pad-x: 2.25rem;
   --nav-radius: 50px;
   --nav-bg: rgb(255 255 255);
+  box-shadow: 0 8px 24px 20px rgba(59, 130, 246, 0.08);
 }
 
 @media (prefers-reduced-motion: reduce) {

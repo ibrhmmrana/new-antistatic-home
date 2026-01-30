@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { GlitchLogo } from "@/components/GlitchLogo";
 import ScrollReveal from "@/components/landing/ScrollReveal";
 
 export default function Footer() {
@@ -69,11 +70,9 @@ export default function Footer() {
           <div className="flex flex-col md:flex-row items-center md:items-center justify-between gap-4 md:gap-6">
             {/* Logo */}
             <div className="order-2 md:order-1">
-              <Image
+              <GlitchLogo
                 src="/images/antistatic logo on white.svg"
                 alt="Antistatic"
-                width={140}
-                height={40}
                 className="h-8 w-auto"
               />
             </div>

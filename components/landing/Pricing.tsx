@@ -38,10 +38,10 @@ export default function Pricing() {
           </p>
         </ScrollReveal>
 
-        {/* Pricing Cards */}
-        <ScrollReveal className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 max-w-4xl mx-auto">
+        {/* Pricing Cards — per-element reveal */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 max-w-4xl mx-auto">
           {/* Essential Monitoring Card */}
-          <div 
+          <ScrollReveal
             className="rounded-2xl p-8 md:p-12 lg:p-16"
             style={{
               backgroundColor: '#F2F5FF',
@@ -117,10 +117,10 @@ export default function Pricing() {
                 />
               </div>
             </button>
-          </div>
+          </ScrollReveal>
 
           {/* Full Engine Card */}
-          <div 
+          <ScrollReveal
             className="rounded-2xl p-8 md:p-12 lg:p-16"
             style={{
               backgroundColor: '#F2F5FF',
@@ -196,8 +196,8 @@ export default function Pricing() {
                 />
               </div>
             </button>
-          </div>
-        </ScrollReveal>
+          </ScrollReveal>
+        </div>
       </div>
     </section>
   );

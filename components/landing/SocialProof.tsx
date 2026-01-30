@@ -68,10 +68,10 @@ export default function SocialProof() {
           </h2>
           </ScrollReveal>
 
-          {/* Cards */}
-          <ScrollReveal className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+          {/* Cards — per-element reveal */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
             {testimonials.map((t) => (
-              <div
+              <ScrollReveal
                 key={t.name}
                 className="rounded-3xl p-8 md:p-10 bg-white"
                 style={{
@@ -107,9 +107,9 @@ export default function SocialProof() {
                     <div className="text-gray-600">{t.title}</div>
                   </div>
                 </div>
-              </div>
+              </ScrollReveal>
             ))}
-          </ScrollReveal>
+          </div>
 
           {/* Stats strip */}
           <ScrollReveal

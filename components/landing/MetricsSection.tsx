@@ -44,87 +44,85 @@ export default function MetricsSection() {
             />
           </ScrollReveal>
 
-          {/* Outcomes cards */}
-          <ScrollReveal className="mt-10 md:mt-12 lg:mt-14">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+          {/* Outcomes cards — per-element reveal */}
+          <div className="mt-10 md:mt-12 lg:mt-14 grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+            <ScrollReveal
+              className="rounded-3xl p-8 md:p-10 bg-white"
+              style={{ border: "1px solid rgba(213, 226, 255, 1)" }}
+            >
               <div
-                className="rounded-3xl p-8 md:p-10 bg-white"
-                style={{ border: "1px solid rgba(213, 226, 255, 1)" }}
+                className="rounded-2xl p-6 md:p-7 mb-8"
+                style={{ backgroundColor: "#F2F5FF" }}
               >
-                <div
-                  className="rounded-2xl p-6 md:p-7 mb-8"
-                  style={{ backgroundColor: "#F2F5FF" }}
-                >
-                  <Image
-                    src="/images/churn graphic.svg"
-                    alt="Decrease churn"
-                    width={520}
-                    height={320}
-                    className="w-full h-auto"
-                  />
-                </div>
-
-                <h3 className="text-3xl md:text-4xl font-bold text-gray-900 text-center">
-                  Decrease churn
-                </h3>
-                <p className="mt-4 text-lg text-gray-600 text-center leading-relaxed">
-                  Catch the &quot;Critical Signal&quot; before a customer walks away
-                  for good.
-                </p>
+                <Image
+                  src="/images/churn graphic.svg"
+                  alt="Decrease churn"
+                  width={520}
+                  height={320}
+                  className="w-full h-auto"
+                />
               </div>
 
-              <div
-                className="rounded-3xl p-8 md:p-10 bg-white"
-                style={{ border: "1px solid rgba(213, 226, 255, 1)" }}
-              >
-                <div
-                  className="rounded-2xl p-6 md:p-7 mb-8"
-                  style={{ backgroundColor: "#F2F5FF" }}
-                >
-                  <Image
-                    src="/images/velocity graphic.svg"
-                    alt="Increase velocity"
-                    width={520}
-                    height={320}
-                    className="w-full h-auto"
-                  />
-                </div>
+              <h3 className="text-3xl md:text-4xl font-bold text-gray-900 text-center">
+                Decrease churn
+              </h3>
+              <p className="mt-4 text-lg text-gray-600 text-center leading-relaxed">
+                Catch the &quot;Critical Signal&quot; before a customer walks away
+                for good.
+              </p>
+            </ScrollReveal>
 
-                <h3 className="text-3xl md:text-4xl font-bold text-gray-900 text-center">
-                  Increase velocity
-                </h3>
-                <p className="mt-4 text-lg text-gray-600 text-center leading-relaxed">
-                  Turn a 3.9-star perception into a 4.6-star reality.
-                </p>
+            <ScrollReveal
+              className="rounded-3xl p-8 md:p-10 bg-white"
+              style={{ border: "1px solid rgba(213, 226, 255, 1)" }}
+            >
+              <div
+                className="rounded-2xl p-6 md:p-7 mb-8"
+                style={{ backgroundColor: "#F2F5FF" }}
+              >
+                <Image
+                  src="/images/velocity graphic.svg"
+                  alt="Increase velocity"
+                  width={520}
+                  height={320}
+                  className="w-full h-auto"
+                />
               </div>
 
-              <div
-                className="rounded-3xl p-8 md:p-10 bg-white"
-                style={{ border: "1px solid rgba(213, 226, 255, 1)" }}
-              >
-                <div
-                  className="rounded-2xl p-6 md:p-7 mb-8"
-                  style={{ backgroundColor: "#F2F5FF" }}
-                >
-                  <Image
-                    src="/images/ROI graphic.svg"
-                    alt="Validate ROI"
-                    width={520}
-                    height={320}
-                    className="w-full h-auto"
-                  />
-                </div>
+              <h3 className="text-3xl md:text-4xl font-bold text-gray-900 text-center">
+                Increase velocity
+              </h3>
+              <p className="mt-4 text-lg text-gray-600 text-center leading-relaxed">
+                Turn a 3.9-star perception into a 4.6-star reality.
+              </p>
+            </ScrollReveal>
 
-                <h3 className="text-3xl md:text-4xl font-bold text-gray-900 text-center">
-                  Validate ROI
-                </h3>
-                <p className="mt-4 text-lg text-gray-600 text-center leading-relaxed">
-                  Watch the &quot;Victory Signal&quot; prove the value of every bit
-                  of investment made.
-                </p>
+            <ScrollReveal
+              className="rounded-3xl p-8 md:p-10 bg-white"
+              style={{ border: "1px solid rgba(213, 226, 255, 1)" }}
+            >
+              <div
+                className="rounded-2xl p-6 md:p-7 mb-8"
+                style={{ backgroundColor: "#F2F5FF" }}
+              >
+                <Image
+                  src="/images/ROI graphic.svg"
+                  alt="Validate ROI"
+                  width={520}
+                  height={320}
+                  className="w-full h-auto"
+                />
               </div>
-            </div>
-          </ScrollReveal>
+
+              <h3 className="text-3xl md:text-4xl font-bold text-gray-900 text-center">
+                Validate ROI
+              </h3>
+              <p className="mt-4 text-lg text-gray-600 text-center leading-relaxed">
+                Watch the &quot;Victory Signal&quot; prove the value of every bit
+                of investment made.
+              </p>
+            </ScrollReveal>
+          </div>
         </div>
       </div>
     </section>
