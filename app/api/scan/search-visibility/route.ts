@@ -10,7 +10,23 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const SEARCH_VISIBILITY_HARD_TIMEOUT_MS = 30000;
+// Total route timeout (must be under maxDuration 60). Search visibility is returned even if competitors timeout.
+const SEARCH_VISIBILITY_HARD_TIMEOUT_MS = 55000;
+const COMPETITORS_TIMEOUT_MS = 20000;
+
+const emptyCompetitorsSnapshot = (placeId: string | null): CompetitorsSnapshot => ({
+  competitors_places: [],
+  reputation_gap: null,
+  competitors_with_website: 0,
+  competitors_without_website: 0,
+  search_method: "none",
+  search_radius_meters: null,
+  search_queries_used: [],
+  location_used: null,
+  your_place_id: placeId ?? null,
+  error: "Timeout",
+  debug_info: [],
+});
 
 export async function POST(request: NextRequest) {
   const t0 = Date.now();
@@ -73,30 +89,23 @@ export async function POST(request: NextRequest) {
         };
       }
 
+      // Competitors with its own timeout so slow competitor fetch doesn't block returning search visibility
       console.log(`[RID ${rid}] search.visibility fetch competitors`);
       let competitorsSnapshot: CompetitorsSnapshot;
       try {
-        competitorsSnapshot = await getCompetitorSnapshot({
+        const competitorsPromise = getCompetitorSnapshot({
           identity: businessIdentity,
           radiusMeters: 3000,
           maxCompetitors: 8,
           stage1Competitors: stage1Competitors || [],
         });
+        const competitorsTimeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Competitors timeout")), COMPETITORS_TIMEOUT_MS)
+        );
+        competitorsSnapshot = await Promise.race([competitorsPromise, competitorsTimeout]);
       } catch (compError) {
         console.error(`[RID ${rid}] search.visibility competitor snapshot error`, compError);
-        competitorsSnapshot = {
-          competitors_places: [],
-          reputation_gap: null,
-          competitors_with_website: 0,
-          competitors_without_website: 0,
-          search_method: "none",
-          search_radius_meters: null,
-          search_queries_used: [],
-          location_used: null,
-          your_place_id: businessIdentity.place_id,
-          error: compError instanceof Error ? compError.message : "Unknown error",
-          debug_info: [],
-        };
+        competitorsSnapshot = emptyCompetitorsSnapshot(businessIdentity.place_id);
       }
 
       return { businessIdentity, searchVisibility, competitorsSnapshot };

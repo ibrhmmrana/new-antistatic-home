@@ -150,7 +150,6 @@ export default function AnalysisPage() {
         .then(data => {
           if (!data.error) {
             setPlacesDetails(data);
-            
             // FIX: Trigger analyses - website crawler if website exists, search visibility/competitors always
             if (!cachedWebsite) {
               if (data.website) {
@@ -183,11 +182,11 @@ export default function AnalysisPage() {
                   body: JSON.stringify({
                     placeId,
                     placeName: data.name,
-                    placeAddress: data.formatted_address,
+                    placeAddress: data.address ?? data.formatted_address,
                     placeTypes: data.types,
-                    latlng: data.geometry?.location ? { lat: data.geometry.location.lat, lng: data.geometry.location.lng } : null,
+                    latlng: data.location ? { lat: data.location.lat, lng: data.location.lng } : (data.geometry?.location ? { lat: data.geometry.location.lat, lng: data.geometry.location.lng } : null),
                     rating: data.rating,
-                    reviewCount: data.user_ratings_total,
+                    reviewCount: data.userRatingsTotal ?? data.user_ratings_total,
                   }),
                 })
                   .then(res => res.json())
@@ -254,7 +253,7 @@ export default function AnalysisPage() {
       const assembled = assembleReport({
         placeId,
         placeName: placesDetails?.name || gbpAnalysis?.analysis?.businessName || null,
-        placeAddress: placesDetails?.formatted_address || null,
+        placeAddress: placesDetails?.address ?? placesDetails?.formatted_address ?? null,
         placesDetails: placesDetails || undefined,
         websiteCrawl: websiteCrawlData || undefined,
         gbpAnalysis: gbpAnalysis?.analysis || undefined,
@@ -262,7 +261,6 @@ export default function AnalysisPage() {
         instagram: igResult || undefined,
         facebook: fbResult || undefined,
       });
-      
       setReport(assembled);
     } catch (error) {
       console.error('[ANALYSIS PAGE] Failed to assemble report:', error);

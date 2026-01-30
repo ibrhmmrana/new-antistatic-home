@@ -164,7 +164,7 @@ export default function ReportSearchVisibility({
   };
   
   const targetDomainNormalized = targetDomain ? normalizeDomain(targetDomain) : null;
-  
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 shadow-md">
       {/* Header */}

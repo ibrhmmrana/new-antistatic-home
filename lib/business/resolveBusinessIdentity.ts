@@ -168,14 +168,16 @@ function cleanBusinessName(name: string): string {
 }
 
 /**
- * Extract location components from address string
+ * Extract location components from address string.
+ * Uses hardcoded SA cities/suburbs first; falls back to comma-separated parsing
+ * so unknown suburbs (e.g. Morningside) still produce location for query generation.
  */
 function parseAddress(address: string): { suburb: string | null; city: string | null; country: string | null } {
   // Common South African cities
   const cities = ['Cape Town', 'Johannesburg', 'Pretoria', 'Durban', 'Port Elizabeth', 'Bloemfontein', 'East London', 'Stellenbosch'];
   const suburbs: Record<string, string[]> = {
     'Cape Town': ['Camps Bay', 'Sea Point', 'Green Point', 'Waterfront', 'Gardens', 'Observatory', 'Woodstock', 'Constantia', 'Newlands', 'Claremont', 'Rondebosch', 'Hout Bay', 'Blouberg', 'Century City', 'Bellville'],
-    'Johannesburg': ['Sandton', 'Rosebank', 'Melrose', 'Parktown', 'Braamfontein', 'Fourways', 'Randburg', 'Midrand'],
+    'Johannesburg': ['Sandton', 'Rosebank', 'Melrose', 'Parktown', 'Braamfontein', 'Fourways', 'Randburg', 'Midrand', 'Morningside'],
   };
   
   let suburb: string | null = null;
@@ -203,6 +205,22 @@ function parseAddress(address: string): { suburb: string | null; city: string | 
   // Check for country
   if (lowerAddress.includes('south africa')) {
     country = 'South Africa';
+  }
+  
+  // Fallback: parse comma-separated parts so we get at least suburb/city for query generation
+  // (e.g. "50 4th Rd, Morningside, Sandton, 2057, South Africa" -> suburb Morningside, city Sandton)
+  if ((!suburb && !city) && address.trim().length > 0) {
+    const parts = address.split(',').map((s) => s.trim()).filter(Boolean);
+    const isPostcode = (s: string) => /^\d{4,5}(-\d{4})?$/.test(s) || /^\d+$/.test(s);
+    const skip = new Set(['south africa', 'sa', 'rsa', 'zuid-afrika']);
+    const meaningful = parts.filter((p) => !skip.has(p.toLowerCase()) && !isPostcode(p));
+    if (meaningful.length >= 2) {
+      // Use last part as city, second-last as suburb (typical: street, suburb, city, postcode, country)
+      suburb = meaningful[meaningful.length - 2] || null;
+      city = meaningful[meaningful.length - 1] || null;
+    } else if (meaningful.length === 1) {
+      city = meaningful[0] || null;
+    }
   }
   
   return { suburb, city, country };

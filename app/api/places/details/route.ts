@@ -94,16 +94,23 @@ export async function GET(request: NextRequest) {
         : null;
 
     console.log(`[RID ${rid}] places.details done`, { ms: Date.now() - t0 });
+    const address = result.formatted_address ?? "";
+    const location = result.geometry?.location ?? null;
+    const userRatingsTotal = result.user_ratings_total ?? 0;
     return NextResponse.json({
       placeId: result.place_id ?? placeId,
       name: result.name ?? "",
       rating: result.rating ?? null,
-      userRatingsTotal: result.user_ratings_total ?? 0,
+      userRatingsTotal,
       types,
       categoryLabel,
       description,
-      address: result.formatted_address ?? "",
-      location: result.geometry?.location ?? null,
+      address,
+      location,
+      // Backward-compat aliases for consumers expecting legacy keys
+      formatted_address: address,
+      geometry: location ? { location } : null,
+      user_ratings_total: userRatingsTotal,
       photoRef: null,
       photoUri: photoUri ?? undefined,
       website: result.website ?? null,

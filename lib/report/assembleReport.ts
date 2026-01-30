@@ -1129,7 +1129,7 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
           placeId: r.place_id || null,
           name: r.name || '',
           rating: r.rating ?? null,
-          reviews: r.reviews ?? null,
+          reviews: r.reviews ?? r.user_ratings_total ?? null,
           address: r.address || null,
           website: r.website || null,
           isTargetBusiness: r.place_id && r.place_id === businessIdentity?.place_id,
