@@ -120,7 +120,10 @@ export default function Hero() {
                 priority
               />
               {/* Upper left: opportunity detected — lower and left so it overlaps and flows out */}
-              <div className="absolute -left-[6%] top-[12%] z-10 w-[45%] max-w-[280px] animate-hero-overlay-float-up">
+              <div
+                className="absolute -left-[6%] top-[12%] z-10 w-[45%] max-w-[280px] animate-hero-overlay-float-up rounded-[20px] overflow-hidden"
+                style={{ boxShadow: "0 6px 16px 12px rgba(0, 0, 0, 0.02)" }}
+              >
                 <Image
                   src="/images/opportunity detected.svg"
                   alt="Opportunity detected"
@@ -130,7 +133,10 @@ export default function Hero() {
                 />
               </div>
               {/* Just below opportunity: review sticker — less gap above, bigger */}
-              <div className="absolute -left-[6%] top-[24%] z-10 w-[64%] max-w-[470px] animate-hero-overlay-float-up">
+              <div
+                className="absolute -left-[6%] top-[24%] z-10 w-[64%] max-w-[470px] animate-hero-overlay-float-up rounded-[20px] overflow-hidden"
+                style={{ boxShadow: "0 6px 16px 12px rgba(0, 0, 0, 0.02)" }}
+              >
                 <Image
                   src="/images/review sticker.svg"
                   alt="Review"
@@ -140,7 +146,10 @@ export default function Hero() {
                 />
               </div>
               {/* Bottom right: sentiment graph — opposite hover direction */}
-              <div className="absolute -right-[4%] bottom-[12%] z-10 w-[42%] max-w-[260px] animate-hero-overlay-float-down">
+              <div
+                className="absolute -right-[4%] bottom-[12%] z-10 w-[42%] max-w-[260px] animate-hero-overlay-float-down rounded-[20px] overflow-hidden"
+                style={{ boxShadow: "0 6px 16px 12px rgba(0, 0, 0, 0.02)" }}
+              >
                 <Image
                   src="/images/sentiment graph.svg"
                   alt="Sentiment"
