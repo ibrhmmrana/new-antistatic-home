@@ -25,6 +25,20 @@ interface PlaceDetails {
   website?: string | null;
 }
 
+// Shape from /api/places/details (used for search-visibility payload)
+interface PlaceDetailsForSearch {
+  name?: string;
+  address?: string;
+  formatted_address?: string;
+  types?: string[];
+  location?: { lat: number; lng: number };
+  geometry?: { location?: { lat: number; lng: number } };
+  rating?: number | null;
+  userRatingsTotal?: number;
+  user_ratings_total?: number;
+  website?: string | null;
+}
+
 // Interface for online presence data to pass to StageOnlinePresence
 interface OnlinePresenceResult {
   websiteUrl: string | null;
@@ -479,11 +493,11 @@ export default function ReportScanClient({
           }
         }
 
-        let details = placeDetails ?? null;
+        let details: PlaceDetailsForSearch | null = placeDetails ? { ...placeDetails } : null;
         if (!details && placeId) {
           try {
             const res = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
-            details = res.ok ? await res.json() : null;
+            details = res.ok ? (await res.json()) as PlaceDetailsForSearch : null;
           } catch (_) {
             details = null;
           }
