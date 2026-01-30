@@ -451,15 +451,13 @@ export default function ReportScanClient({
         setAnalyzersComplete(prev => ({ ...prev, gbp: true })); // No GBP to analyze
       }
       
-      // 2. Website Crawler - trigger when website URL is found
+      // 2. Search visibility (map + organic rankings) always; website crawler when website URL exists
+      const websiteCacheKey = `analysis_${scanId}_website`;
       const checkWebsiteUrl = async () => {
         let websiteUrl: string | null = null;
-        
-        // Try to get from placeDetails
         if (placeDetails?.website) {
           websiteUrl = placeDetails.website;
         } else {
-          // Fetch place details if not available
           try {
             const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
             if (response.ok) {
@@ -470,24 +468,76 @@ export default function ReportScanClient({
             console.warn('[ANALYZERS] Failed to fetch website URL:', error);
           }
         }
-        
-        // Also check onlinePresenceData
-        if (!websiteUrl && onlinePresenceData?.websiteUrl) {
-          websiteUrl = onlinePresenceData.websiteUrl;
-        }
-        
-        // Also check localStorage
+        if (!websiteUrl && onlinePresenceData?.websiteUrl) websiteUrl = onlinePresenceData.websiteUrl;
         if (!websiteUrl) {
           const onlinePresenceMetadata = localStorage.getItem(`onlinePresence_${scanId}`);
           if (onlinePresenceMetadata) {
-            const parsed = JSON.parse(onlinePresenceMetadata);
-            websiteUrl = parsed.websiteUrl || null;
+            try {
+              const parsed = JSON.parse(onlinePresenceMetadata);
+              websiteUrl = parsed.websiteUrl || null;
+            } catch (_) {}
           }
         }
-        
+
+        let details = placeDetails ?? null;
+        if (!details && placeId) {
+          try {
+            const res = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
+            details = res.ok ? await res.json() : null;
+          } catch (_) {
+            details = null;
+          }
+        }
+
+        // Always run search visibility so report has map/organic rankings regardless of website
+        const existingWebsite = localStorage.getItem(websiteCacheKey);
+        const cacheMissingSearchVisibility = existingWebsite ? (() => {
+          try {
+            const parsed = JSON.parse(existingWebsite);
+            return !parsed.search_visibility?.queries?.length;
+          } catch (_) {
+            return true;
+          }
+        })() : true;
+        if (placeId && details && (!existingWebsite || cacheMissingSearchVisibility)) {
+          fetch("/api/scan/search-visibility", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              placeId,
+              placeName: details.name,
+              placeAddress: details.address ?? details.formatted_address,
+              placeTypes: details.types,
+              latlng: details.location ? { lat: details.location.lat, lng: details.location.lng } : (details.geometry?.location ? { lat: details.geometry.location.lat, lng: details.geometry.location.lng } : null),
+              rating: details.rating,
+              reviewCount: details.userRatingsTotal ?? details.user_ratings_total,
+            }),
+          })
+            .then(res => res.json())
+            .then(analysisData => {
+              if (analysisData && !analysisData.error) {
+                const baseResult = {
+                  search_visibility: analysisData.search_visibility,
+                  competitors_snapshot: analysisData.competitors_snapshot,
+                  business_identity: analysisData.business_identity,
+                  scrape_metadata: { timestamp: new Date().toISOString() },
+                };
+                const cached = localStorage.getItem(websiteCacheKey);
+                const merged = cached ? (() => {
+                  try {
+                    const parsed = JSON.parse(cached);
+                    return { ...parsed, ...baseResult };
+                  } catch (_) {
+                    return baseResult;
+                  }
+                })() : baseResult;
+                localStorage.setItem(websiteCacheKey, JSON.stringify(merged));
+              }
+            })
+            .catch(err => console.error('[ANALYZERS] Search visibility failed:', err));
+        }
+
         if (websiteUrl) {
-          const websiteCacheKey = `analysis_${scanId}_website`;
-          const existingWebsite = localStorage.getItem(websiteCacheKey);
           if (existingWebsite) {
             setAnalyzersComplete(prev => ({ ...prev, website: true }));
           } else {
@@ -496,84 +546,33 @@ export default function ReportScanClient({
               const response = await fetch("/api/scan/website", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                  url: websiteUrl, 
-                  maxDepth: 2,
-                  maxPages: 10 
-                }),
+                body: JSON.stringify({ url: websiteUrl, maxDepth: 2, maxPages: 10 }),
               });
               if (response.ok) {
                 const data = await response.json();
-                localStorage.setItem(websiteCacheKey, JSON.stringify(data));
+                const cached = localStorage.getItem(websiteCacheKey);
+                const merged = cached ? (() => {
+                  try {
+                    const parsed = JSON.parse(cached);
+                    return {
+                      ...data,
+                      search_visibility: (data.search_visibility?.queries?.length ? data.search_visibility : parsed.search_visibility) ?? data.search_visibility,
+                      competitors_snapshot: (data.competitors_snapshot?.competitors_places?.length ? data.competitors_snapshot : parsed.competitors_snapshot) ?? data.competitors_snapshot,
+                    };
+                  } catch (_) {
+                    return data;
+                  }
+                })() : data;
+                localStorage.setItem(websiteCacheKey, JSON.stringify(merged));
                 console.log('[ANALYZERS] ✅ Website crawler complete');
               }
             } catch (error) {
               console.error('[ANALYZERS] ❌ Website crawler failed:', error);
-            } finally {
-              setAnalyzersComplete(prev => ({ ...prev, website: true }));
             }
+            setAnalyzersComplete(prev => ({ ...prev, website: true }));
           }
         } else {
-          // FIX: Even without website, we can still analyze search visibility and competitors
-          // Get place details if not available
-          let placeDetailsForAnalysis: any = null;
-          if (placeId) {
-            try {
-              const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(placeId)}`);
-              if (response.ok) {
-                placeDetailsForAnalysis = await response.json();
-              }
-            } catch (error) {
-              console.warn('[ANALYZERS] Failed to fetch place details for search visibility:', error);
-            }
-          }
-          
-          if (placeDetailsForAnalysis && placeId) {
-            // Trigger search visibility and competitor analysis (no website required)
-            const websiteCacheKey = `analysis_${scanId}_website`;
-            const existingWebsite = localStorage.getItem(websiteCacheKey);
-            if (!existingWebsite) {
-              fetch("/api/scan/search-visibility", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  placeId,
-                  placeName: placeDetailsForAnalysis.name,
-                  placeAddress: placeDetailsForAnalysis.address || placeDetailsForAnalysis.formatted_address,
-                  placeTypes: placeDetailsForAnalysis.types,
-                  latlng: placeDetailsForAnalysis.location ? { 
-                    lat: placeDetailsForAnalysis.location.lat, 
-                    lng: placeDetailsForAnalysis.location.lng 
-                  } : (placeDetailsForAnalysis.geometry?.location ? {
-                    lat: placeDetailsForAnalysis.geometry.location.lat,
-                    lng: placeDetailsForAnalysis.geometry.location.lng
-                  } : null),
-                  rating: placeDetailsForAnalysis.rating,
-                  reviewCount: placeDetailsForAnalysis.userRatingsTotal || placeDetailsForAnalysis.user_ratings_total,
-                }),
-              })
-                .then(res => res.json())
-                .then(analysisData => {
-                  if (analysisData && !analysisData.error) {
-                    // Store as website result (even though there's no website) so assembleReport can use it
-                    const websiteResultData = {
-                      search_visibility: analysisData.search_visibility,
-                      competitors_snapshot: analysisData.competitors_snapshot,
-                      business_identity: analysisData.business_identity,
-                      scrape_metadata: {
-                        timestamp: new Date().toISOString(),
-                      },
-                    };
-                    localStorage.setItem(websiteCacheKey, JSON.stringify(websiteResultData));
-                  }
-                })
-                .catch(err => {
-                  console.error('[ANALYZERS] Search visibility/competitors analysis failed:', err);
-                });
-            }
-          }
-          
-          setAnalyzersComplete(prev => ({ ...prev, website: true })); // Mark complete (even if no website)
+          setAnalyzersComplete(prev => ({ ...prev, website: true }));
         }
       };
       

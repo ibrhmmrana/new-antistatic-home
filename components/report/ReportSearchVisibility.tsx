@@ -181,7 +181,7 @@ export default function ReportSearchVisibility({
       {searchVisibility.queries.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
           <p>Search visibility analysis not available.</p>
-          <p className="text-sm mt-2">This requires a website URL.</p>
+          <p className="text-sm mt-2">Map and Google Search rankings are based on your Google Business Profile and do not require a website. Data may still be loading.</p>
         </div>
       ) : (
         <div className="space-y-4">
