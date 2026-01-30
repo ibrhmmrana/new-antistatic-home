@@ -3,6 +3,10 @@ import {
   fetchPlaceDetailsNew,
   fetchFirstPhotoUri,
 } from "@/lib/places/placeDetailsNew";
+import { getRequestId } from "@/lib/net/requestId";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const DETAILS_FIELD_MASK = [
   "id",
@@ -22,8 +26,12 @@ const DETAILS_FIELD_MASK = [
 ] as const;
 
 export async function GET(request: NextRequest) {
+  const t0 = Date.now();
+  const rid = getRequestId(request);
   const searchParams = request.nextUrl.searchParams;
   const placeId = searchParams.get("placeId");
+
+  console.log(`[RID ${rid}] places.details start`, { placeId });
 
   if (!placeId) {
     return NextResponse.json(
@@ -34,24 +42,25 @@ export async function GET(request: NextRequest) {
 
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
-    console.error("GOOGLE_PLACES_API_KEY is not set");
     return NextResponse.json(
-      { error: "Server configuration error" },
+      { rid, error: "Server configuration error" },
       { status: 500 }
     );
   }
 
   try {
+    console.log(`[RID ${rid}] places.details fetch google`);
     const result = await fetchPlaceDetailsNew(
       placeId,
       [...DETAILS_FIELD_MASK],
       apiKey
     );
+    console.log(`[RID ${rid}] places.details google done`, { hasResult: !!result });
 
     if (!result) {
       return NextResponse.json(
-        { error: "Failed to fetch place details" },
-        { status: 400 }
+        { rid, error: "Failed to fetch place details", googleStatus: "no_result" },
+        { status: 502 }
       );
     }
 
@@ -84,6 +93,7 @@ export async function GET(request: NextRequest) {
         ? await fetchFirstPhotoUri(firstPhotoName, apiKey, 900)
         : null;
 
+    console.log(`[RID ${rid}] places.details done`, { ms: Date.now() - t0 });
     return NextResponse.json({
       placeId: result.place_id ?? placeId,
       name: result.name ?? "",
@@ -103,10 +113,17 @@ export async function GET(request: NextRequest) {
       openingHours: result.opening_hours ?? null,
     });
   } catch (error) {
-    console.error("Error fetching place details:", error);
+    const ms = Date.now() - t0;
+    const isTimeout =
+      error instanceof Error &&
+      (error.name === "AbortError" || /timeout|aborted/i.test(error.message));
+    console.error(`[RID ${rid}] places.details error`, { error, ms });
     return NextResponse.json(
-      { error: "Failed to fetch place details" },
-      { status: 500 }
+      {
+        rid,
+        error: isTimeout ? "Upstream timeout" : "Failed to fetch place details",
+      },
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }

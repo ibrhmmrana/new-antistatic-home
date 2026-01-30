@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useJsApiLoader, GoogleMap } from "@react-google-maps/api";
 import type { SearchVisibility } from "@/lib/report/types";
 import { getFaviconUrl } from "@/lib/seo/favicon";
+import { fetchWithTimeoutClient } from "@/lib/net/clientFetchWithTimeout";
 
 interface ReportSearchVisibilityProps {
   searchVisibility: SearchVisibility;
@@ -60,7 +61,11 @@ export default function ReportSearchVisibility({
       if (!result.placeId) continue;
       
       try {
-        const response = await fetch(`/api/places/details?placeId=${encodeURIComponent(result.placeId)}`);
+        const response = await fetchWithTimeoutClient(
+          `/api/places/details?placeId=${encodeURIComponent(result.placeId)}`,
+          undefined,
+          20000
+        );
         if (!response.ok) continue;
         
         const data = await response.json();
