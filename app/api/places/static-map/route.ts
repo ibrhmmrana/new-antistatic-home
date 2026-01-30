@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
+import { consumeBody } from "@/lib/net/consumeBody";
+import { getRequestId } from "@/lib/net/requestId";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const t0 = Date.now();
+  const rid = getRequestId(request);
   const searchParams = request.nextUrl.searchParams;
   const lat = searchParams.get("lat");
   const lng = searchParams.get("lng");
@@ -9,9 +16,8 @@ export async function GET(request: NextRequest) {
 
   const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
-    console.error("GOOGLE_MAPS_API_KEY or GOOGLE_PLACES_API_KEY is not set");
     return NextResponse.json(
-      { error: "Server configuration error" },
+      { rid, error: "Server configuration error" },
       { status: 500 }
     );
   }
@@ -24,7 +30,7 @@ export async function GET(request: NextRequest) {
     // If placeIds are provided, fetch their locations
     if (placeIds) {
       const placeIdArray = placeIds.split(',').filter(Boolean);
-      console.log(`[Static Map] Processing ${placeIdArray.length} place IDs:`, placeIdArray);
+      console.log(`[RID ${rid}] static-map processing ${placeIdArray.length} place IDs`);
       const locations: Array<{ lat: number; lng: number }> = [];
 
       for (const placeId of placeIdArray) {
@@ -34,40 +40,34 @@ export async function GET(request: NextRequest) {
           detailsUrl.searchParams.set('fields', 'geometry');
           detailsUrl.searchParams.set('key', apiKey);
 
-          const detailsResponse = await fetch(detailsUrl.toString());
+          const detailsResponse = await fetchWithTimeout(detailsUrl.toString(), {
+            timeoutMs: 10000,
+            retries: 2,
+          });
+          if (!detailsResponse.ok) {
+            await consumeBody(detailsResponse);
+            console.warn(`[RID ${rid}] static-map place ${placeId} status`, detailsResponse.status);
+            continue;
+          }
           const detailsData = await detailsResponse.json();
-
-          console.log(`[Static Map] Place ${placeId} response status:`, detailsData.status);
 
           if (detailsData.status === 'OK' && detailsData.result?.geometry?.location) {
             const loc = detailsData.result.geometry.location;
             locations.push({ lat: loc.lat, lng: loc.lng });
             markers.push(`color:red|${loc.lat},${loc.lng}`);
-            console.log(`[Static Map] Found location for ${placeId}:`, loc);
-          } else {
-            console.warn(`[Static Map] No geometry for ${placeId}:`, detailsData.status, detailsData.error_message || '');
           }
         } catch (error) {
-          console.error(`[Static Map] Error fetching location for place ${placeId}:`, error);
+          console.error(`[RID ${rid}] static-map error for place ${placeId}:`, error);
         }
       }
 
-      console.log(`[Static Map] Total locations found: ${locations.length}`);
-
-      // Calculate center from all locations
       if (locations.length > 0) {
         const avgLat = locations.reduce((sum, loc) => sum + loc.lat, 0) / locations.length;
         const avgLng = locations.reduce((sum, loc) => sum + loc.lng, 0) / locations.length;
         centerLat = avgLat.toString();
         centerLng = avgLng.toString();
-        console.log(`[Static Map] Calculated center:`, { avgLat, avgLng });
       } else {
-        // If no locations found, return a placeholder image instead of error
-        console.warn(`[Static Map] No valid locations found, returning placeholder`);
-        // Return a simple gray placeholder
-        return new NextResponse(null, {
-          status: 204, // No content - let frontend handle fallback
-        });
+        return new NextResponse(null, { status: 204 });
       }
     } else if (lat && lng) {
       // Single marker mode
@@ -102,30 +102,39 @@ export async function GET(request: NextRequest) {
     });
     
     url.searchParams.set("key", apiKey);
-    
-    const response = await fetch(url.toString(), {
-      next: { revalidate: 3600 }, // Cache for 1 hour
+
+    console.log(`[RID ${rid}] static-map fetch image`);
+    const response = await fetchWithTimeout(url.toString(), {
+      timeoutMs: 10000,
+      retries: 2,
     });
 
     if (!response.ok) {
-      throw new Error(`Google Static Maps API error: ${response.status}`);
+      await consumeBody(response);
+      console.error(`[RID ${rid}] static-map google status`, response.status);
+      return NextResponse.json(
+        { rid, error: "Upstream static map error", googleStatus: response.status },
+        { status: 502 }
+      );
     }
 
-    // Get the image as a blob
-    const imageBlob = await response.blob();
-    
-    // Return the image with proper headers
-    return new NextResponse(imageBlob, {
+    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get("content-type") ?? "image/png";
+    console.log(`[RID ${rid}] static-map done`, { ms: Date.now() - t0 });
+    return new NextResponse(buffer, {
       headers: {
-        "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=3600",
+        "Content-Type": contentType,
+        "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=604800",
       },
     });
   } catch (error) {
-    console.error("Error fetching static map:", error);
+    const isTimeout =
+      error instanceof Error &&
+      (error.name === "AbortError" || /timeout|aborted/i.test(error.message));
+    console.error(`[RID ${rid}] static-map error`, error);
     return NextResponse.json(
-      { error: "Failed to fetch static map" },
-      { status: 500 }
+      { rid, error: isTimeout ? "Upstream timeout" : "Failed to fetch static map" },
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }

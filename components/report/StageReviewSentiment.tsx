@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
+import { fetchWithTimeoutClient } from "@/lib/net/clientFetchWithTimeout";
 
 interface StageReviewSentimentProps {
   placeId: string;
@@ -84,8 +85,10 @@ export default function StageReviewSentiment({
       
       // If no cached data, fetch from API
       try {
-        const response = await fetch(
-          `/api/places/reviews?placeId=${encodeURIComponent(placeId)}`
+        const response = await fetchWithTimeoutClient(
+          `/api/places/reviews?placeId=${encodeURIComponent(placeId)}`,
+          undefined,
+          20000
         );
 
         if (!response.ok) {

@@ -9,6 +9,10 @@ import {
   fetchPlaceDetailsNew,
   fetchFirstPhotoUri,
 } from "@/lib/places/placeDetailsNew";
+import { getRequestId } from "@/lib/net/requestId";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const GBP_FIELD_MASK = [
   "id",
@@ -30,8 +34,12 @@ const GBP_FIELD_MASK = [
 ] as const;
 
 export async function GET(request: NextRequest) {
+  const t0 = Date.now();
+  const rid = getRequestId(request);
   const searchParams = request.nextUrl.searchParams;
   const placeId = searchParams.get("place_id");
+
+  console.log(`[RID ${rid}] gbp.place-details start`, { placeId });
 
   if (!placeId) {
     return NextResponse.json(
@@ -43,22 +51,24 @@ export async function GET(request: NextRequest) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "Google Places API key not configured" },
+      { rid, error: "Google Places API key not configured" },
       { status: 500 }
     );
   }
 
   try {
+    console.log(`[RID ${rid}] gbp.place-details fetch google`);
     const result = await fetchPlaceDetailsNew(
       placeId,
       [...GBP_FIELD_MASK],
       apiKey
     );
+    console.log(`[RID ${rid}] gbp.place-details google done`, { hasResult: !!result });
 
     if (!result) {
       return NextResponse.json(
-        { error: "Failed to fetch place details" },
-        { status: 400 }
+        { rid, error: "Failed to fetch place details", googleStatus: "no_result" },
+        { status: 502 }
       );
     }
 
@@ -104,6 +114,7 @@ export async function GET(request: NextRequest) {
 
     const analysis = await analyzeGbp(placeDetails);
 
+    console.log(`[RID ${rid}] gbp.place-details done`, { ms: Date.now() - t0 });
     return NextResponse.json(
       {
         placeDetails,
@@ -112,10 +123,17 @@ export async function GET(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    console.error("[GBP-PLACE-DETAILS] Error:", error);
+    const ms = Date.now() - t0;
+    const isTimeout =
+      error instanceof Error &&
+      (error.name === "AbortError" || /timeout|aborted/i.test(error.message));
+    console.error(`[RID ${rid}] gbp.place-details error`, { error, ms });
     return NextResponse.json(
-      { error: "Failed to fetch place details" },
-      { status: 500 }
+      {
+        rid,
+        error: isTimeout ? "Upstream timeout" : "Failed to fetch place details",
+      },
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }

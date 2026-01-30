@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Check, Circle } from "lucide-react";
+import { fetchWithTimeoutClient } from "@/lib/net/clientFetchWithTimeout";
 import StageCompetitorMap from "./StageCompetitorMap";
 import StageGoogleBusinessProfile from "./StageGoogleBusinessProfile";
 import StageReviewSentiment from "./StageReviewSentiment";
@@ -235,15 +236,19 @@ export default function ReportScanClient({
       try {
         console.log(`[WEBSITE SCREENSHOT] Starting immediate capture for: ${websiteUrl}`);
         
-        const response = await fetch('/api/scan/socials/screenshot', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            platform: 'website',
-            url: websiteUrl,
-            viewport: 'desktop',
-          }),
-        });
+        const response = await fetchWithTimeoutClient(
+          '/api/scan/socials/screenshot',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              platform: 'website',
+              url: websiteUrl,
+              viewport: 'desktop',
+            }),
+          },
+          20000
+        );
 
         if (response.ok) {
           const result = await response.json();
@@ -425,7 +430,11 @@ export default function ReportScanClient({
           promises.push((async () => {
             try {
               console.log('[ANALYZERS] Triggering GBP analyzer...');
-              const response = await fetch(`/api/gbp/place-details?place_id=${encodeURIComponent(placeId)}`);
+              const response = await fetchWithTimeoutClient(
+                `/api/gbp/place-details?place_id=${encodeURIComponent(placeId)}`,
+                undefined,
+                20000
+              );
               if (response.ok) {
                 const data = await response.json();
                 localStorage.setItem(gbpCacheKey, JSON.stringify(data));
@@ -985,8 +994,10 @@ export default function ReportScanClient({
     // Pre-fetch reviews data in the background
     const preloadReviews = async () => {
       try {
-        const response = await fetch(
-          `/api/places/reviews?placeId=${encodeURIComponent(placeId)}`
+        const response = await fetchWithTimeoutClient(
+          `/api/places/reviews?placeId=${encodeURIComponent(placeId)}`,
+          undefined,
+          20000
         );
         
         if (response.ok) {

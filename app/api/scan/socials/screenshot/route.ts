@@ -9,9 +9,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { chromium as pwChromium } from "playwright-core";
 import type { Browser, Page, BrowserContext } from "playwright-core";
 import chromium from "@sparticuz/chromium";
+import { getRequestId } from "@/lib/net/requestId";
 
 // Force Node.js runtime (Playwright is not compatible with Edge runtime)
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 // Viewport configurations
 const VIEWPORTS = {
@@ -2829,84 +2831,77 @@ async function captureScreenshot(
   }
 }
 
+const SCREENSHOT_HARD_TIMEOUT_MS = 25000;
+
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  
-  try {
-    console.log(`[API] POST /api/scan/socials/screenshot - Request received`);
+  const rid = getRequestId(request);
 
-    // Parse request body
+  try {
+    console.log(`[RID ${rid}] socials.screenshot start`);
+
     const body = await request.json();
     const { platform, url, viewport = 'desktop', businessName, businessLocation } = body;
 
-    console.log(`[API] Request body:`, { platform, url, viewport, businessName, businessLocation });
-
-    // Validate required parameters
     if (!platform || !url) {
-      console.error(`[API] ❌ Missing required parameters`);
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Missing required parameters',
-          message: 'Both "platform" and "url" are required'
-        },
+        { success: false, error: 'Missing required parameters', rid },
         { status: 400 }
       );
     }
 
-    // Validate viewport
     if (viewport !== 'desktop' && viewport !== 'mobile') {
-      console.error(`[API] ❌ Invalid viewport: ${viewport}`);
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid viewport',
-          message: 'Viewport must be either "desktop" or "mobile"'
-        },
+        { success: false, error: 'Invalid viewport', rid },
         { status: 400 }
       );
     }
 
-    // Validate URL format
     try {
       new URL(url);
     } catch {
-      console.error(`[API] ❌ Invalid URL format: ${url}`);
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid URL format',
-          message: 'The provided URL is not valid'
-        },
+        { success: false, error: 'Invalid URL format', rid },
         { status: 400 }
       );
     }
 
-    console.log(`[API] Parameters validated, starting screenshot capture...`);
+    console.log(`[RID ${rid}] socials.screenshot launch/goto/screenshot`);
 
-    // Capture screenshot - pass business context for Google search bypass
-    const result = await captureScreenshot(url, viewport, platform, businessName, businessLocation);
+    const timeoutPromise = new Promise<{ success: false; error: string }>((resolve) => {
+      setTimeout(
+        () => resolve({ success: false, error: "Screenshot timeout" }),
+        SCREENSHOT_HARD_TIMEOUT_MS
+      );
+    });
+
+    const result = await Promise.race([
+      captureScreenshot(url, viewport, platform, businessName, businessLocation),
+      timeoutPromise,
+    ]).catch((err) => {
+      console.error(`[RID ${rid}] socials.screenshot error`, err);
+      return { success: false as const, error: err instanceof Error ? err.message : "Screenshot failed" };
+    });
 
     const totalTime = Date.now() - startTime;
-    console.log(`[API] Total request time: ${totalTime}ms`);
+    console.log(`[RID ${rid}] socials.screenshot done`, { ms: totalTime, success: result?.success });
 
-    if (!result.success) {
-      console.error(`[API] ❌ Screenshot capture failed: ${result.error}`);
+    if (!result?.success) {
+      const isTimeout = result?.error?.toLowerCase().includes("timeout");
       return NextResponse.json(
         {
           success: false,
-          error: result.error || 'Screenshot capture failed',
+          error: result?.error ?? "Screenshot capture failed",
+          rid,
           platform,
           url,
           viewport,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         },
-        { status: 500 }
+        { status: isTimeout ? 504 : 500 }
       );
     }
 
-    // Success response
-    console.log(`[API] ✅ Screenshot captured successfully`);
     return NextResponse.json(
       {
         success: true,
@@ -2914,29 +2909,23 @@ export async function POST(request: NextRequest) {
         platform,
         url,
         viewport,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       },
       { status: 200 }
     );
-
   } catch (error) {
     const totalTime = Date.now() - startTime;
-    console.error(`[API] ❌ Error in POST /api/scan/socials/screenshot:`, error);
-    console.error(`[API] Request failed after ${totalTime}ms`);
-
-    if (error instanceof Error) {
-      console.error(`[API] Error message: ${error.message}`);
-      console.error(`[API] Error stack: ${error.stack}`);
-    }
-
+    console.error(`[RID ${rid}] socials.screenshot error`, { error, ms: totalTime });
+    const isTimeout =
+      error instanceof Error && /timeout|aborted/i.test(error.message);
     return NextResponse.json(
       {
         success: false,
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
-        timestamp: new Date().toISOString()
+        error: isTimeout ? "Screenshot timeout" : (error instanceof Error ? error.message : "Internal server error"),
+        rid,
+        timestamp: new Date().toISOString(),
       },
-      { status: 500 }
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }

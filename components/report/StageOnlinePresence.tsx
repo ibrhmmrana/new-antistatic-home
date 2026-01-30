@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import ScanLineOverlay from "./ScanLineOverlay";
+import { fetchWithTimeoutClient } from "@/lib/net/clientFetchWithTimeout";
 
 interface SocialScreenshot {
   platform: string;
@@ -156,15 +157,19 @@ export default function StageOnlinePresence({
         if (websiteUrl && !websiteScreenshot && parsed.hasWebsiteScreenshot) {
           console.log('[StageOnlinePresence] Cache miss - capturing website screenshot directly...');
           try {
-            const screenshotResponse = await fetch('/api/scan/socials/screenshot', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                platform: 'website',
-                url: websiteUrl,
-                viewport: 'desktop',
-              }),
-            });
+            const screenshotResponse = await fetchWithTimeoutClient(
+              '/api/scan/socials/screenshot',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  platform: 'website',
+                  url: websiteUrl,
+                  viewport: 'desktop',
+                }),
+              },
+              20000
+            );
             if (screenshotResponse.ok) {
               const screenshotData = await screenshotResponse.json();
               if (screenshotData.success && screenshotData.screenshot) {

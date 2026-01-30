@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchPlaceDetailsNew } from "@/lib/places/placeDetailsNew";
+import { getRequestId } from "@/lib/net/requestId";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 interface NormalizedReview {
   reviewId: string;
@@ -85,9 +89,13 @@ function selectReviewVariety(reviews: NormalizedReview[]): NormalizedReview[] {
 const REVIEWS_FIELD_MASK = ["id", "displayName", "reviews"] as const;
 
 export async function GET(request: NextRequest) {
+  const t0 = Date.now();
+  const rid = getRequestId(request);
   const searchParams = request.nextUrl.searchParams;
   const placeId = searchParams.get("placeId");
   const returnAll = searchParams.get("all") === "true";
+
+  console.log(`[RID ${rid}] places.reviews start`, { placeId });
 
   if (!placeId) {
     return NextResponse.json(
@@ -98,7 +106,7 @@ export async function GET(request: NextRequest) {
 
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
-    console.error("GOOGLE_PLACES_API_KEY is not set");
+    console.error(`[RID ${rid}] GOOGLE_PLACES_API_KEY is not set`);
     return NextResponse.json(
       { error: "Server configuration error" },
       { status: 500 }
@@ -106,16 +114,18 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    console.log(`[RID ${rid}] places.reviews fetch google`);
     const result = await fetchPlaceDetailsNew(
       placeId,
       [...REVIEWS_FIELD_MASK],
       apiKey
     );
+    console.log(`[RID ${rid}] places.reviews google done`, { hasResult: !!result });
 
     if (!result) {
       return NextResponse.json(
-        { error: "Failed to fetch place reviews" },
-        { status: 400 }
+        { rid, error: "Failed to fetch place reviews", googleStatus: "no_result" },
+        { status: 502 }
       );
     }
 
@@ -141,16 +151,24 @@ export async function GET(request: NextRequest) {
       ? normalizedReviews
       : selectReviewVariety(normalizedReviews);
 
+    console.log(`[RID ${rid}] places.reviews done`, { ms: Date.now() - t0 });
     return NextResponse.json({
       placeId: result.place_id ?? placeId,
       name: result.name ?? "",
       reviews: reviewsToReturn,
     });
   } catch (error) {
-    console.error("Error fetching place reviews:", error);
+    const ms = Date.now() - t0;
+    const isTimeout =
+      error instanceof Error &&
+      (error.name === "AbortError" || /timeout|aborted/i.test(error.message));
+    console.error(`[RID ${rid}] places.reviews error`, { error, ms });
     return NextResponse.json(
-      { error: "Failed to fetch place reviews" },
-      { status: 500 }
+      {
+        rid,
+        error: isTimeout ? "Upstream timeout" : "Failed to fetch place reviews",
+      },
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }

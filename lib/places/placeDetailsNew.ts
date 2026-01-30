@@ -1,9 +1,14 @@
 /**
  * Places API (New) v1 – Place Details helper
  * Fetches place details and returns a legacy-shaped result so routes can keep existing response logic.
+ * Uses fetchWithTimeout for hard timeout and retries.
  */
 
-const PLACE_DETAILS_TIMEOUT_MS = 12000;
+import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
+import { consumeBody } from "@/lib/net/consumeBody";
+
+const PLACE_DETAILS_TIMEOUT_MS = 10000;
+const PLACE_DETAILS_RETRIES = 2;
 
 export type PlaceDetailsFieldMask =
   | "id"
@@ -98,31 +103,26 @@ export async function fetchPlaceDetailsNew(
   const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
   const mask = fieldMask.join(",");
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), PLACE_DETAILS_TIMEOUT_MS);
-
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "GET",
       headers: {
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask": mask,
       },
-      signal: controller.signal,
-      next: { revalidate: 3600 },
+      timeoutMs: PLACE_DETAILS_TIMEOUT_MS,
+      retries: PLACE_DETAILS_RETRIES,
     });
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const errText = await response.text();
-      console.error("[places/placeDetailsNew] API error:", response.status, errText.slice(0, 300));
+      await consumeBody(response);
+      console.error("[places/placeDetailsNew] API error:", response.status);
       return null;
     }
 
     const place: PlaceNew = await response.json();
     return mapPlaceNewToLegacy(place, placeId);
   } catch (e) {
-    clearTimeout(timeoutId);
     console.error("[places/placeDetailsNew] fetch error:", e);
     return null;
   }
@@ -188,7 +188,8 @@ function mapPlaceNewToLegacy(place: PlaceNew, placeId: string): LegacyShapedPlac
   return result;
 }
 
-const MEDIA_TIMEOUT_MS = 8000;
+const MEDIA_TIMEOUT_MS = 10000;
+const MEDIA_RETRIES = 2;
 
 /**
  * Fetch first photo's media URL (photoUri) from Places API (New) for a place that has photos.
@@ -200,16 +201,16 @@ export async function fetchFirstPhotoUri(
 ): Promise<string | null> {
   const url = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=${maxWidthPx}&skipHttpRedirect=true`;
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), MEDIA_TIMEOUT_MS);
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "GET",
       headers: { "X-Goog-Api-Key": apiKey },
-      signal: controller.signal,
-      next: { revalidate: 3600 * 24 * 7 },
+      timeoutMs: MEDIA_TIMEOUT_MS,
+      retries: MEDIA_RETRIES,
     });
-    clearTimeout(timeoutId);
-    if (!response.ok) return null;
+    if (!response.ok) {
+      await consumeBody(response);
+      return null;
+    }
     const data = (await response.json()) as { photoUri?: string };
     return (data.photoUri ?? "").trim() || null;
   } catch {
