@@ -107,9 +107,11 @@ export default function BusinessSearch() {
       const data = await response.json();
       
       if (response.ok && data) {
-        // Get photo URL
+        // Get photo URL: prefer direct photoUri from New API; fallback to legacy proxy
         let photoUrl = null;
-        if (data.photoRef) {
+        if (data.photoUri) {
+          photoUrl = data.photoUri;
+        } else if (data.photoRef) {
           photoUrl = `/api/places/photo?ref=${encodeURIComponent(data.photoRef)}&maxw=400`;
         }
         

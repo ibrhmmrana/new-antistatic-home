@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchPlaceDetailsNew } from "@/lib/places/placeDetailsNew";
+import { searchNearbyNew, type NearbyPlaceLegacy } from "@/lib/places/searchNearbyNew";
+
+export const maxDuration = 30;
 
 const MIN_COMPETITORS = 3;
 const MAX_COMPETITORS = 10;
 const RADIUS_STEPS = [1500, 3000, 5000, 10000, 20000]; // 1.5km, 3km, 5km, 10km, 20km
-const MAX_PAGES = 3; // Google usually allows 3 pages max
 
 // Only truly generic types that don't represent business categories
 const GENERIC_TYPES = [
@@ -58,6 +61,22 @@ const CATEGORY_FAMILIES: Record<string, string[]> = {
   electronics_store: ["clothing_store", "electronics_store", "store"],
   store: ["clothing_store", "electronics_store", "store"],
 };
+
+// Types that cannot be used in Places API (New) searchNearby includedTypes (Table B – response only).
+// See https://developers.google.com/maps/documentation/places/web-service/place-types
+const NEW_API_UNSUPPORTED_INCLUDED_TYPES = new Set([
+  "food",
+  "establishment",
+  "point_of_interest",
+  "premise",
+  "route",
+  "street_address",
+  "political",
+  "locality",
+  "administrative_area_level_1",
+  "administrative_area_level_2",
+  "country",
+]);
 
 // Broad container types to exclude (unless target is also one)
 const EXCLUDED_BROAD_TYPES = [
@@ -117,6 +136,11 @@ function getPrimaryType(types: string[]): string | null {
   return types.length > 0 ? types[0] : null;
 }
 
+/** Normalize place id for comparison (request may be "ChIJ..." or "places/ChIJ..."). */
+function normalizePlaceId(id: string): string {
+  return (id || "").replace(/^places\//, "").trim();
+}
+
 function getCategoryFamily(primaryType: string | null): string[] {
   if (!primaryType) return [];
   
@@ -127,11 +151,6 @@ function getCategoryFamily(primaryType: string | null): string[] {
   
   // If no family found, return just the primary type itself
   return [primaryType];
-}
-
-function humanizeType(type: string): string {
-  // Convert "computer_repair" -> "computer repair"
-  return type.replace(/_/g, " ");
 }
 
 function calculateDistance(
@@ -154,91 +173,34 @@ function calculateDistance(
   return R * c; // Distance in meters
 }
 
-async function fetchPlaceDetails(
+/** Fetch target place using Places API (New) v1 and return PlaceDetails. */
+async function fetchTargetPlaceDetails(
   placeId: string,
   apiKey: string
 ): Promise<PlaceDetails> {
-  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
-    placeId
-  )}&fields=place_id,name,types,geometry,vicinity,formatted_address,rating,user_ratings_total&key=${apiKey}`;
-
-  const response = await fetch(url, {
-    next: { revalidate: 3600 },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Google Places API error: ${response.status}`);
+  const result = await fetchPlaceDetailsNew(
+    placeId,
+    ["id", "name", "displayName", "location", "types", "formattedAddress"],
+    apiKey
+  );
+  if (!result) {
+    throw new Error("Could not fetch place details for placeId");
   }
-
-  const data = await response.json();
-
-  if (data.status !== "OK" || !data.result) {
-    throw new Error(`Failed to fetch place details: ${data.status}`);
-  }
-
-  const result = data.result;
   const location = result.geometry?.location;
-
   if (!location || typeof location.lat !== "number" || typeof location.lng !== "number") {
     throw new Error("Could not resolve target coordinates for placeId");
   }
-
   return {
-    place_id: result.place_id,
-    name: result.name || "",
-    address: result.formatted_address || result.vicinity || "",
-    location: {
-      lat: location.lat,
-      lng: location.lng,
-    },
-    types: result.types || [],
+    place_id: result.place_id ?? placeId,
+    name: result.name ?? "",
+    address: result.formatted_address ?? "",
+    location: { lat: location.lat, lng: location.lng },
+    types: result.types ?? [],
   };
 }
 
-// Fetch all pages of nearby search results
-async function fetchAllNearbyPages(
-  baseUrl: string,
-  apiKey: string,
-  maxPages: number = MAX_PAGES
-): Promise<any[]> {
-  const allResults: any[] = [];
-  let currentUrl = baseUrl;
-  let pageCount = 0;
-
-  while (pageCount < maxPages) {
-    const response = await fetch(currentUrl, {
-      next: { revalidate: 300 },
-    });
-
-    if (!response.ok) {
-      break;
-    }
-
-    const data = await response.json();
-
-    if (data.status === "OK" && data.results) {
-      allResults.push(...data.results);
-    } else {
-      break;
-    }
-
-    // Check for next page token
-    if (data.next_page_token) {
-      // Wait 2 seconds as required by Google
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      currentUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?pagetoken=${data.next_page_token}&key=${apiKey}`;
-      pageCount++;
-    } else {
-      break;
-    }
-  }
-
-  return allResults;
-}
-
-// Fill competitors from a specific radius
-async function fillFromRadius(
+/** Fill competitors from a specific radius using Places API (New) v1 searchNearby. */
+async function fillFromRadiusNew(
   lat: number,
   lng: number,
   radius: number,
@@ -246,63 +208,34 @@ async function fillFromRadius(
   placeId: string,
   targetPrimaryType: string | null,
   targetFamily: string[],
-  humanizedType: string | null,
   removals: RemovalReason[]
 ): Promise<CompetitorResult[]> {
-  const allResults: any[] = [];
-  const searchPromises: Promise<any[]>[] = [];
+  // Use only primary type for API (wider net; API returns subtypes too). Omit if Table B.
+  const includedTypes =
+    targetPrimaryType && !NEW_API_UNSUPPORTED_INCLUDED_TYPES.has(targetPrimaryType)
+      ? [targetPrimaryType]
+      : undefined;
 
-  // Strategy 1: Type-based search (if we have a type)
-  if (targetPrimaryType) {
-    const params = new URLSearchParams({
-      location: `${lat},${lng}`,
-      radius: radius.toString(),
-      type: targetPrimaryType,
-      key: apiKey,
-    });
-    const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
-    searchPromises.push(fetchAllNearbyPages(url, apiKey));
-  }
-
-  // Strategy 2: Keyword-based search (always try this if we have keyword)
-  if (humanizedType) {
-    const params = new URLSearchParams({
-      location: `${lat},${lng}`,
-      radius: radius.toString(),
-      keyword: humanizedType,
-      key: apiKey,
-    });
-    const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
-    searchPromises.push(fetchAllNearbyPages(url, apiKey));
-  }
-
-  // If no type available, do a general nearby search
-  if (!targetPrimaryType && !humanizedType) {
-    const params = new URLSearchParams({
-      location: `${lat},${lng}`,
-      radius: radius.toString(),
-      key: apiKey,
-    });
-    const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
-    searchPromises.push(fetchAllNearbyPages(url, apiKey));
-  }
-
-  const searchResults = await Promise.all(searchPromises);
-  const mergedResults = searchResults.flat();
-
-  // Deduplicate by place_id
-  const seenIds = new Set<string>();
-  const uniqueResults = mergedResults.filter((r: any) => {
-    if (seenIds.has(r.place_id)) return false;
-    seenIds.add(r.place_id);
-    return true;
+  let rawPlaces = await searchNearbyNew(lat, lng, radius, apiKey, {
+    includedTypes,
+    maxResultCount: 20,
+    rankPreference: "DISTANCE",
   });
 
-  // Apply strict filtering and compute distance
-  const candidates = uniqueResults
-    .filter((r: any) => {
-      // Must not be the target
-      if (r.place_id === placeId) {
+  // If we got no results with a type filter, retry without filter (all types) and filter by family ourselves.
+  if (rawPlaces.length === 0 && includedTypes) {
+    rawPlaces = await searchNearbyNew(lat, lng, radius, apiKey, {
+      maxResultCount: 20,
+      rankPreference: "DISTANCE",
+    });
+  }
+
+  const targetIdNorm = normalizePlaceId(placeId);
+
+  const candidates = rawPlaces
+    .filter((r: NearbyPlaceLegacy) => {
+      const candidatePrimaryType = getPrimaryType(r.types || []);
+      if (normalizePlaceId(r.place_id) === targetIdNorm) {
         removals.push({
           place_id: r.place_id,
           name: r.name || "Unknown",
@@ -311,8 +244,6 @@ async function fillFromRadius(
         });
         return false;
       }
-
-      // Must have name
       if (!r.name) {
         removals.push({
           place_id: r.place_id || "unknown",
@@ -321,34 +252,7 @@ async function fillFromRadius(
         });
         return false;
       }
-
-      // Must have address/vicinity
-      if (!r.vicinity && !r.formatted_address) {
-        removals.push({
-          place_id: r.place_id,
-          name: r.name,
-          reason: "missingAddress",
-          types: r.types,
-        });
-        return false;
-      }
-
-      // Must have location
-      if (!r.geometry?.location) {
-        removals.push({
-          place_id: r.place_id,
-          name: r.name,
-          reason: "missingLocation",
-          types: r.types,
-        });
-        return false;
-      }
-
-      // Determine candidate's primary type
-      const candidateTypes = r.types || [];
-      const candidatePrimaryType = getPrimaryType(candidateTypes);
-
-      // Strict type matching: candidate must be in target's family
+      // Keep places with or without address; show "Address not available" when missing
       if (targetPrimaryType && candidatePrimaryType) {
         if (!targetFamily.includes(candidatePrimaryType)) {
           removals.push({
@@ -356,74 +260,61 @@ async function fillFromRadius(
             name: r.name,
             candidatePrimaryType,
             reason: "primaryTypeNotInFamily",
-            types: candidateTypes,
+            types: r.types,
           });
           return false;
         }
       }
-
-      // Exclude broad container types (unless target is also one)
       if (candidatePrimaryType) {
         const isExcluded = EXCLUDED_BROAD_TYPES.includes(candidatePrimaryType);
         const targetIsAlsoExcluded = targetPrimaryType
           ? EXCLUDED_BROAD_TYPES.includes(targetPrimaryType)
           : false;
-
         if (isExcluded && !targetIsAlsoExcluded) {
           removals.push({
             place_id: r.place_id,
             name: r.name,
             candidatePrimaryType,
             reason: "broadTypeExcluded",
-            types: candidateTypes,
+            types: r.types,
           });
           return false;
         }
       }
-
       return true;
     })
-    .map((r: any) => {
+    .map((r: NearbyPlaceLegacy) => {
       const distance = calculateDistance(
         lat,
         lng,
-        r.geometry.location.lat,
-        r.geometry.location.lng
+        r.location.lat,
+        r.location.lng
       );
-
       const candidatePrimaryType = getPrimaryType(r.types || []);
-
       return {
         place_id: r.place_id,
         name: r.name,
-        address: r.vicinity || r.formatted_address || "",
-        location: {
-          lat: r.geometry.location.lat,
-          lng: r.geometry.location.lng,
-        },
+        address: r.address || "Address not available",
+        location: r.location,
         rating: r.rating,
-        user_rating_total: r.user_ratings_total || 0,
+        user_rating_total: r.user_rating_total ?? 0,
         distance,
         primary_type: candidatePrimaryType || undefined,
-        radius_step: radius, // Track which radius this came from
+        radius_step: radius,
       };
     });
 
-  // Sort by distance ASC (closest first)
-  candidates.sort((a, b) => {
-    return (a.distance || Infinity) - (b.distance || Infinity);
-  });
-
+  candidates.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
   return candidates;
 }
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const placeId = searchParams.get("placeId");
-
-  if (!placeId) {
+  const rawPlaceId = searchParams.get("placeId");
+  if (!rawPlaceId) {
     return NextResponse.json({ error: "placeId is required" }, { status: 400 });
   }
+  const placeId = normalizePlaceId(rawPlaceId);
 
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
@@ -436,14 +327,12 @@ export async function GET(request: NextRequest) {
   const removals: RemovalReason[] = [];
 
   try {
-    // Step 1: Fetch target place details
-    const targetPlace = await fetchPlaceDetails(placeId, apiKey);
+    // Step 1: Fetch target place details (Places API New v1)
+    const targetPlace = await fetchTargetPlaceDetails(placeId, apiKey);
     const { lat, lng } = targetPlace.location;
-    
-    // Determine target's primary type and family
+
     const targetPrimaryType = getPrimaryType(targetPlace.types);
     const targetFamily = getCategoryFamily(targetPrimaryType);
-    const humanizedType = targetPrimaryType ? humanizeType(targetPrimaryType) : null;
 
     console.log(
       "[competitors] placeId:",
@@ -459,20 +348,16 @@ export async function GET(request: NextRequest) {
       targetFamily
     );
 
-    // Step 2: Radius-fill algorithm - fill from closest first
+    // Step 2: Radius-fill using New API searchNearby
     const finalList: CompetitorResult[] = [];
     const seenPlaceIds = new Set<string>();
     let radiusUsed = 0;
     let rawResultsCount = 0;
 
     for (const radius of RADIUS_STEPS) {
-      // Stop if we already have enough
-      if (finalList.length >= MAX_COMPETITORS) {
-        break;
-      }
+      if (finalList.length >= MAX_COMPETITORS) break;
 
-      // Fetch all candidates from this radius
-      const candidates = await fillFromRadius(
+      const candidates = await fillFromRadiusNew(
         lat,
         lng,
         radius,
@@ -480,7 +365,6 @@ export async function GET(request: NextRequest) {
         placeId,
         targetPrimaryType,
         targetFamily,
-        humanizedType,
         removals
       );
 

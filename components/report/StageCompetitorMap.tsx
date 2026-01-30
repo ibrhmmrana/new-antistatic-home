@@ -35,6 +35,8 @@ interface CompetitorsData {
 
 const libraries: ("places")[] = ["places"];
 const MIN_COMPETITORS = 3;
+/** Minimum time (ms) to show the stage before advancing so the user can see the map and pins. */
+const MIN_STAGE_DISPLAY_MS = 4000;
 
 export default function StageCompetitorMap({
   placeId,
@@ -64,6 +66,8 @@ export default function StageCompetitorMap({
   const competitorInfoWindowsRef = useRef<google.maps.OverlayView[]>([]);
   const mapInitializedRef = useRef(false);
   const onCompleteCalledRef = useRef(false);
+  /** When we first had data (so we can enforce minimum display time before advancing). */
+  const stageReadyAtRef = useRef<number | null>(null);
 
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
@@ -133,6 +137,7 @@ export default function StageCompetitorMap({
             // Validate cached data
             if (competitorsData.target?.location && competitorsData.competitors) {
               console.log("[competitors] Using pre-loaded data from localStorage");
+              stageReadyAtRef.current = Date.now();
               setData(competitorsData);
               // Set status to "plotting" to skip loading screen and start showing competitors
               // The map initialization effect will handle the rest
@@ -176,6 +181,7 @@ export default function StageCompetitorMap({
           localStorage.setItem(`competitors_${scanId}`, JSON.stringify(competitorsData));
         }
 
+        stageReadyAtRef.current = Date.now();
         setData(competitorsData);
       } catch (err: any) {
         console.error("Error fetching competitors:", err);
@@ -317,14 +323,12 @@ export default function StageCompetitorMap({
         if (boundsRef.current && map) {
           applyFitBounds(map, boundsRef.current);
         }
-        // Call onComplete callback after a short delay (handles both cases: with/without competitors)
-        // Note: If there are competitors, onComplete will also be called when last pin drops
-        // So we use a ref to ensure it's only called once
+        // Call onComplete after minimum display time so the stage isn't a split-second flash
         if (data.competitors.length === 0 && !onCompleteCalledRef.current) {
           onCompleteCalledRef.current = true;
-          setTimeout(() => {
-            onComplete?.();
-          }, 500);
+          const elapsed = stageReadyAtRef.current != null ? Date.now() - stageReadyAtRef.current : 0;
+          const delay = Math.max(500, MIN_STAGE_DISPLAY_MS - elapsed);
+          setTimeout(() => onComplete?.(), delay);
         }
       }
       return;
@@ -487,12 +491,12 @@ export default function StageCompetitorMap({
           }
         }
         
-        // If this is the last competitor, call onComplete after a short delay
+        // If this is the last competitor, call onComplete after minimum display time
         if (isLast && !onCompleteCalledRef.current) {
           onCompleteCalledRef.current = true;
-          setTimeout(() => {
-            onComplete?.();
-          }, 500);
+          const elapsed = stageReadyAtRef.current != null ? Date.now() - stageReadyAtRef.current : 0;
+          const delay = Math.max(500, MIN_STAGE_DISPLAY_MS - elapsed);
+          setTimeout(() => onComplete?.(), delay);
         }
 
         return updated;

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchPlaceDetailsNew } from "@/lib/places/placeDetailsNew";
 
 interface NormalizedReview {
   reviewId: string;
@@ -19,12 +20,11 @@ function selectReviewVariety(reviews: NormalizedReview[]): NormalizedReview[] {
   if (reviews.length === 0) return [];
   if (reviews.length <= 5) return reviews.slice(0, 5);
 
-  // Group by rating buckets
   const buckets: Record<string, NormalizedReview[]> = {
-    low: [], // 1-2 stars
-    three: [], // 3 stars
-    four: [], // 4 stars
-    five: [], // 5 stars
+    low: [],
+    three: [],
+    four: [],
+    five: [],
   };
 
   reviews.forEach((review) => {
@@ -35,16 +35,10 @@ function selectReviewVariety(reviews: NormalizedReview[]): NormalizedReview[] {
     else if (rating === 5) buckets.five.push(review);
   });
 
-  // Sort each bucket by recency (newest first)
-  // Use time if available, otherwise keep original order (Google API returns most recent first)
   const sortByRecency = (a: NormalizedReview, b: NormalizedReview) => {
-    if (a.time && b.time) {
-      return b.time - a.time; // Higher time = newer
-    }
-    // If only one has time, prioritize it
+    if (a.time && b.time) return b.time - a.time;
     if (a.time && !b.time) return -1;
     if (!a.time && b.time) return 1;
-    // If neither has time, keep original order (Google API typically returns newest first)
     return 0;
   };
 
@@ -55,7 +49,6 @@ function selectReviewVariety(reviews: NormalizedReview[]): NormalizedReview[] {
   const selected: NormalizedReview[] = [];
   const seenIds = new Set<string>();
 
-  // Helper to add review if not already selected
   const addIfNotSeen = (review: NormalizedReview) => {
     if (!seenIds.has(review.reviewId) && selected.length < 5) {
       selected.push(review);
@@ -63,74 +56,38 @@ function selectReviewVariety(reviews: NormalizedReview[]): NormalizedReview[] {
     }
   };
 
-  // Ideal mix: 1 low, 1 three, 1 four, 2 five
-  if (buckets.low.length > 0) {
-    addIfNotSeen(buckets.low[0]);
-  }
-  if (buckets.three.length > 0) {
-    addIfNotSeen(buckets.three[0]);
-  }
-  if (buckets.four.length > 0) {
-    addIfNotSeen(buckets.four[0]);
-  }
-  // Add up to 2 five-star reviews
+  if (buckets.low.length > 0) addIfNotSeen(buckets.low[0]);
+  if (buckets.three.length > 0) addIfNotSeen(buckets.three[0]);
+  if (buckets.four.length > 0) addIfNotSeen(buckets.four[0]);
   if (buckets.five.length > 0) {
     addIfNotSeen(buckets.five[0]);
-    if (buckets.five.length > 1 && selected.length < 5) {
-      addIfNotSeen(buckets.five[1]);
-    }
+    if (buckets.five.length > 1 && selected.length < 5) addIfNotSeen(buckets.five[1]);
   }
 
-  // Fill remaining slots with fallback logic
   while (selected.length < 5) {
     let added = false;
-
-    // Try to fill from nearest buckets if ideal buckets are empty
-    if (selected.length < 5 && buckets.low.length > 0) {
-      const next = buckets.low.find((r) => !seenIds.has(r.reviewId));
+    for (const key of ["low", "three", "four", "five"]) {
+      const next = buckets[key].find((r) => !seenIds.has(r.reviewId));
       if (next) {
         addIfNotSeen(next);
         added = true;
       }
     }
-    if (selected.length < 5 && buckets.three.length > 0) {
-      const next = buckets.three.find((r) => !seenIds.has(r.reviewId));
-      if (next) {
-        addIfNotSeen(next);
-        added = true;
-      }
-    }
-    if (selected.length < 5 && buckets.four.length > 0) {
-      const next = buckets.four.find((r) => !seenIds.has(r.reviewId));
-      if (next) {
-        addIfNotSeen(next);
-        added = true;
-      }
-    }
-    if (selected.length < 5 && buckets.five.length > 0) {
-      const next = buckets.five.find((r) => !seenIds.has(r.reviewId));
-      if (next) {
-        addIfNotSeen(next);
-        added = true;
-      }
-    }
-
-    // If we couldn't add any, break to avoid infinite loop
     if (!added) break;
   }
 
-  // If all reviews are 5★, just pick the 5 most recent
   if (selected.length === 0 && buckets.five.length > 0) {
     return buckets.five.slice(0, 5);
   }
-
   return selected.slice(0, 5);
 }
+
+const REVIEWS_FIELD_MASK = ["id", "displayName", "reviews"] as const;
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const placeId = searchParams.get("placeId");
-  const returnAll = searchParams.get("all") === "true"; // Optional parameter to return all reviews
+  const returnAll = searchParams.get("all") === "true";
 
   if (!placeId) {
     return NextResponse.json(
@@ -149,56 +106,44 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Request reviews field along with name
-    const fields = ["name", "reviews"].join(",");
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${apiKey}`;
-    
-    const response = await fetch(url, {
-      next: { revalidate: 3600 }, // Cache for 1 hour
-    });
+    const result = await fetchPlaceDetailsNew(
+      placeId,
+      [...REVIEWS_FIELD_MASK],
+      apiKey
+    );
 
-    if (!response.ok) {
-      throw new Error(`Google Places API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+    if (!result) {
       return NextResponse.json(
-        { error: data.error_message || "Failed to fetch place reviews" },
+        { error: "Failed to fetch place reviews" },
         { status: 400 }
       );
     }
 
-    const result = data.result || {};
-    const reviews = result.reviews || [];
-    
-    // Normalize and filter reviews (Google Places API typically returns up to 5 reviews)
-    // We'll process all available reviews for variety selection
+    const reviews = result.reviews ?? [];
     const normalizedReviews = reviews
-      .filter((review: any) => review.text && review.text.trim().length > 0) // Filter empty text
+      .filter((r: { text?: string }) => r.text && r.text.trim().length > 0)
       .map((review: any, index: number) => ({
-        reviewId: review.author_name + (review.time || index), // Create stable ID
-        authorName: review.author_name || "Anonymous",
-        profilePhotoUrl: review.profile_photo_url || null,
-        relativeTime: review.relative_time_description || null,
-        rating: review.rating || 0,
-        text: review.text || "",
-        // Check if reviewer is a Local Guide (Google sometimes includes this in author_url or we can infer from profile)
-        isLocalGuide: review.author_url?.includes("maps/contrib") || false,
-        time: review.time || null, // For sorting by recency
-          }))
-          // De-duplicate by reviewId
-          .filter((review: NormalizedReview, index: number, self: NormalizedReview[]) => 
-            index === self.findIndex((r) => r.reviewId === review.reviewId)
-          );
-    
-    // Return all reviews if requested, otherwise select 5 with rating variety
-    const reviewsToReturn = returnAll ? normalizedReviews : selectReviewVariety(normalizedReviews);
+        reviewId: (review.author_name ?? "anon") + (review.time ?? index),
+        authorName: review.author_name ?? "Anonymous",
+        profilePhotoUrl: review.profile_photo_url ?? null,
+        relativeTime: review.relative_time_description ?? null,
+        rating: review.rating ?? 0,
+        text: review.text ?? "",
+        isLocalGuide: false,
+        time: review.time ?? null,
+      }))
+      .filter(
+        (r: NormalizedReview, i: number, self: NormalizedReview[]) =>
+          i === self.findIndex((x) => x.reviewId === r.reviewId)
+      );
+
+    const reviewsToReturn = returnAll
+      ? normalizedReviews
+      : selectReviewVariety(normalizedReviews);
 
     return NextResponse.json({
-      placeId,
-      name: result.name || "",
+      placeId: result.place_id ?? placeId,
+      name: result.name ?? "",
       reviews: reviewsToReturn,
     });
   } catch (error) {
@@ -209,4 +154,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

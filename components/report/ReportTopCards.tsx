@@ -36,15 +36,15 @@ export default function ReportTopCards({
         if (!detailsResponse.ok) return;
         
         const detailsData = await detailsResponse.json();
-        // The API returns photoRef directly
+        // Prefer direct photoUri from New API; fallback to legacy proxy
+        if (detailsData.photoUri) {
+          setPhotoUrl(detailsData.photoUri);
+          return;
+        }
         const photoRef = detailsData.photoRef;
-        
         if (!photoRef) return;
-        
-        // Fetch the actual photo using the photo reference
         const photoResponse = await fetch(`/api/places/photo?ref=${encodeURIComponent(photoRef)}&maxw=200`);
         if (photoResponse.ok) {
-          // Convert blob to object URL
           const blob = await photoResponse.blob();
           const url = URL.createObjectURL(blob);
           setPhotoUrl(url);

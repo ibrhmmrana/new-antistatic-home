@@ -1,4 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  fetchPlaceDetailsNew,
+  fetchFirstPhotoUri,
+} from "@/lib/places/placeDetailsNew";
+
+const DETAILS_FIELD_MASK = [
+  "id",
+  "displayName",
+  "formattedAddress",
+  "location",
+  "rating",
+  "userRatingCount",
+  "types",
+  "websiteUri",
+  "internationalPhoneNumber",
+  "nationalPhoneNumber",
+  "regularOpeningHours",
+  "editorialSummary",
+  "photos",
+  "googleMapsUri",
+] as const;
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -21,45 +42,20 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Request all fields needed for GBP card
-    const fields = [
-      "name",
-      "rating",
-      "user_ratings_total",
-      "types",
-      "photos",
-      "geometry/location",
-      "editorial_summary",
-      "formatted_address",
-      "website", // CRITICAL: Add website field to get business website URL
-      "url",
-      "international_phone_number",
-      "formatted_phone_number",
-      "opening_hours",
-    ].join(",");
+    const result = await fetchPlaceDetailsNew(
+      placeId,
+      [...DETAILS_FIELD_MASK],
+      apiKey
+    );
 
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${apiKey}`;
-    
-    const response = await fetch(url, {
-      next: { revalidate: 3600 }, // Cache for 1 hour
-    });
-
-    if (!response.ok) {
-      throw new Error(`Google Places API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+    if (!result) {
       return NextResponse.json(
-        { error: data.error_message || "Failed to fetch place details" },
+        { error: "Failed to fetch place details" },
         { status: 400 }
       );
     }
 
-    const result = data.result || {};
-    
-    // Extract primary category from types (exclude generic types)
+    const types = result.types ?? [];
     const genericTypes = [
       "point_of_interest",
       "establishment",
@@ -72,39 +68,39 @@ export async function GET(request: NextRequest) {
       "administrative_area_level_2",
       "country",
     ];
-    
-    const types = result.types || [];
-    const primaryType = types.find((t: string) => !genericTypes.includes(t)) || types[0] || "";
-    
-    // Convert type to human-readable category label
+    const primaryType =
+      types.find((t: string) => !genericTypes.includes(t)) ?? types[0] ?? "";
     const categoryLabel = primaryType
       ? primaryType
           .split("_")
           .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
           .join(" ")
       : "";
-    
-    // Extract photo reference
-    const photoRef = result.photos?.[0]?.photo_reference || null;
-    
-    // Extract description from editorial_summary
-    const description = result.editorial_summary?.overview || null;
-    
+
+    const description = result.editorial_summary?.overview ?? null;
+    const firstPhotoName = result.photos?.[0]?.name;
+    const photoUri =
+      firstPhotoName != null
+        ? await fetchFirstPhotoUri(firstPhotoName, apiKey, 900)
+        : null;
+
     return NextResponse.json({
-      placeId,
-      name: result.name || "",
-      rating: result.rating || null,
-      userRatingsTotal: result.user_ratings_total || 0,
-      types: types,
+      placeId: result.place_id ?? placeId,
+      name: result.name ?? "",
+      rating: result.rating ?? null,
+      userRatingsTotal: result.user_ratings_total ?? 0,
+      types,
       categoryLabel,
       description,
-      address: result.formatted_address || "",
-      location: result.geometry?.location || null,
-      photoRef,
-      website: result.website || null,
-      url: result.url || null,
-      phoneNumber: result.international_phone_number || result.formatted_phone_number || null,
-      openingHours: result.opening_hours || null,
+      address: result.formatted_address ?? "",
+      location: result.geometry?.location ?? null,
+      photoRef: null,
+      photoUri: photoUri ?? undefined,
+      website: result.website ?? null,
+      url: result.url ?? null,
+      phoneNumber:
+        result.international_phone_number ?? result.formatted_phone_number ?? null,
+      openingHours: result.opening_hours ?? null,
     });
   } catch (error) {
     console.error("Error fetching place details:", error);
@@ -114,4 +110,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

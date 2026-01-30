@@ -21,6 +21,7 @@ interface PlaceDetails {
   address: string;
   location: { lat: number; lng: number } | null;
   photoRef: string | null;
+  photoUri?: string | null;
   website: string | null;
   url: string | null;
   phoneNumber: string | null;
@@ -188,9 +189,11 @@ export default function StageGoogleBusinessProfile({
     );
   }
 
-  const photoUrl = data.photoRef
-    ? `/api/places/photo?ref=${encodeURIComponent(data.photoRef)}&maxwidth=900`
-    : null;
+  const photoUrl = data.photoUri
+    ? data.photoUri
+    : data.photoRef
+      ? `/api/places/photo?ref=${encodeURIComponent(data.photoRef)}&maxwidth=900`
+      : null;
 
   const mapUrl = data.location
     ? `/api/places/static-map?lat=${data.location.lat}&lng=${data.location.lng}&zoom=16`
