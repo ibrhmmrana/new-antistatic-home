@@ -25,7 +25,7 @@ export function GlitchLogo({
 
   useEffect(() => {
     let alive = true;
-    let t: ReturnType<typeof setTimeout> | undefined;
+    let t: number | undefined;
 
     const rand = (a: number, b: number) =>
       Math.floor(a + Math.random() * (b - a));
