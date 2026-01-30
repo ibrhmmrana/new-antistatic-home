@@ -7,10 +7,16 @@ import chromium from '@sparticuz/chromium';
 import { resolveBusinessIdentity, BusinessIdentity, WebsiteExtractedData } from '@/lib/business/resolveBusinessIdentity';
 import { getSearchVisibility, SearchVisibilityResult } from '@/lib/seo/searchVisibility';
 import { getCompetitorSnapshot, CompetitorsSnapshot } from '@/lib/seo/competitors';
+import { getRequestId } from '@/lib/net/requestId';
+import { fetchWithTimeout } from '@/lib/net/fetchWithTimeout';
+import { consumeBody } from '@/lib/net/consumeBody';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const TIMEOUT_MS = 60000; // 60 seconds
+const ROUTE_HARD_TIMEOUT_MS = 55000; // Return 504 before platform kills; must be < maxDuration
 
 // Simple mutex to prevent concurrent browser launches
 let browserLaunchLock = false;
@@ -1920,10 +1926,11 @@ async function scrapePage(
 
 async function fetchRobotsTxt(domain: string): Promise<string | null> {
   try {
-    const response = await fetch(`https://${domain}/robots.txt`);
+    const response = await fetchWithTimeout(`https://${domain}/robots.txt`, { timeoutMs: 8000, retries: 1 });
     if (response.ok) {
       return await response.text();
     }
+    await consumeBody(response);
   } catch {
     // Ignore errors
   }
@@ -1940,7 +1947,7 @@ async function fetchSitemap(domain: string): Promise<string[]> {
   
   for (const sitemapUrl of potentialSitemaps) {
     try {
-      const response = await fetch(sitemapUrl);
+      const response = await fetchWithTimeout(sitemapUrl, { timeoutMs: 8000, retries: 1 });
       if (response.ok) {
         const text = await response.text();
         // Extract URLs from sitemap
@@ -1953,6 +1960,8 @@ async function fetchSitemap(domain: string): Promise<string[]> {
             }
           }
         }
+      } else {
+        await consumeBody(response);
       }
     } catch {
       // Ignore errors
@@ -1964,16 +1973,17 @@ async function fetchSitemap(domain: string): Promise<string[]> {
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  
+  const rid = getRequestId(request);
+
   try {
     const body = await request.json();
     const { url, maxDepth = 2, maxPages = 20, stage1Competitors } = body;
-    
+
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
-    
-    console.log(`[WEBSITE-SCRAPE] Starting scrape for: ${url}`);
+
+    console.log(`[RID ${rid}] [WEBSITE-SCRAPE] Starting scrape for: ${url}`);
     
     // Parse the URL
     let targetUrl: URL;
@@ -1985,17 +1995,22 @@ export async function POST(request: NextRequest) {
     
     const baseDomain = targetUrl.hostname;
     const baseUrl = targetUrl.origin;
-    
+
+    const timeoutPromise = new Promise<{ _timeout: true }>((resolve) => {
+      setTimeout(() => resolve({ _timeout: true }), ROUTE_HARD_TIMEOUT_MS);
+    });
+
+    const runPromise = (async (): Promise<NextResponse> => {
     // Launch browser
     const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
     const localExecutablePath = process.env.CHROME_PATH || process.env.CHROME_EXECUTABLE_PATH;
-    
+
     const executablePath = isServerless
       ? await chromium.executablePath()
       : (localExecutablePath || undefined);
-    
-    console.log(`[WEBSITE-SCRAPE] Launching browser (headless: true)...`);
-    
+
+    console.log(`[RID ${rid}] [WEBSITE-SCRAPE] Launching browser (headless: true)...`);
+
     const browser = await launchBrowserWithRetry(executablePath, !!isServerless);
     
     const context = await browser.newContext({
@@ -2427,12 +2442,30 @@ export async function POST(request: NextRequest) {
       await browser.close();
       throw error;
     }
+    })();
+
+    const raceResult = await Promise.race([runPromise, timeoutPromise]);
+    if (raceResult && typeof raceResult === 'object' && '_timeout' in raceResult && raceResult._timeout) {
+      console.error(`[RID ${rid}] [WEBSITE-SCRAPE] Timeout after ${ROUTE_HARD_TIMEOUT_MS}ms`);
+      return NextResponse.json(
+        { rid, error: 'Upstream timeout' },
+        { status: 504 }
+      );
+    }
+    return raceResult as NextResponse;
     
   } catch (error) {
-    console.error('[WEBSITE-SCRAPE] Error:', error);
+    const rid = getRequestId(request);
+    const isTimeout =
+      error instanceof Error &&
+      (error.name === 'AbortError' || /timeout|aborted/i.test(error.message ?? ''));
+    console.error(`[RID ${rid}] [WEBSITE-SCRAPE] Error:`, error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      {
+        rid,
+        error: isTimeout ? 'Upstream timeout' : (error instanceof Error ? error.message : 'Unknown error'),
+      },
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }
