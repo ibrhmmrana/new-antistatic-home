@@ -4,6 +4,16 @@ import { useState, useEffect, useMemo } from "react";
 import { AlertTriangle } from "lucide-react";
 import type { ImpactCard, CompetitorsCard, ChecklistSection } from "@/lib/report/types";
 
+/** AI analysis result shape (topPriorities only) for issues card */
+interface AIAnalysisForTopCards {
+  topPriorities?: Array<{
+    priority: number;
+    source: string;
+    issue: string;
+    recommendation: string;
+  }>;
+}
+
 interface ReportTopCardsProps {
   impact: ImpactCard;
   competitors: CompetitorsCard;
@@ -12,6 +22,10 @@ interface ReportTopCardsProps {
   businessAvatar?: string | null;
   placeId?: string | null;
   sections?: ChecklistSection[];
+  /** Overall score label (Good / Okay / Poor) for score-based background on issues card */
+  overallGrade?: string;
+  /** AI analysis: used to show top priorities + section with lowest score as action */
+  aiAnalysis?: AIAnalysisForTopCards | null;
 }
 
 export default function ReportTopCards({
@@ -22,6 +36,8 @@ export default function ReportTopCards({
   businessAvatar,
   placeId,
   sections,
+  overallGrade,
+  aiAnalysis,
 }: ReportTopCardsProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   
@@ -67,67 +83,63 @@ export default function ReportTopCards({
   // Use photo from Places API, then passed businessAvatar, then fallback to impact.businessAvatar
   const avatarUrl = photoUrl || businessAvatar || impact.businessAvatar;
   
-  // Extract top 3 issues from all sections
+  // Top issues: prefer AI analysis top priorities + section with lowest score as action; else fallback to checklist/sections
   const topIssues = useMemo(() => {
-    if (!sections || sections.length === 0) {
-      // Fallback to impact.topProblems if sections not provided
-      return impact.topProblems.slice(0, 3);
+    const priorities = aiAnalysis?.topPriorities;
+    const hasAiPriorities = Array.isArray(priorities) && priorities.length > 0;
+    const hasSections = sections && sections.length > 0;
+
+    if (hasAiPriorities && hasSections) {
+      // Section with lowest score (by ratio) → action heading
+      const lowestSection = [...sections].sort(
+        (a, b) => (a.score / Math.max(1, a.maxScore)) - (b.score / Math.max(1, b.maxScore))
+      )[0];
+      const title = lowestSection?.title?.trim() ?? "";
+      const actionLabel = lowestSection
+        ? title.toLowerCase().startsWith("improve ")
+          ? title
+          : `Improve ${title}`
+        : null;
+      const aiLabels = priorities.slice(0, 3).map((p) => p.issue.trim()).filter(Boolean);
+      const combined: string[] = [];
+      if (actionLabel) combined.push(actionLabel);
+      aiLabels.forEach((label) => {
+        if (combined.length < 3 && !combined.includes(label)) combined.push(label);
+      });
+      return combined.slice(0, 3).map((label) => ({ label }));
     }
-    
+
+    // Fallback: from sections/checks or impact.topProblems
+    if (!hasSections) {
+      return (impact.topProblems || []).slice(0, 3).map((p) => ({ label: p.label }));
+    }
+
     const allIssues: Array<{ label: string; impact: 'high' | 'medium' | 'low'; status: 'bad' | 'warn' }> = [];
-    
-    // Collect all issues from all sections
-    sections.forEach(section => {
-      section.checks.forEach(check => {
+    sections.forEach((section) => {
+      section.checks.forEach((check) => {
         if (check.status === 'bad' || check.status === 'warn') {
-          // Determine impact level based on check key
           const highImpactKeys = [
-            'h1_service_area',
-            'h1_keywords',
-            'primary_cta',
-            'contact_phone',
-            'gbp_website',
-            'indexability',
-            'gbp_description',
-            'gbp_hours',
-            'gbp_phone',
+            'h1_service_area', 'h1_keywords', 'primary_cta', 'contact_phone',
+            'gbp_website', 'indexability', 'gbp_description', 'gbp_hours', 'gbp_phone',
           ];
           const mediumImpactKeys = [
-            'meta_desc_service_area',
-            'meta_desc_keywords',
-            'trust_testimonials',
-            'gbp_social_links',
-            'gbp_price_range',
+            'meta_desc_service_area', 'meta_desc_keywords', 'trust_testimonials',
+            'gbp_social_links', 'gbp_price_range',
           ];
-          
           let impactLevel: 'high' | 'medium' | 'low' = 'low';
           if (highImpactKeys.includes(check.key)) impactLevel = 'high';
           else if (mediumImpactKeys.includes(check.key)) impactLevel = 'medium';
-          
-          allIssues.push({
-            label: check.label,
-            impact: impactLevel,
-            status: check.status,
-          });
+          allIssues.push({ label: check.label, impact: impactLevel, status: check.status });
         }
       });
     });
-    
-    // Sort by impact (high first), then by status (bad first), then take top 3
     allIssues.sort((a, b) => {
-      const impactOrder = { high: 3, medium: 2, low: 1 };
-      if (impactOrder[a.impact] !== impactOrder[b.impact]) {
-        return impactOrder[b.impact] - impactOrder[a.impact];
-      }
-      // Bad issues come before warnings
-      if (a.status !== b.status) {
-        return a.status === 'bad' ? -1 : 1;
-      }
-      return 0;
+      const o = { high: 3, medium: 2, low: 1 };
+      if (o[a.impact] !== o[b.impact]) return o[b.impact] - o[a.impact];
+      return a.status === 'bad' ? -1 : 1;
     });
-    
-    return allIssues.slice(0, 3).map(issue => ({ label: issue.label }));
-  }, [sections, impact.topProblems]);
+    return allIssues.slice(0, 3).map((issue) => ({ label: issue.label }));
+  }, [sections, impact.topProblems, aiAnalysis?.topPriorities]);
   
   // Generate problem-focused header
   const getImpactHeader = () => {
@@ -138,9 +150,12 @@ export default function ReportTopCards({
   };
   
   return (
-    <div className="grid grid-cols-2 gap-6 mb-8">
-      {/* Impact Card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-md">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      {/* Impact Card - score-based background only below desktop (see .report-issues-card in globals.css) */}
+      <div
+        className="report-issues-card rounded-xl border border-gray-200 p-6 shadow-md bg-white"
+        {...(overallGrade ? { "data-grade": overallGrade } : {})}
+      >
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           {getImpactHeader()}
         </h3>
@@ -215,7 +230,7 @@ export default function ReportTopCards({
         </h3>
         
         {/* Scrollable list showing 5 items, scroll to see more */}
-        <div className="max-h-[180px] overflow-y-auto space-y-0.5 pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="md:max-h-[180px] md:overflow-y-auto space-y-0.5 pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {competitors.list.map((competitor) => (
             <div 
               key={competitor.rank} 

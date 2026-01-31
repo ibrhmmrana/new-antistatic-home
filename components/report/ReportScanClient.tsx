@@ -1174,8 +1174,8 @@ export default function ReportScanClient({
 
   return (
     <div className="min-h-screen bg-[#f6f7f8] flex">
-      {/* Left Sidebar */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+      {/* Left Sidebar - hidden on mobile during onboarding */}
+      <div className="hidden md:flex w-80 flex-shrink-0 bg-white border-r border-gray-200 flex-col">
         <div className="p-6 border-b border-gray-200">
           <h1 className="text-xl font-semibold text-gray-900">Scanning…</h1>
         </div>
@@ -1270,7 +1270,7 @@ export default function ReportScanClient({
               ) : currentStep === 2 ? (
                 // Competitors - Real Google Map (Owner.com style - no card wrapper)
                 <div className="absolute inset-0">
-                  <AIAgentModal stage={1} stageName={`${name} competitors`} />
+                  <AIAgentModal stage={1} stageName={`${name} competitors`} moveDownOnMobile />
                   <StageCompetitorMap 
                     placeId={placeId} 
                     name={name}
@@ -1343,6 +1343,42 @@ export default function ReportScanClient({
                   </div>
                 </div>
               )}
+        </div>
+      </div>
+
+      {/* Mobile: floating footer with current stage */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-20 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/80 px-4 py-3 flex items-center justify-between gap-3">
+          <button
+            onClick={handlePrevious}
+            disabled={currentStep === 0}
+            className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+              currentStep === 0
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
+          >
+            Previous
+          </button>
+          <div className="flex-1 min-w-0 text-center">
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {steps[currentStep]?.label}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Step {currentStep + 1} of 6
+            </p>
+          </div>
+          <button
+            onClick={handleNext}
+            disabled={currentStep === 5}
+            className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+              currentStep === 5
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
+          >
+            Next
+          </button>
         </div>
       </div>
 

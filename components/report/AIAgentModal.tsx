@@ -6,6 +6,8 @@ import { Sparkles } from "lucide-react";
 interface AIAgentModalProps {
   stage: number;
   stageName: string;
+  /** On mobile only, position the modal lower (e.g. for competitors map stage) */
+  moveDownOnMobile?: boolean;
 }
 
 // Stage-specific analysis messages
@@ -47,7 +49,7 @@ const STAGE_MESSAGES: Record<number, string[]> = {
   ],
 };
 
-export default function AIAgentModal({ stage, stageName }: AIAgentModalProps) {
+export default function AIAgentModal({ stage, stageName, moveDownOnMobile }: AIAgentModalProps) {
   const messages = STAGE_MESSAGES[stage] || STAGE_MESSAGES[4];
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
 
@@ -60,7 +62,11 @@ export default function AIAgentModal({ stage, stageName }: AIAgentModalProps) {
   }, [messages.length]);
 
   return (
-    <div className="fixed top-6 right-6 z-50 animate-fadeIn">
+    <div
+      className={`fixed right-6 z-50 animate-fadeIn ${
+        moveDownOnMobile ? "top-[28%] md:top-6" : "top-6"
+      }`}
+    >
       <div className="bg-white/10 backdrop-blur-2xl rounded-xl border border-white/30 shadow-2xl p-4 min-w-[280px] backdrop-saturate-150">
         <div className="flex items-center gap-3">
           <div className="relative">

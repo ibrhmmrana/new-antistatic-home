@@ -144,7 +144,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
         <Sparkles className="w-6 h-6 text-blue-600" />
         <h2 className="text-xl font-semibold text-gray-900">AI-Powered Analysis</h2>
         <div className="ml-auto px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-          Overall Score: {analysis.overallScore}/100
+          {analysis.overallScore}/100
         </div>
       </div>
 

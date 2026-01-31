@@ -81,13 +81,24 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
     );
   };
   
+  const fixButton = (
+    <button className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors md:mt-auto">
+      <Sparkles className="w-4 h-4" />
+      <span>Fix in 35 seconds</span>
+    </button>
+  );
+
   return (
-    <div className="w-64 sticky top-4 p-8 flex flex-col items-center overflow-y-auto rounded-2xl ml-4 border-2"
-         style={{
-           height: 'calc(100vh - 2rem)',
-           backgroundColor: getBackgroundColor(overall.label),
-           borderColor: getBorderColor(overall.label),
-         }}>
+    <>
+      {/* Sidebar - hidden on mobile */}
+      <div
+        className="hidden md:flex flex-shrink-0 w-64 sticky top-4 p-8 flex-col items-center overflow-y-auto rounded-2xl ml-4 border-2"
+        style={{
+          height: 'calc(100vh - 2rem)',
+          backgroundColor: getBackgroundColor(overall.label),
+          borderColor: getBorderColor(overall.label),
+        }}
+      >
       {/* Circular Gauge */}
       <div className="relative w-40 h-40 mb-4">
         <svg className="transform -rotate-90 w-40 h-40">
@@ -188,11 +199,19 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
         </div>
       </div>
       
-      {/* CTA Button */}
-      <button className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors mt-auto">
-        <Sparkles className="w-4 h-4" />
-        <span>Fix in 35 seconds</span>
-      </button>
+      {/* CTA Button - inside sidebar on desktop */}
+      {fixButton}
     </div>
+
+      {/* Mobile: floating Fix it button at bottom */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 p-4 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))] pointer-events-none">
+        <div className="pointer-events-auto w-full max-w-[320px]">
+          <button className="w-full bg-blue-600 text-white py-3 px-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg">
+            <Sparkles className="w-4 h-4" />
+            <span>Fix in 35 seconds</span>
+          </button>
+        </div>
+      </div>
+    </>
   );
 }

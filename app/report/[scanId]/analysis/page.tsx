@@ -410,12 +410,12 @@ export default function AnalysisPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#f6f7f8] flex">
-      {/* Left Rail */}
+    <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex">
+      {/* Left Rail - hidden on mobile; score content shown in main flow via ReportTopCards etc. */}
       <ReportLeftRail scores={report.scores} />
       
       {/* Main Content */}
-      <div className="flex-1 p-8">
+      <div className="flex-1 p-8 pb-24 md:pb-8">
         <div className="max-w-6xl mx-auto">
           {/* Top Cards */}
           <ReportTopCards
@@ -426,6 +426,8 @@ export default function AnalysisPage() {
             businessAvatar={report.summaryCards.impact.businessAvatar}
             placeId={report.meta.placeId}
             sections={report.sections}
+            overallGrade={report.scores.overall.label}
+            aiAnalysis={aiAnalysis}
           />
           
           {/* Search Visibility Table */}

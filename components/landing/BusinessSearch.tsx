@@ -27,6 +27,7 @@ export default function BusinessSearch() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const previewCardRef = useRef<HTMLDivElement>(null);
 
   const fetchPredictions = useCallback(async (input: string) => {
     if (input.length < 2) {
@@ -224,6 +225,40 @@ export default function BusinessSearch() {
     });
   };
 
+  // When preview card appears after selecting a business, scroll so the preview card is centered (slow, smooth)
+  useEffect(() => {
+    if (!placeDetails || !previewCardRef.current) return;
+    const el = previewCardRef.current;
+    const duration = 1000; // ms
+
+    let rafId: number;
+    const startScroll = () => {
+      const startY = window.scrollY;
+      const rect = el.getBoundingClientRect();
+      const targetY =
+        rect.top + startY - window.innerHeight / 2 + rect.height / 2;
+
+      let startTime: number | null = null;
+      const easeInOutCubic = (t: number) =>
+        t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+      const tick = (now: number) => {
+        if (startTime == null) startTime = now;
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = easeInOutCubic(progress);
+        window.scrollTo(0, startY + (targetY - startY) * eased);
+        if (progress < 1) rafId = requestAnimationFrame(tick);
+      };
+      rafId = requestAnimationFrame(tick);
+    };
+    // Measure and start after layout
+    rafId = requestAnimationFrame(() => {
+      requestAnimationFrame(startScroll);
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [placeDetails]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -350,7 +385,7 @@ export default function BusinessSearch() {
 
       {/* Business Card - Shown when business is selected */}
       {(placeDetails || isLoadingDetails) && (
-        <div className="w-full rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div ref={previewCardRef} className="w-full rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
           {isLoadingDetails ? (
             <div className="p-6 flex items-center justify-center">
               <Loader2 className="w-6 h-6 animate-spin text-gray-400" />

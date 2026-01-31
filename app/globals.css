@@ -50,6 +50,19 @@ body::-webkit-scrollbar {
   }
 }
 
+/* "We found X issues" card: score-based background only below desktop (md = 768px) */
+@media (max-width: 767px) {
+  .report-issues-card[data-grade="Good"] {
+    background-color: #f0fdf4;
+  }
+  .report-issues-card[data-grade="Okay"] {
+    background-color: #fff7ed;
+  }
+  .report-issues-card[data-grade="Poor"] {
+    background-color: #fef2f2;
+  }
+}
+
 /* Page load: header eases in top-down */
 @keyframes heroHeaderSlideDown {
   from {
