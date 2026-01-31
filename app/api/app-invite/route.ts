@@ -50,8 +50,10 @@ export async function POST(request: NextRequest) {
       page: 1,
       perPage: 1000,
     });
-    const existing = listData?.users?.find(
-      (u) => (u.email || "").toLowerCase() === email.toLowerCase()
+    const users = listData?.users ?? [];
+    const existing = users.find(
+      (u: { email?: string | null }) =>
+        (u.email ?? "").toLowerCase() === email.toLowerCase()
     );
 
     if (!existing) {
