@@ -92,7 +92,7 @@ export default function Nav() {
             </div>
 
             {/* Desktop: Right Side Buttons */}
-            <div className="hidden lg:flex items-center gap-6">
+            <div className="hidden lg:flex items-center gap-3">
               <Link
                 href="https://app.antistatic.ai"
                 target="_blank"

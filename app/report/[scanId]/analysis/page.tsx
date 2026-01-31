@@ -4,26 +4,53 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { assembleReport } from "@/lib/report/assembleReport";
 import type { ReportSchema } from "@/lib/report/types";
-import ReportRenderer from "@/components/report/ReportRenderer";
+import type { ReportSnapshotV1, ReviewSnapshot, MarkerLocation } from "@/lib/report/snapshotTypes";
+import ReportLeftRail from "@/components/report/ReportLeftRail";
+import ReportTopCards from "@/components/report/ReportTopCards";
+import ReportSearchVisibility from "@/components/report/ReportSearchVisibility";
+import ReportChecklistSection from "@/components/report/ReportChecklistSection";
+import ReportAIAnalysis from "@/components/report/ReportAIAnalysis";
+import ReportGoogleReviews from "@/components/report/ReportGoogleReviews";
+import ShareButton from "@/components/report/ShareButton";
+
+// Helper function to extract username from URL
+function extractUsernameFromUrl(url: string, platform: 'instagram' | 'facebook'): string | null {
+  try {
+    const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+    const pathParts = urlObj.pathname.split('/').filter(Boolean);
+    
+    if (platform === 'instagram') {
+      // Instagram: instagram.com/username or instagram.com/username/
+      return pathParts[0] || null;
+    } else if (platform === 'facebook') {
+      // Facebook: facebook.com/username or facebook.com/username/
+      return pathParts[0] || null;
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export default function AnalysisPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
   const scanId = params?.scanId as string;
-  const placeId = searchParams?.get("placeId") || "";
-  const name = searchParams?.get("name") || "";
-  const addr = searchParams?.get("addr") || "";
+  const placeId = searchParams?.get('placeId') || '';
+  const placeName = searchParams?.get('name') || '';
+  const placeAddr = searchParams?.get('addr') || '';
 
-  const [byScanChecked, setByScanChecked] = useState(false);
-  const [existingReportId, setExistingReportId] = useState<string | null>(null);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  // Snapshot persistence state
+  const [reportId, setReportId] = useState<string | null>(null);
   const [persistError, setPersistError] = useState<string | null>(null);
-  const [persistLoading, setPersistLoading] = useState(false);
-  const [persistRetry, setPersistRetry] = useState(0);
-  const persistedRef = useRef(false);
-  const firstReportTimeRef = useRef<number | null>(null);
+  const [isPersisting, setIsPersisting] = useState(false);
+  const [snapshotWaitTick, setSnapshotWaitTick] = useState(0); // Triggers re-evaluation during AI wait
+  const persistedRef = useRef(false); // Prevent double-persist
+  const markerLocationsRef = useRef<Record<string, MarkerLocation>>({}); // Collect marker locations for snapshot
 
+  // State for all analyzers
   const [websiteResult, setWebsiteResult] = useState<any>(null);
   const [gbpAnalysis, setGbpAnalysis] = useState<any>(null);
   const [igResult, setIgResult] = useState<any>(null);
@@ -37,39 +64,21 @@ export default function AnalysisPage() {
     text: string;
     isLocalGuide: boolean;
   }>>([]);
-
+  
+  // Standardized report state
   const [report, setReport] = useState<ReportSchema | null>(null);
   const [placesDetails, setPlacesDetails] = useState<any>(null);
   const [socialsData, setSocialsData] = useState<any>(null);
+  
+  // AI Analysis state
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
-  const aiAnalysisTriggeredRef = useRef(false);
+  const aiAnalysisTriggeredRef = useRef(false); // Prevent duplicate AI analysis API calls
 
-  // Redirect if report already persisted for this scanId (avoids rerun for old URL)
+  // Load cached analysis results from localStorage
   useEffect(() => {
-    if (!scanId) {
-      setByScanChecked(true);
-      return;
-    }
-    fetch(`/api/public/reports/by-scan?scanId=${encodeURIComponent(scanId)}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        setByScanChecked(true);
-        if (data?.reportId) setExistingReportId(data.reportId);
-      })
-      .catch(() => setByScanChecked(true));
-  }, [scanId]);
-
-  useEffect(() => {
-    if (!existingReportId) return;
-    router.replace(`/r/${existingReportId}`);
-  }, [existingReportId, router]);
-
-  // Load cached analysis results from localStorage (skip if redirecting to existing report)
-  useEffect(() => {
-    if (!byScanChecked || existingReportId) return;
-    console.log("[ANALYSIS PAGE] Loading cached results from localStorage...");
-
+    console.log('[ANALYSIS PAGE] Loading cached results from localStorage...');
+    
     // Load website analysis
     const cachedWebsite = localStorage.getItem(`analysis_${scanId}_website`);
     if (cachedWebsite) {
@@ -258,77 +267,47 @@ export default function AnalysisPage() {
 
   // Assemble standardized report whenever data changes
   useEffect(() => {
-    if (!byScanChecked || existingReportId || !placeId) return;
+    if (!placeId) {
+      return;
+    }
+    
     try {
-      // Prefer localStorage for website so we get latest merge (search_visibility + crawl_map when website crawler completes)
-      let websiteCrawlData: typeof websiteResult = null;
-      if (typeof window !== "undefined") {
-        try {
-          const cachedWebsite = localStorage.getItem(`analysis_${scanId}_website`);
-          if (cachedWebsite) websiteCrawlData = JSON.parse(cachedWebsite);
-        } catch (_) {}
-      }
-      if (!websiteCrawlData) websiteCrawlData = websiteResult;
-      // Read from localStorage when state not yet updated (same race fix as websiteCrawlData)
-      let gbpForAssemble = gbpAnalysis?.analysis;
-      if (!gbpForAssemble && typeof window !== "undefined") {
-        try {
-          const cached = localStorage.getItem(`analysis_${scanId}_gbp`);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            gbpForAssemble = parsed?.analysis ?? parsed;
+      // FIX: Read websiteResult from localStorage directly to avoid race condition
+      // State updates are async, so we read from cache synchronously here
+      let websiteCrawlData = websiteResult;
+      if (!websiteCrawlData) {
+        const cachedWebsite = localStorage.getItem(`analysis_${scanId}_website`);
+        if (cachedWebsite) {
+          try {
+            websiteCrawlData = JSON.parse(cachedWebsite);
+          } catch (e) {
+            // Ignore parse errors, will use undefined
           }
-        } catch (_) {}
+        }
       }
-      let socialsForAssemble = socialsData;
-      if (!socialsForAssemble?.socialLinks?.length && typeof window !== "undefined") {
-        try {
-          const cached = localStorage.getItem(`onlinePresence_${scanId}`);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            socialsForAssemble = {
-              websiteUrl: parsed.websiteUrl ?? null,
-              websiteScreenshot: null,
-              socialLinks: (parsed.socialLinks ?? []).map((l: { platform?: string; url?: string }) => ({ platform: l.platform, url: l.url, screenshot: null })),
-            };
-          }
-        } catch (_) {}
-      }
-      let igForAssemble = igResult;
-      if (!igForAssemble && typeof window !== "undefined") {
-        try {
-          const cached = localStorage.getItem(`analysis_${scanId}_instagram`);
-          if (cached) igForAssemble = JSON.parse(cached);
-        } catch (_) {}
-      }
-      let fbForAssemble = fbResult;
-      if (!fbForAssemble && typeof window !== "undefined") {
-        try {
-          const cached = localStorage.getItem(`analysis_${scanId}_facebook`);
-          if (cached) fbForAssemble = JSON.parse(cached);
-        } catch (_) {}
-      }
-
+      
       const assembled = assembleReport({
         placeId,
-        placeName: placesDetails?.name || gbpForAssemble?.businessName || null,
+        placeName: placesDetails?.name || gbpAnalysis?.analysis?.businessName || null,
         placeAddress: placesDetails?.address ?? placesDetails?.formatted_address ?? null,
         placesDetails: placesDetails || undefined,
         websiteCrawl: websiteCrawlData || undefined,
-        gbpAnalysis: gbpForAssemble || undefined,
-        socials: socialsForAssemble || undefined,
-        instagram: igForAssemble || undefined,
-        facebook: fbForAssemble || undefined,
+        gbpAnalysis: gbpAnalysis?.analysis || undefined,
+        socials: socialsData || undefined,
+        instagram: igResult || undefined,
+        facebook: fbResult || undefined,
       });
       setReport(assembled);
     } catch (error) {
       console.error('[ANALYSIS PAGE] Failed to assemble report:', error);
     }
-  }, [byScanChecked, existingReportId, placeId, placesDetails, websiteResult, gbpAnalysis, igResult, fbResult, socialsData]);
+  }, [placeId, placesDetails, websiteResult, gbpAnalysis, igResult, fbResult, socialsData]);
 
   // Trigger AI analysis when all data is available
   useEffect(() => {
-    if (!byScanChecked || existingReportId || !placeId || !placesDetails) return;
+    if (!placeId || !placesDetails) {
+      return;
+    }
     
     // Check if we have enough data for AI analysis
     const hasEnoughData = (igResult || fbResult || reviews.length > 0);
@@ -421,110 +400,204 @@ export default function AnalysisPage() {
       .finally(() => {
         setAiAnalysisLoading(false);
       });
-  }, [byScanChecked, existingReportId, scanId, placeId, placesDetails, gbpAnalysis, igResult, fbResult, reviews, websiteResult, socialsData]);
+  }, [scanId, placeId, placesDetails, gbpAnalysis, igResult, fbResult, reviews, websiteResult, socialsData]);
 
-  // Persist report once when ready, then redirect to share URL (retry via persistRetry)
-  // Only persist when we have at least gbp or socials (or after fallback delay) so we don't save a partial report.
+  // === SNAPSHOT PERSISTENCE ===
+  // Persist snapshot and redirect to shareable URL once AI analysis is ready
+  // Track if we've started waiting for AI analysis
+  const aiWaitStartedRef = useRef<number | null>(null);
+  const AI_WAIT_TIMEOUT_MS = 60000; // Wait up to 60 seconds for AI analysis
+  
+  // Timer to trigger re-evaluation while waiting for AI
   useEffect(() => {
-    if (!byScanChecked || existingReportId || !report || !placeId) return;
-    if (persistedRef.current && persistRetry === 0) return;
-    if (persistRetry > 0) persistedRef.current = false;
-
-    if (firstReportTimeRef.current == null) firstReportTimeRef.current = Date.now();
-    const hasGbpOrSocials = !!(gbpAnalysis || (socialsData?.socialLinks?.length ?? 0));
-    const fallbackMs = 28000;
-    const waitedLongEnough = firstReportTimeRef.current && Date.now() - firstReportTimeRef.current >= fallbackMs;
-    if (!hasGbpOrSocials && !waitedLongEnough) return;
-
-    // When place has a website, wait for website crawler (crawl_map) so "Get your website to the top" and "Improve the experience" sections have content
-    const hasWebsite = !!(report.meta?.websiteUrl);
-    let hasCrawlMap = false;
-    if (typeof window !== "undefined" && hasWebsite) {
-      try {
-        const cached = localStorage.getItem(`analysis_${scanId}_website`);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          hasCrawlMap = !!(parsed?.crawl_map?.length);
-        }
-      } catch (_) {}
-    }
-    if (hasWebsite && !hasCrawlMap && !waitedLongEnough) return;
-
-    persistedRef.current = true;
-    setPersistLoading(true);
-    setPersistError(null);
-    // Include reviews and AI from localStorage if not in state yet (race)
-    let reviewsForPersist = reviews.length > 0 ? reviews : undefined;
-    if (!reviewsForPersist && typeof window !== "undefined") {
-      try {
-        const cached = localStorage.getItem(`analysis_${scanId}_reviews`);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          reviewsForPersist = parsed?.reviews ?? (Array.isArray(parsed) ? parsed : undefined);
-        }
-      } catch (_) {}
-    }
-    let aiForPersist = aiAnalysis ?? undefined;
-    if (!aiForPersist && typeof window !== "undefined") {
-      try {
-        const cached = localStorage.getItem(`analysis_${scanId}_ai`);
-        if (cached) aiForPersist = JSON.parse(cached);
-      } catch (_) {}
-    }
-    const reportWithExtras = {
-      ...report,
-      reviews: reviewsForPersist,
-      aiAnalysis: aiForPersist,
-    };
-    const sources: Record<string, unknown> = {};
-    try {
-      const cachedGbp = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_gbp`) : null;
-      if (cachedGbp) sources.gbp = JSON.parse(cachedGbp);
-      const cachedWebsite = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_website`) : null;
-      if (cachedWebsite) sources.website = JSON.parse(cachedWebsite);
-      const cachedReviews = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_reviews`) : null;
-      if (cachedReviews) {
-        const parsed = JSON.parse(cachedReviews);
-        sources.reviews = parsed?.reviews ?? parsed;
+    // Only run timer if we're waiting for AI and haven't persisted yet
+    if (persistedRef.current || isPersisting || reportId) return;
+    if (!report || !placeId) return;
+    
+    const hasAiAnalysis = aiAnalysis && typeof aiAnalysis === 'object' && Object.keys(aiAnalysis).length > 0;
+    if (hasAiAnalysis) return; // AI is ready, no need to poll
+    
+    // Poll every 2 seconds while waiting for AI
+    const timer = setInterval(() => {
+      setSnapshotWaitTick(t => t + 1);
+    }, 2000);
+    
+    return () => clearInterval(timer);
+  }, [report, placeId, aiAnalysis, isPersisting, reportId]);
+  
+  useEffect(() => {
+    // Skip if already persisted or persisting
+    if (persistedRef.current || isPersisting || reportId) return;
+    
+    // Need report to be assembled
+    if (!report) return;
+    
+    // Need placeId
+    if (!placeId) return;
+    
+    // Wait for AI analysis to be present (not just loading to finish)
+    // This ensures the AI analysis block is visible before redirect
+    const hasAiAnalysis = aiAnalysis && typeof aiAnalysis === 'object' && Object.keys(aiAnalysis).length > 0;
+    
+    if (!hasAiAnalysis) {
+      // Start tracking wait time
+      if (!aiWaitStartedRef.current) {
+        aiWaitStartedRef.current = Date.now();
+        console.log('[SNAPSHOT] Waiting for AI analysis to complete...');
+        return;
       }
-      const cachedIg = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_instagram`) : null;
-      if (cachedIg) sources.instagram = JSON.parse(cachedIg);
-      const cachedFb = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_facebook`) : null;
-      if (cachedFb) sources.facebook = JSON.parse(cachedFb);
-    } catch (_) {}
-    fetch("/api/public/reports/persist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        scanId,
-        placeId,
-        name: name || undefined,
-        addr: addr || undefined,
-        report: reportWithExtras,
-        sources: Object.keys(sources).length > 0 ? sources : undefined,
-      }),
-    })
-      .then((res) => {
-        return res.json().then((data) => ({ ok: res.ok, data }));
-      })
-      .then(({ ok, data }) => {
-        setPersistLoading(false);
-        if (ok && data.reportId && data.shareUrl) {
-          setShareUrl(data.shareUrl);
-          router.replace(`/r/${data.reportId}`);
-        } else if (!ok) {
-          setPersistError(data?.error || "Failed to save share link");
-          persistedRef.current = false;
-        }
-      })
-      .catch((err) => {
-        setPersistLoading(false);
-        setPersistError(err?.message || "Failed to save share link");
-        persistedRef.current = false;
-      });
-  }, [byScanChecked, existingReportId, report, placeId, name, addr, scanId, reviews, aiAnalysis, persistRetry, router, gbpAnalysis, socialsData]);
+      
+      // Check if still loading or within timeout
+      const waited = Date.now() - aiWaitStartedRef.current;
+      
+      if (aiAnalysisLoading) {
+        console.log(`[SNAPSHOT] AI analysis still loading (${Math.round(waited/1000)}s)...`);
+        return;
+      }
+      
+      if (waited < AI_WAIT_TIMEOUT_MS) {
+        // Still within timeout, keep waiting
+        console.log(`[SNAPSHOT] AI analysis not ready yet, waited ${Math.round(waited/1000)}s...`);
+        return;
+      }
+      
+      // Timeout reached, proceed without AI analysis
+      console.log('[SNAPSHOT] AI analysis timeout after 60s, proceeding without it');
+    } else {
+      console.log('[SNAPSHOT] ✅ AI analysis ready, proceeding with persistence');
+    }
 
+    // Build the snapshot
+    const buildAndPersistSnapshot = async () => {
+      persistedRef.current = true;
+      setIsPersisting(true);
+      setPersistError(null);
+      
+      console.log('[SNAPSHOT] Building snapshot for persistence...');
+      
+      try {
+        // Collect marker locations from search visibility results
+        // This ensures maps work without API fetches in snapshot mode
+        const markerLocations: Record<string, MarkerLocation> = {};
+        
+        // Collect placeIds from all map pack results
+        const placeIdsToFetch: string[] = [];
+        for (const query of report.searchVisibility.queries) {
+          for (const result of query.mapPack.results) {
+            if (result.placeId && !markerLocations[result.placeId]) {
+              placeIdsToFetch.push(result.placeId);
+            }
+          }
+        }
+        
+        // Fetch location data for each placeId (in parallel, with timeout)
+        if (placeIdsToFetch.length > 0) {
+          console.log(`[SNAPSHOT] Fetching locations for ${placeIdsToFetch.length} places...`);
+          const locationPromises = placeIdsToFetch.map(async (pid) => {
+            try {
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 5000);
+              const res = await fetch(`/api/places/details?placeId=${encodeURIComponent(pid)}`, {
+                signal: controller.signal,
+              });
+              clearTimeout(timeoutId);
+              if (res.ok) {
+                const data = await res.json();
+                if (data.location?.lat && data.location?.lng) {
+                  markerLocations[pid] = {
+                    placeId: pid,
+                    lat: data.location.lat,
+                    lng: data.location.lng,
+                    name: data.name || '',
+                  };
+                }
+              }
+            } catch (e) {
+              // Ignore - marker data is optional
+            }
+          });
+          await Promise.allSettled(locationPromises);
+        }
+        
+        // Get business photo URL from placesDetails
+        let businessPhotoUrl: string | null = null;
+        if (placesDetails?.photoUri) {
+          businessPhotoUrl = placesDetails.photoUri;
+        }
+        
+        // Build the snapshot
+        const snapshot: ReportSnapshotV1 = {
+          version: 1,
+          createdAt: new Date().toISOString(),
+          scanId,
+          place: {
+            placeId,
+            name: placeName || report.meta.businessName,
+            addr: placeAddr || report.meta.locationLabel,
+            website: report.meta.websiteUrl,
+            rating: report.meta.googleRating,
+            reviewCount: report.meta.googleReviewCount,
+            businessPhotoUrl,
+          },
+          report,
+          aiAnalysis: aiAnalysis || null,
+          reviews: reviews.map(r => ({
+            reviewId: r.reviewId,
+            authorName: r.authorName,
+            profilePhotoUrl: r.profilePhotoUrl,
+            relativeTime: r.relativeTime,
+            rating: r.rating,
+            text: r.text,
+            isLocalGuide: r.isLocalGuide,
+          })),
+          supporting: {
+            markerLocations,
+          },
+        };
+        
+        console.log('[SNAPSHOT] Persisting snapshot...');
+        
+        // Persist to database
+        const response = await fetch('/api/public/reports/persist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // Include email proof cookie
+          body: JSON.stringify({ snapshot }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP ${response.status}`);
+        }
+        
+        const { reportId: newReportId, shareUrl } = await response.json();
+        console.log('[SNAPSHOT] ✅ Persisted successfully:', { reportId: newReportId, shareUrl });
+        
+        setReportId(newReportId);
+        
+        // Redirect to shareable URL
+        router.replace(shareUrl || `/r/${newReportId}`);
+        
+      } catch (error) {
+        console.error('[SNAPSHOT] Persist failed:', error);
+        setPersistError(error instanceof Error ? error.message : 'Failed to create shareable link');
+        persistedRef.current = false; // Allow retry
+      } finally {
+        setIsPersisting(false);
+      }
+    };
+    
+    buildAndPersistSnapshot();
+  }, [report, aiAnalysis, aiAnalysisLoading, reviews, placeId, placeName, placeAddr, scanId, placesDetails, router, isPersisting, reportId, snapshotWaitTick]);
+
+  // Retry persist function (for error state)
+  const retryPersist = () => {
+    persistedRef.current = false;
+    setPersistError(null);
+  };
+
+  // Show loading state only while assembling report (not waiting for AI)
+  // AI analysis will load in the background and display when ready
   if (!report) {
     return (
       <div className="min-h-screen bg-[#f6f7f8] flex items-center justify-center">
@@ -536,33 +609,85 @@ export default function AnalysisPage() {
     );
   }
 
-  const reportWithReviews = { ...report, reviews };
-  const business = { placeId, name: name || report.meta.businessName, addr: addr || "" };
+  // Calculate total checks and need work count
+  const totalChecks = report.sections.reduce((sum, section) => sum + section.checks.length, 0);
+  const needWork = report.sections.reduce(
+    (sum, section) => sum + section.checks.filter(c => c.status === 'bad' || c.status === 'warn').length,
+    0
+  );
 
   return (
-    <>
-      {persistError && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 shadow-sm max-w-md">
-          <span className="text-sm text-amber-800">{persistError}</span>
-          <button
-            type="button"
-            onClick={() => {
-              setPersistError(null);
-              setPersistRetry((r) => r + 1);
-            }}
-            className="text-sm font-medium text-amber-800 hover:text-amber-900 underline"
-          >
-            Retry saving share link
-          </button>
+    <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex">
+      {/* Left Rail - hidden on mobile; score content shown in main flow via ReportTopCards etc. */}
+      <ReportLeftRail scores={report.scores} />
+      
+      {/* Main Content */}
+      <div className="flex-1 p-8 pb-24 md:pb-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Persist Status Bar */}
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              {isPersisting && (
+                <span className="text-sm text-gray-500 flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  Creating shareable link...
+                </span>
+              )}
+              {persistError && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-red-600">{persistError}</span>
+                  <button
+                    onClick={retryPersist}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </div>
+            {reportId && <ShareButton reportId={reportId} />}
+          </div>
+
+          {/* Top Cards */}
+          <ReportTopCards
+            impact={report.summaryCards.impact}
+            competitors={report.summaryCards.competitors}
+            businessName={report.meta.businessName}
+            websiteUrl={report.meta.websiteUrl}
+            businessAvatar={report.summaryCards.impact.businessAvatar}
+            placeId={report.meta.placeId}
+            sections={report.sections}
+            overallGrade={report.scores.overall.label}
+            aiAnalysis={aiAnalysis}
+          />
+          
+          {/* Search Visibility Table */}
+          <ReportSearchVisibility
+            searchVisibility={report.searchVisibility}
+            targetPlaceId={report.meta.placeId}
+            targetDomain={report.meta.websiteUrl || null}
+          />
+          
+          {/* AI Analysis */}
+          <ReportAIAnalysis analysis={aiAnalysis} isLoading={aiAnalysisLoading} />
+          
+          {/* Summary Header */}
+          <div className="mb-6">
+            <h2 className="text-2xl font-semibold text-gray-900 mb-1">
+              {totalChecks} things reviewed, {needWork} need work
+            </h2>
+            <p className="text-sm text-gray-600">See what's wrong and how to improve</p>
+          </div>
+          
+          {/* Checklist Sections */}
+          {report.sections.map((section) => (
+            <ReportChecklistSection key={section.id} section={section} />
+          ))}
+          
+          {/* Google Reviews Section */}
+          <ReportGoogleReviews reviews={reviews} />
         </div>
-      )}
-      <ReportRenderer
-        report={reportWithReviews}
-        business={business}
-        aiAnalysis={aiAnalysis}
-        aiAnalysisLoading={aiAnalysisLoading}
-        shareUrl={shareUrl}
-      />
-    </>
+      </div>
+    </div>
   );
 }

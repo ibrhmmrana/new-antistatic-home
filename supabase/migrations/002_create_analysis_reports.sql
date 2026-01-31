@@ -1,20 +1,40 @@
--- Persisted shareable reports (one row per scan_id; upsert by scan_id).
--- report_payload: assembled report JSON for UI. source_payload: optional raw analyzer outputs (no base64).
+-- Create analysis_reports table for storing shareable report snapshots
+-- This table stores the full report snapshot that can be loaded by report_id
+
 CREATE TABLE IF NOT EXISTS analysis_reports (
-  report_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  scan_id text NOT NULL UNIQUE,
-  place_id text NOT NULL,
-  business_name text,
-  business_addr text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  completed_at timestamptz,
-  report_version int NOT NULL DEFAULT 1,
-  report_payload jsonb NOT NULL,
-  source_payload jsonb,
-  is_public boolean NOT NULL DEFAULT true
+  -- Primary key: UUID auto-generated
+  report_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Original scan ID (for traceability, not used for lookup)
+  scan_id TEXT NOT NULL,
+  
+  -- Google Place ID
+  place_id TEXT NOT NULL,
+  
+  -- Business info (denormalized for convenience)
+  business_name TEXT,
+  business_addr TEXT,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  
+  -- The full report snapshot (ReportSnapshotV1)
+  -- Contains everything needed to render the report without API calls
+  report_payload JSONB NOT NULL,
+  
+  -- Legacy field for backwards compatibility (not used in new flow)
+  source_payload JSONB
 );
 
-CREATE INDEX IF NOT EXISTS idx_analysis_reports_place_id ON analysis_reports(place_id);
--- scan_id already unique; unique index implied by UNIQUE constraint
+-- Index on scan_id for upsert operations (check if report exists for scan)
+CREATE INDEX IF NOT EXISTS idx_analysis_reports_scan_id ON analysis_reports(scan_id);
 
-COMMENT ON TABLE analysis_reports IS 'Persisted final reports for shareable /r/[reportId] URLs. Server-only access via service role.';
+-- Index on place_id for potential future queries by business
+CREATE INDEX IF NOT EXISTS idx_analysis_reports_place_id ON analysis_reports(place_id);
+
+-- Index on created_at for sorting/pagination
+CREATE INDEX IF NOT EXISTS idx_analysis_reports_created_at ON analysis_reports(created_at DESC);
+
+-- Comment on table
+COMMENT ON TABLE analysis_reports IS 'Stores immutable report snapshots for shareable URLs (/r/[reportId])';

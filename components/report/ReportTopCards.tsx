@@ -26,6 +26,10 @@ interface ReportTopCardsProps {
   overallGrade?: string;
   /** AI analysis: used to show top priorities + section with lowest score as action */
   aiAnalysis?: AIAnalysisForTopCards | null;
+  /** Snapshot mode: when true, skip all API fetches */
+  snapshotMode?: boolean;
+  /** Pre-loaded photo URL for snapshot mode */
+  snapshotPhotoUrl?: string | null;
 }
 
 export default function ReportTopCards({
@@ -38,11 +42,16 @@ export default function ReportTopCards({
   sections,
   overallGrade,
   aiAnalysis,
+  snapshotMode = false,
+  snapshotPhotoUrl,
 }: ReportTopCardsProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   
   // Fetch business photo from Places API
+  // SKIP in snapshot mode - use pre-loaded photo URL instead
   useEffect(() => {
+    // In snapshot mode, never fetch - use snapshotPhotoUrl
+    if (snapshotMode) return;
     if (!placeId) return;
     
     const fetchBusinessPhoto = async () => {
@@ -78,10 +87,12 @@ export default function ReportTopCards({
         URL.revokeObjectURL(photoUrl);
       }
     };
-  }, [placeId]);
+  }, [placeId, snapshotMode]);
   
-  // Use photo from Places API, then passed businessAvatar, then fallback to impact.businessAvatar
-  const avatarUrl = photoUrl || businessAvatar || impact.businessAvatar;
+  // In snapshot mode, use snapshotPhotoUrl; otherwise use fetched photo or fallbacks
+  const avatarUrl = snapshotMode 
+    ? (snapshotPhotoUrl || businessAvatar || impact.businessAvatar)
+    : (photoUrl || businessAvatar || impact.businessAvatar);
   
   // Top issues: prefer AI analysis top priorities + section with lowest score as action; else fallback to checklist/sections
   const topIssues = useMemo(() => {

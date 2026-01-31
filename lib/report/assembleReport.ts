@@ -943,7 +943,7 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
     instagram,
     facebook,
   } = input;
-
+  
   // Build meta
   const businessIdentity = websiteCrawl?.business_identity;
   const meta: ReportMeta = {

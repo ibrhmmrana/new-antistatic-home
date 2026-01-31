@@ -6,11 +6,16 @@ import { useJsApiLoader, GoogleMap } from "@react-google-maps/api";
 import type { SearchVisibility } from "@/lib/report/types";
 import { getFaviconUrl } from "@/lib/seo/favicon";
 import { fetchWithTimeoutClient } from "@/lib/net/clientFetchWithTimeout";
+import type { MarkerLocation } from "@/lib/report/snapshotTypes";
 
 interface ReportSearchVisibilityProps {
   searchVisibility: SearchVisibility;
   targetPlaceId?: string | null;
   targetDomain?: string | null;
+  /** Snapshot mode: when true, skip all API fetches for markers */
+  snapshotMode?: boolean;
+  /** Pre-computed marker locations for snapshot mode (keyed by placeId) */
+  snapshotMarkerLocations?: Record<string, MarkerLocation>;
 }
 
 const libraries: ("places")[] = ["places"];
@@ -20,6 +25,8 @@ export default function ReportSearchVisibility({
   searchVisibility,
   targetPlaceId,
   targetDomain,
+  snapshotMode = false,
+  snapshotMarkerLocations,
 }: ReportSearchVisibilityProps) {
   const [expandedQueries, setExpandedQueries] = useState<Set<string>>(new Set());
   const markersRef = useRef<Map<string, google.maps.Marker[]>>(new Map());
@@ -40,6 +47,7 @@ export default function ReportSearchVisibility({
   };
   
   // Fetch locations for mapPack results and create markers
+  // In snapshot mode, use precomputed locations instead of fetching
   const initializeMapMarkers = useCallback(async (
     mapInstance: google.maps.Map,
     mapPackResults: Array<{ placeId: string | null; name: string; isTargetBusiness?: boolean }>,
@@ -56,51 +64,67 @@ export default function ReportSearchVisibility({
     const newMarkers: google.maps.Marker[] = [];
     let firstPosition: google.maps.LatLng | null = null;
     
-    // Fetch locations for each placeId
+    // Process each result
     for (const result of mapPackResults) {
       if (!result.placeId) continue;
       
-      try {
-        const response = await fetchWithTimeoutClient(
-          `/api/places/details?placeId=${encodeURIComponent(result.placeId)}`,
-          undefined,
-          20000
-        );
-        if (!response.ok) continue;
-        
-        const data = await response.json();
-        if (!data.location?.lat || !data.location?.lng) continue;
-        
-        const position = new google.maps.LatLng(data.location.lat, data.location.lng);
-        if (!firstPosition) firstPosition = position;
-        bounds.extend(position);
-        
-        // Create marker - different style for target business
-        const marker = new google.maps.Marker({
-          position,
-          map: mapInstance,
-          title: result.name,
-          icon: result.isTargetBusiness ? {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 12,
-            fillColor: "#000000",
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 2,
-          } : {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: "#ef4444",
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 2,
-          },
-        });
-        
-        newMarkers.push(marker);
-      } catch (error) {
-        console.error(`Error fetching location for ${result.placeId}:`, error);
+      let lat: number | undefined;
+      let lng: number | undefined;
+      
+      // In snapshot mode, use precomputed locations
+      if (snapshotMode && snapshotMarkerLocations) {
+        const cached = snapshotMarkerLocations[result.placeId];
+        if (cached) {
+          lat = cached.lat;
+          lng = cached.lng;
+        }
+      } else {
+        // Normal mode: fetch from API
+        try {
+          const response = await fetchWithTimeoutClient(
+            `/api/places/details?placeId=${encodeURIComponent(result.placeId)}`,
+            undefined,
+            20000
+          );
+          if (response.ok) {
+            const data = await response.json();
+            lat = data.location?.lat;
+            lng = data.location?.lng;
+          }
+        } catch (error) {
+          console.error(`Error fetching location for ${result.placeId}:`, error);
+        }
       }
+      
+      if (lat === undefined || lng === undefined) continue;
+      
+      const position = new google.maps.LatLng(lat, lng);
+      if (!firstPosition) firstPosition = position;
+      bounds.extend(position);
+      
+      // Create marker - different style for target business
+      const marker = new google.maps.Marker({
+        position,
+        map: mapInstance,
+        title: result.name,
+        icon: result.isTargetBusiness ? {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 12,
+          fillColor: "#000000",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+        } : {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: "#ef4444",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+        },
+      });
+      
+      newMarkers.push(marker);
     }
     
     // Store markers
@@ -120,7 +144,7 @@ export default function ReportSearchVisibility({
         });
       }
     }
-  }, []);
+  }, [snapshotMode, snapshotMarkerLocations]);
   
   const onMapLoad = useCallback((mapInstance: google.maps.Map, queryKey: string, mapPackResults: Array<{ placeId: string | null; name: string; isTargetBusiness?: boolean }>) => {
     // Initialize markers after a short delay to ensure map is fully loaded

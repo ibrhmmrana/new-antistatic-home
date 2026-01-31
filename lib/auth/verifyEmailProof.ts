@@ -1,9 +1,9 @@
 /**
- * Verify email proof token (cookie or Bearer) for protected public APIs.
- * Used by /api/public/analysis/start and /api/public/reports/persist.
+ * Email Proof Verification
+ * Verifies JWT proof tokens from email verification flow
  */
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
 const EMAIL_PROOF_SECRET = process.env.EMAIL_PROOF_SECRET || "change-this-secret-in-production";
@@ -12,58 +12,78 @@ export interface ProofPayload {
   email: string;
   purpose: string;
   challengeId: string;
-  placeId?: string;
+  placeId?: string | null;
   exp: number;
   iat: number;
 }
 
-export async function verifyEmailProof(request: NextRequest): Promise<ProofPayload | null> {
+export interface ProofResult {
+  valid: boolean;
+  payload?: ProofPayload;
+  error?: string;
+}
+
+/**
+ * Verify email proof token from request
+ * Checks both cookie and Authorization header
+ */
+export async function verifyEmailProof(request: NextRequest): Promise<ProofResult> {
+  // Try to get token from cookie first
   let token = request.cookies.get("email_proof")?.value;
+
+  // Fallback to Authorization header
   if (!token) {
     const authHeader = request.headers.get("authorization");
     if (authHeader?.startsWith("Bearer ")) {
       token = authHeader.slice(7);
     }
   }
-  if (!token) return null;
+
+  if (!token) {
+    return { valid: false, error: "No proof token provided" };
+  }
 
   try {
     const secret = new TextEncoder().encode(EMAIL_PROOF_SECRET);
     const { payload } = await jwtVerify(token, secret);
+    
+    // Validate payload structure
     if (
-      typeof payload === "object" &&
+      typeof payload === 'object' &&
       payload !== null &&
-      "email" in payload &&
-      "purpose" in payload &&
-      "challengeId" in payload
+      'email' in payload &&
+      'purpose' in payload &&
+      'challengeId' in payload
     ) {
-      return payload as unknown as ProofPayload;
+      // Check purpose
+      if (payload.purpose !== "unlock_report") {
+        return { valid: false, error: "Invalid proof purpose" };
+      }
+      
+      return { 
+        valid: true, 
+        payload: payload as unknown as ProofPayload 
+      };
     }
-    return null;
-  } catch {
-    return null;
+    
+    return { valid: false, error: "Invalid proof payload structure" };
+  } catch (error) {
+    console.error("Token verification error:", error);
+    return { valid: false, error: "Invalid or expired proof token" };
   }
 }
 
-/** Require proof with purpose "unlock_report"; returns 401/403 response or null if valid. */
-export function proofErrorResponse(proof: ProofPayload | null): Response | null {
-  if (!proof) {
-    return new Response(JSON.stringify({ error: "Invalid or missing verification proof" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+/**
+ * Generate error response if proof is invalid
+ * Returns null if proof is valid
+ */
+export function proofErrorResponse(result: ProofResult): NextResponse | null {
+  if (result.valid) {
+    return null;
   }
-  if (proof.purpose !== "unlock_report") {
-    return new Response(JSON.stringify({ error: "Invalid proof purpose" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  if (proof.exp && proof.exp * 1000 < Date.now()) {
-    return new Response(JSON.stringify({ error: "Proof token has expired" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  return null;
+  
+  return NextResponse.json(
+    { error: result.error || "Invalid verification proof" },
+    { status: 401 }
+  );
 }
