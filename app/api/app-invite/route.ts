@@ -11,7 +11,7 @@ import { sendAppInviteEmail } from "@/lib/ses/sendAppInviteEmail";
 
 const APP_CALLBACK_URL =
   process.env.APP_BASE_URL?.replace(/\/$/, "") || "https://app.antistatic.ai";
-const REDIRECT_TO = `${APP_CALLBACK_URL}/auth/callback?next=/set-password`;
+const REDIRECT_TO = `${APP_CALLBACK_URL}/set-password`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
         email,
         email_confirm: true,
         password: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+        user_metadata: { has_set_password: false },
       });
       if (createError) {
         console.error("[APP-INVITE] createUser error:", createError);
