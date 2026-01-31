@@ -1,81 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
-
-const EMAIL_PROOF_SECRET = process.env.EMAIL_PROOF_SECRET || "change-this-secret-in-production";
-
-interface ProofPayload {
-  email: string;
-  purpose: string;
-  challengeId: string;
-  placeId?: string;
-  exp: number;
-  iat: number;
-}
-
-async function verifyProofToken(request: NextRequest): Promise<ProofPayload | null> {
-  // Try to get token from cookie first
-  let token = request.cookies.get("email_proof")?.value;
-
-  // Fallback to Authorization header
-  if (!token) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      token = authHeader.slice(7);
-    }
-  }
-
-  if (!token) {
-    return null;
-  }
-
-  try {
-    const secret = new TextEncoder().encode(EMAIL_PROOF_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    
-    // Validate payload structure
-    if (
-      typeof payload === 'object' &&
-      payload !== null &&
-      'email' in payload &&
-      'purpose' in payload &&
-      'challengeId' in payload
-    ) {
-      return payload as unknown as ProofPayload;
-    }
-    return null;
-  } catch (error) {
-    console.error("Token verification error:", error);
-    return null;
-  }
-}
+import { verifyEmailProof, proofErrorResponse } from "@/lib/auth/verifyEmailProof";
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify proof token
-    const proof = await verifyProofToken(request);
-
-    if (!proof) {
-      return NextResponse.json(
-        { error: "Invalid or missing verification proof" },
-        { status: 401 }
-      );
-    }
-
-    // Check purpose
-    if (proof.purpose !== "unlock_report") {
-      return NextResponse.json(
-        { error: "Invalid proof purpose" },
-        { status: 403 }
-      );
-    }
-
-    // Check expiration (jwtVerify already checks this, but double-check)
-    if (proof.exp && proof.exp * 1000 < Date.now()) {
-      return NextResponse.json(
-        { error: "Proof token has expired" },
-        { status: 401 }
-      );
-    }
+    const proof = await verifyEmailProof(request);
+    const errResp = proofErrorResponse(proof);
+    if (errResp) return errResp;
 
     const body = await request.json();
     const { scanId, placeId, placeName, address } = body;

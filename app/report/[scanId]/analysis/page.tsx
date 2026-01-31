@@ -1,42 +1,29 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { assembleReport } from "@/lib/report/assembleReport";
 import type { ReportSchema } from "@/lib/report/types";
-import ReportLeftRail from "@/components/report/ReportLeftRail";
-import ReportTopCards from "@/components/report/ReportTopCards";
-import ReportSearchVisibility from "@/components/report/ReportSearchVisibility";
-import ReportChecklistSection from "@/components/report/ReportChecklistSection";
-import ReportAIAnalysis from "@/components/report/ReportAIAnalysis";
-
-// Helper function to extract username from URL
-function extractUsernameFromUrl(url: string, platform: 'instagram' | 'facebook'): string | null {
-  try {
-    const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-    const pathParts = urlObj.pathname.split('/').filter(Boolean);
-    
-    if (platform === 'instagram') {
-      // Instagram: instagram.com/username or instagram.com/username/
-      return pathParts[0] || null;
-    } else if (platform === 'facebook') {
-      // Facebook: facebook.com/username or facebook.com/username/
-      return pathParts[0] || null;
-    }
-    
-    return null;
-  } catch {
-    return null;
-  }
-}
+import ReportRenderer from "@/components/report/ReportRenderer";
 
 export default function AnalysisPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const scanId = params?.scanId as string;
-  const placeId = searchParams?.get('placeId') || '';
+  const placeId = searchParams?.get("placeId") || "";
+  const name = searchParams?.get("name") || "";
+  const addr = searchParams?.get("addr") || "";
 
-  // State for all analyzers
+  const [byScanChecked, setByScanChecked] = useState(false);
+  const [existingReportId, setExistingReportId] = useState<string | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [persistError, setPersistError] = useState<string | null>(null);
+  const [persistLoading, setPersistLoading] = useState(false);
+  const [persistRetry, setPersistRetry] = useState(0);
+  const persistedRef = useRef(false);
+  const firstReportTimeRef = useRef<number | null>(null);
+
   const [websiteResult, setWebsiteResult] = useState<any>(null);
   const [gbpAnalysis, setGbpAnalysis] = useState<any>(null);
   const [igResult, setIgResult] = useState<any>(null);
@@ -50,21 +37,39 @@ export default function AnalysisPage() {
     text: string;
     isLocalGuide: boolean;
   }>>([]);
-  
-  // Standardized report state
+
   const [report, setReport] = useState<ReportSchema | null>(null);
   const [placesDetails, setPlacesDetails] = useState<any>(null);
   const [socialsData, setSocialsData] = useState<any>(null);
-  
-  // AI Analysis state
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
-  const aiAnalysisTriggeredRef = useRef(false); // Prevent duplicate AI analysis API calls
+  const aiAnalysisTriggeredRef = useRef(false);
 
-  // Load cached analysis results from localStorage
+  // Redirect if report already persisted for this scanId (avoids rerun for old URL)
   useEffect(() => {
-    console.log('[ANALYSIS PAGE] Loading cached results from localStorage...');
-    
+    if (!scanId) {
+      setByScanChecked(true);
+      return;
+    }
+    fetch(`/api/public/reports/by-scan?scanId=${encodeURIComponent(scanId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        setByScanChecked(true);
+        if (data?.reportId) setExistingReportId(data.reportId);
+      })
+      .catch(() => setByScanChecked(true));
+  }, [scanId]);
+
+  useEffect(() => {
+    if (!existingReportId) return;
+    router.replace(`/r/${existingReportId}`);
+  }, [existingReportId, router]);
+
+  // Load cached analysis results from localStorage (skip if redirecting to existing report)
+  useEffect(() => {
+    if (!byScanChecked || existingReportId) return;
+    console.log("[ANALYSIS PAGE] Loading cached results from localStorage...");
+
     // Load website analysis
     const cachedWebsite = localStorage.getItem(`analysis_${scanId}_website`);
     if (cachedWebsite) {
@@ -253,47 +258,77 @@ export default function AnalysisPage() {
 
   // Assemble standardized report whenever data changes
   useEffect(() => {
-    if (!placeId) {
-      return;
-    }
-    
+    if (!byScanChecked || existingReportId || !placeId) return;
     try {
-      // FIX: Read websiteResult from localStorage directly to avoid race condition
-      // State updates are async, so we read from cache synchronously here
-      let websiteCrawlData = websiteResult;
-      if (!websiteCrawlData) {
-        const cachedWebsite = localStorage.getItem(`analysis_${scanId}_website`);
-        if (cachedWebsite) {
-          try {
-            websiteCrawlData = JSON.parse(cachedWebsite);
-          } catch (e) {
-            // Ignore parse errors, will use undefined
-          }
-        }
+      // Prefer localStorage for website so we get latest merge (search_visibility + crawl_map when website crawler completes)
+      let websiteCrawlData: typeof websiteResult = null;
+      if (typeof window !== "undefined") {
+        try {
+          const cachedWebsite = localStorage.getItem(`analysis_${scanId}_website`);
+          if (cachedWebsite) websiteCrawlData = JSON.parse(cachedWebsite);
+        } catch (_) {}
       }
-      
+      if (!websiteCrawlData) websiteCrawlData = websiteResult;
+      // Read from localStorage when state not yet updated (same race fix as websiteCrawlData)
+      let gbpForAssemble = gbpAnalysis?.analysis;
+      if (!gbpForAssemble && typeof window !== "undefined") {
+        try {
+          const cached = localStorage.getItem(`analysis_${scanId}_gbp`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            gbpForAssemble = parsed?.analysis ?? parsed;
+          }
+        } catch (_) {}
+      }
+      let socialsForAssemble = socialsData;
+      if (!socialsForAssemble?.socialLinks?.length && typeof window !== "undefined") {
+        try {
+          const cached = localStorage.getItem(`onlinePresence_${scanId}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            socialsForAssemble = {
+              websiteUrl: parsed.websiteUrl ?? null,
+              websiteScreenshot: null,
+              socialLinks: (parsed.socialLinks ?? []).map((l: { platform?: string; url?: string }) => ({ platform: l.platform, url: l.url, screenshot: null })),
+            };
+          }
+        } catch (_) {}
+      }
+      let igForAssemble = igResult;
+      if (!igForAssemble && typeof window !== "undefined") {
+        try {
+          const cached = localStorage.getItem(`analysis_${scanId}_instagram`);
+          if (cached) igForAssemble = JSON.parse(cached);
+        } catch (_) {}
+      }
+      let fbForAssemble = fbResult;
+      if (!fbForAssemble && typeof window !== "undefined") {
+        try {
+          const cached = localStorage.getItem(`analysis_${scanId}_facebook`);
+          if (cached) fbForAssemble = JSON.parse(cached);
+        } catch (_) {}
+      }
+
       const assembled = assembleReport({
         placeId,
-        placeName: placesDetails?.name || gbpAnalysis?.analysis?.businessName || null,
+        placeName: placesDetails?.name || gbpForAssemble?.businessName || null,
         placeAddress: placesDetails?.address ?? placesDetails?.formatted_address ?? null,
         placesDetails: placesDetails || undefined,
         websiteCrawl: websiteCrawlData || undefined,
-        gbpAnalysis: gbpAnalysis?.analysis || undefined,
-        socials: socialsData || undefined,
-        instagram: igResult || undefined,
-        facebook: fbResult || undefined,
+        gbpAnalysis: gbpForAssemble || undefined,
+        socials: socialsForAssemble || undefined,
+        instagram: igForAssemble || undefined,
+        facebook: fbForAssemble || undefined,
       });
       setReport(assembled);
     } catch (error) {
       console.error('[ANALYSIS PAGE] Failed to assemble report:', error);
     }
-  }, [placeId, placesDetails, websiteResult, gbpAnalysis, igResult, fbResult, socialsData]);
+  }, [byScanChecked, existingReportId, placeId, placesDetails, websiteResult, gbpAnalysis, igResult, fbResult, socialsData]);
 
   // Trigger AI analysis when all data is available
   useEffect(() => {
-    if (!placeId || !placesDetails) {
-      return;
-    }
+    if (!byScanChecked || existingReportId || !placeId || !placesDetails) return;
     
     // Check if we have enough data for AI analysis
     const hasEnoughData = (igResult || fbResult || reviews.length > 0);
@@ -386,11 +421,110 @@ export default function AnalysisPage() {
       .finally(() => {
         setAiAnalysisLoading(false);
       });
-  }, [scanId, placeId, placesDetails, gbpAnalysis, igResult, fbResult, reviews, websiteResult, socialsData]);
+  }, [byScanChecked, existingReportId, scanId, placeId, placesDetails, gbpAnalysis, igResult, fbResult, reviews, websiteResult, socialsData]);
 
+  // Persist report once when ready, then redirect to share URL (retry via persistRetry)
+  // Only persist when we have at least gbp or socials (or after fallback delay) so we don't save a partial report.
+  useEffect(() => {
+    if (!byScanChecked || existingReportId || !report || !placeId) return;
+    if (persistedRef.current && persistRetry === 0) return;
+    if (persistRetry > 0) persistedRef.current = false;
 
-  // Show loading state only while assembling report (not waiting for AI)
-  // AI analysis will load in the background and display when ready
+    if (firstReportTimeRef.current == null) firstReportTimeRef.current = Date.now();
+    const hasGbpOrSocials = !!(gbpAnalysis || (socialsData?.socialLinks?.length ?? 0));
+    const fallbackMs = 28000;
+    const waitedLongEnough = firstReportTimeRef.current && Date.now() - firstReportTimeRef.current >= fallbackMs;
+    if (!hasGbpOrSocials && !waitedLongEnough) return;
+
+    // When place has a website, wait for website crawler (crawl_map) so "Get your website to the top" and "Improve the experience" sections have content
+    const hasWebsite = !!(report.meta?.websiteUrl);
+    let hasCrawlMap = false;
+    if (typeof window !== "undefined" && hasWebsite) {
+      try {
+        const cached = localStorage.getItem(`analysis_${scanId}_website`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          hasCrawlMap = !!(parsed?.crawl_map?.length);
+        }
+      } catch (_) {}
+    }
+    if (hasWebsite && !hasCrawlMap && !waitedLongEnough) return;
+
+    persistedRef.current = true;
+    setPersistLoading(true);
+    setPersistError(null);
+    // Include reviews and AI from localStorage if not in state yet (race)
+    let reviewsForPersist = reviews.length > 0 ? reviews : undefined;
+    if (!reviewsForPersist && typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem(`analysis_${scanId}_reviews`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          reviewsForPersist = parsed?.reviews ?? (Array.isArray(parsed) ? parsed : undefined);
+        }
+      } catch (_) {}
+    }
+    let aiForPersist = aiAnalysis ?? undefined;
+    if (!aiForPersist && typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem(`analysis_${scanId}_ai`);
+        if (cached) aiForPersist = JSON.parse(cached);
+      } catch (_) {}
+    }
+    const reportWithExtras = {
+      ...report,
+      reviews: reviewsForPersist,
+      aiAnalysis: aiForPersist,
+    };
+    const sources: Record<string, unknown> = {};
+    try {
+      const cachedGbp = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_gbp`) : null;
+      if (cachedGbp) sources.gbp = JSON.parse(cachedGbp);
+      const cachedWebsite = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_website`) : null;
+      if (cachedWebsite) sources.website = JSON.parse(cachedWebsite);
+      const cachedReviews = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_reviews`) : null;
+      if (cachedReviews) {
+        const parsed = JSON.parse(cachedReviews);
+        sources.reviews = parsed?.reviews ?? parsed;
+      }
+      const cachedIg = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_instagram`) : null;
+      if (cachedIg) sources.instagram = JSON.parse(cachedIg);
+      const cachedFb = typeof window !== "undefined" ? localStorage.getItem(`analysis_${scanId}_facebook`) : null;
+      if (cachedFb) sources.facebook = JSON.parse(cachedFb);
+    } catch (_) {}
+    fetch("/api/public/reports/persist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        scanId,
+        placeId,
+        name: name || undefined,
+        addr: addr || undefined,
+        report: reportWithExtras,
+        sources: Object.keys(sources).length > 0 ? sources : undefined,
+      }),
+    })
+      .then((res) => {
+        return res.json().then((data) => ({ ok: res.ok, data }));
+      })
+      .then(({ ok, data }) => {
+        setPersistLoading(false);
+        if (ok && data.reportId && data.shareUrl) {
+          setShareUrl(data.shareUrl);
+          router.replace(`/r/${data.reportId}`);
+        } else if (!ok) {
+          setPersistError(data?.error || "Failed to save share link");
+          persistedRef.current = false;
+        }
+      })
+      .catch((err) => {
+        setPersistLoading(false);
+        setPersistError(err?.message || "Failed to save share link");
+        persistedRef.current = false;
+      });
+  }, [byScanChecked, existingReportId, report, placeId, name, addr, scanId, reviews, aiAnalysis, persistRetry, router, gbpAnalysis, socialsData]);
+
   if (!report) {
     return (
       <div className="min-h-screen bg-[#f6f7f8] flex items-center justify-center">
@@ -402,199 +536,33 @@ export default function AnalysisPage() {
     );
   }
 
-  // Calculate total checks and need work count
-  const totalChecks = report.sections.reduce((sum, section) => sum + section.checks.length, 0);
-  const needWork = report.sections.reduce(
-    (sum, section) => sum + section.checks.filter(c => c.status === 'bad' || c.status === 'warn').length,
-    0
-  );
+  const reportWithReviews = { ...report, reviews };
+  const business = { placeId, name: name || report.meta.businessName, addr: addr || "" };
 
   return (
-    <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex">
-      {/* Left Rail - hidden on mobile; score content shown in main flow via ReportTopCards etc. */}
-      <ReportLeftRail scores={report.scores} />
-      
-      {/* Main Content */}
-      <div className="flex-1 p-8 pb-24 md:pb-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Top Cards */}
-          <ReportTopCards
-            impact={report.summaryCards.impact}
-            competitors={report.summaryCards.competitors}
-            businessName={report.meta.businessName}
-            websiteUrl={report.meta.websiteUrl}
-            businessAvatar={report.summaryCards.impact.businessAvatar}
-            placeId={report.meta.placeId}
-            sections={report.sections}
-            overallGrade={report.scores.overall.label}
-            aiAnalysis={aiAnalysis}
-          />
-          
-          {/* Search Visibility Table */}
-          <ReportSearchVisibility
-            searchVisibility={report.searchVisibility}
-            targetPlaceId={report.meta.placeId}
-            targetDomain={report.meta.websiteUrl || null}
-          />
-          
-          {/* AI Analysis */}
-          <ReportAIAnalysis analysis={aiAnalysis} isLoading={aiAnalysisLoading} />
-          
-          {/* Summary Header */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-1">
-              {totalChecks} things reviewed, {needWork} need work
-            </h2>
-            <p className="text-sm text-gray-600">See what's wrong and how to improve</p>
-          </div>
-          
-          {/* Checklist Sections */}
-          {report.sections.map((section) => (
-            <ReportChecklistSection key={section.id} section={section} />
-          ))}
-          
-          {/* Google Reviews Section */}
-          {placeId && reviews.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8 shadow-sm">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">📝 Google Reviews</h2>
-              <div className="space-y-4">
-                {reviews.map((review) => {
-                  const getInitials = (name: string) => {
-                    const parts = name.trim().split(" ");
-                    if (parts.length >= 2) {
-                      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-                    }
-                    return name.substring(0, 2).toUpperCase();
-                  };
-
-                  const renderStars = (rating: number) => {
-                    const fullStars = Math.floor(rating);
-                    const hasHalfStar = rating % 1 >= 0.5;
-                    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
-
-                    return (
-                      <div className="flex items-center gap-0.5">
-                        {[...Array(fullStars)].map((_, i) => (
-                          <svg
-                            key={`full-${i}`}
-                            className="w-4 h-4 text-yellow-400 fill-current"
-                            viewBox="0 0 20 20"
-                          >
-                            <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                          </svg>
-                        ))}
-                        {hasHalfStar && (
-                          <svg
-                            className="w-4 h-4 text-yellow-400 fill-current"
-                            viewBox="0 0 20 20"
-                          >
-                            <defs>
-                              <linearGradient id={`half-fill-${review.reviewId}`}>
-                                <stop offset="50%" stopColor="currentColor" />
-                                <stop offset="50%" stopColor="transparent" stopOpacity="1" />
-                              </linearGradient>
-                            </defs>
-                            <path
-                              fill={`url(#half-fill-${review.reviewId})`}
-                              d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z"
-                            />
-                          </svg>
-                        )}
-                        {[...Array(emptyStars)].map((_, i) => (
-                          <svg
-                            key={`empty-${i}`}
-                            className="w-4 h-4 text-gray-300 fill-current"
-                            viewBox="0 0 20 20"
-                          >
-                            <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                          </svg>
-                        ))}
-                      </div>
-                    );
-                  };
-
-                  return (
-                    <div
-                      key={review.reviewId}
-                      className="border border-gray-200 rounded-lg p-6 hover:border-gray-300 transition-colors"
-                    >
-                      <div className="flex items-start gap-4">
-                        {/* Profile Photo */}
-                        <div className="flex-shrink-0 relative">
-                          {review.profilePhotoUrl ? (
-                            <div className="relative w-12 h-12 rounded-full overflow-hidden">
-                              <img
-                                src={review.profilePhotoUrl}
-                                alt={review.authorName}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = "none";
-                                  if (target.parentElement) {
-                                    target.parentElement.innerHTML = `
-                                      <div class="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold text-sm">
-                                        ${getInitials(review.authorName)}
-                                      </div>
-                                    `;
-                                  }
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold text-sm">
-                              {getInitials(review.authorName)}
-                            </div>
-                          )}
-                          {/* Local Guide Badge */}
-                          {review.isLocalGuide && (
-                            <div
-                              className="absolute w-4 h-4 bg-yellow-400 rounded-full ring-2 ring-white shadow-sm flex items-center justify-center"
-                              style={{
-                                bottom: '-2px',
-                                right: '-2px',
-                              }}
-                            >
-                              <svg
-                                className="w-2.5 h-2.5 text-white fill-current"
-                                viewBox="0 0 20 20"
-                              >
-                                <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Review Content */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-3 mb-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="text-lg font-semibold text-gray-900 mb-1">
-                                {review.authorName}
-                              </div>
-                              {review.relativeTime && (
-                                <div className="text-sm text-gray-500">
-                                  {review.relativeTime}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-shrink-0">
-                              {renderStars(review.rating)}
-                            </div>
-                          </div>
-
-                          <div className="text-gray-700 leading-relaxed">
-                            {review.text}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+    <>
+      {persistError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 shadow-sm max-w-md">
+          <span className="text-sm text-amber-800">{persistError}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setPersistError(null);
+              setPersistRetry((r) => r + 1);
+            }}
+            className="text-sm font-medium text-amber-800 hover:text-amber-900 underline"
+          >
+            Retry saving share link
+          </button>
         </div>
-      </div>
-    </div>
+      )}
+      <ReportRenderer
+        report={reportWithReviews}
+        business={business}
+        aiAnalysis={aiAnalysis}
+        aiAnalysisLoading={aiAnalysisLoading}
+        shareUrl={shareUrl}
+      />
+    </>
   );
 }
