@@ -67,7 +67,11 @@ export default function ReportScanClient({
   const [allAgentsDeployed, setAllAgentsDeployed] = useState(false);
   const [showEmailVerification, setShowEmailVerification] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
   const [userProvidedUsernames, setUserProvidedUsernames] = useState<{ instagram?: string; facebook?: string } | null>(null);
+  const [appInviteLoading, setAppInviteLoading] = useState(false);
+  const [appInviteSent, setAppInviteSent] = useState(false);
+  const [appInviteError, setAppInviteError] = useState<string | null>(null);
   const [gbpExtractedUsernames, setGbpExtractedUsernames] = useState<{ instagram?: string; facebook?: string } | null>(null);
   const scraperTriggeredRef = useRef(false); // Prevent duplicate scraper triggers
   const websiteScreenshotTriggeredRef = useRef(false); // Prevent duplicate website screenshot triggers
@@ -1138,6 +1142,44 @@ export default function ReportScanClient({
     }
   };
 
+  // "Start fixing" sends app sign-in link email (works on any stage). Does not advance stage.
+  const handleStartFixing = async () => {
+    if (!verifiedEmail) {
+      setAppInviteError("Please verify your email first.");
+      return;
+    }
+    setAppInviteLoading(true);
+    setAppInviteError(null);
+    try {
+      const res = await fetch("/api/app-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: verifiedEmail,
+          placeId,
+          scanId,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg =
+          data.error ||
+          (res.status === 403
+            ? "Verification expired. Please verify your email again."
+            : "Failed to send sign-in link. Please try again.");
+        setAppInviteError(msg);
+        return;
+      }
+      setAppInviteSent(true);
+      setAppInviteError(null);
+    } catch (_) {
+      setAppInviteError("Something went wrong. Please try again.");
+    } finally {
+      setAppInviteLoading(false);
+    }
+  };
+
   const handlePrevious = () => {
     if (currentStep > 0) {
       setCurrentStep((prev) => prev - 1);
@@ -1209,35 +1251,34 @@ export default function ReportScanClient({
           </ul>
         </div>
 
-        {/* Navigation controls */}
+        {/* Navigation: single "Start fixing" button */}
         <div className="p-4 border-t border-gray-200">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              onClick={handlePrevious}
-              disabled={currentStep === 0}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                currentStep === 0
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-              }`}
-            >
-              Previous
-            </button>
-            <span className="text-xs text-gray-500">
-              Step {currentStep + 1} of 6
-            </span>
-            <button
-              onClick={handleNext}
-              disabled={currentStep === 5}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                currentStep === 5
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-blue-600 text-white hover:bg-blue-700"
-              }`}
-            >
-              Next
-            </button>
-          </div>
+          {appInviteError && (
+            <p className="text-sm text-red-600 mb-2">{appInviteError}</p>
+          )}
+          {appInviteSent && (
+            <p className="text-sm text-green-600 mb-2">
+              Check your email for a sign-in link
+            </p>
+          )}
+          <button
+            onClick={handleStartFixing}
+            disabled={appInviteLoading}
+            className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+              appInviteLoading
+                ? "bg-gray-100 text-gray-400 cursor-wait"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
+          >
+            {appInviteLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Sending…
+              </>
+            ) : (
+              "Start fixing"
+            )}
+          </button>
         </div>
       </div>
 
@@ -1346,38 +1387,42 @@ export default function ReportScanClient({
         </div>
       </div>
 
-      {/* Mobile: floating footer with current stage */}
+      {/* Mobile: floating footer with current stage and "Start fixing" */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-20 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/80 px-4 py-3 flex items-center justify-between gap-3">
-          <button
-            onClick={handlePrevious}
-            disabled={currentStep === 0}
-            className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
-              currentStep === 0
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            Previous
-          </button>
-          <div className="flex-1 min-w-0 text-center">
+          <div className="flex-1 min-w-0 text-left">
             <p className="text-sm font-medium text-gray-900 truncate">
               {steps[currentStep]?.label}
             </p>
             <p className="text-xs text-gray-500 mt-0.5">
               Step {currentStep + 1} of 6
             </p>
+            {appInviteError && (
+              <p className="text-xs text-red-600 mt-1">{appInviteError}</p>
+            )}
+            {appInviteSent && (
+              <p className="text-xs text-green-600 mt-1">
+                Check your email for a sign-in link
+              </p>
+            )}
           </div>
           <button
-            onClick={handleNext}
-            disabled={currentStep === 5}
-            className={`flex-shrink-0 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
-              currentStep === 5
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+            onClick={handleStartFixing}
+            disabled={appInviteLoading}
+            className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
+              appInviteLoading
+                ? "bg-gray-100 text-gray-400 cursor-wait"
                 : "bg-blue-600 text-white hover:bg-blue-700"
             }`}
           >
-            Next
+            {appInviteLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Sending…
+              </>
+            ) : (
+              "Start fixing"
+            )}
           </button>
         </div>
       </div>
@@ -1390,8 +1435,9 @@ export default function ReportScanClient({
           // setShowEmailVerification(false);
         }}
         prefilledUsernames={gbpExtractedUsernames || undefined}
-        onVerified={(socialUsernames) => {
+        onVerified={(socialUsernames, email) => {
           setEmailVerified(true);
+          if (email) setVerifiedEmail(email);
           setShowEmailVerification(false);
           // Store user-provided usernames (use confirmed prefilled ones or newly entered ones)
           // These are the FINAL approved usernames that will be used for analysis

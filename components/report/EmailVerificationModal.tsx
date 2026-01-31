@@ -8,7 +8,7 @@ import { X, Mail, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 interface EmailVerificationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onVerified: (socialUsernames?: { instagram?: string; facebook?: string }) => void;
+  onVerified: (socialUsernames?: { instagram?: string; facebook?: string }, email?: string) => void;
   placeId: string;
   placeName: string;
   prefilledUsernames?: { instagram?: string; facebook?: string };
@@ -198,9 +198,12 @@ export default function EmailVerificationModal({
       if (cleanInstagram) socialUsernames.instagram = cleanInstagram;
       if (cleanFacebook) socialUsernames.facebook = cleanFacebook;
 
-      // Wait a moment to show success, then call onVerified with usernames
+      // Wait a moment to show success, then call onVerified with usernames and verified email
       setTimeout(() => {
-        onVerified(Object.keys(socialUsernames).length > 0 ? socialUsernames : undefined);
+        onVerified(
+          Object.keys(socialUsernames).length > 0 ? socialUsernames : undefined,
+          email.trim()
+        );
       }, 500);
     } catch (err: any) {
       setError(err.message || "Invalid verification code. Please try again.");

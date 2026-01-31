@@ -27,15 +27,15 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
   };
   
   const getBackgroundColor = (label: string) => {
-    if (label === 'Good') return '#f0fdf4'; // Very light green
-    if (label === 'Okay') return '#fff7ed'; // Very light orange
-    return '#fef2f2'; // Very light red/pink
+    if (label === 'Good') return '#dcfce7'; // Slightly darker green (green-100)
+    if (label === 'Okay') return '#ffddd2'; // Orange with a slight red tint (coral)
+    return '#fee2e2'; // Slightly darker red (red-100)
   };
   
   const getBorderColor = (label: string) => {
-    if (label === 'Good') return '#bbf7d0'; // Light green border
-    if (label === 'Okay') return '#fed7aa'; // Light orange border
-    return '#fecaca'; // Light red border
+    if (label === 'Good') return '#a7f3d0'; // Darker green border (green-200)
+    if (label === 'Okay') return '#fda4a4'; // Orange-red border (slightly reddish)
+    return '#fca5a5'; // Darker red border (red-300)
   };
   
   // Calculate arc for circular gauge (SVG)
@@ -92,7 +92,7 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
     <>
       {/* Sidebar - hidden on mobile */}
       <div
-        className="hidden md:flex flex-shrink-0 w-64 sticky top-4 p-8 flex-col items-center overflow-y-auto rounded-2xl ml-4 border-2"
+        className="hidden md:flex flex-shrink-0 w-80 sticky top-4 p-8 flex-col items-center overflow-y-auto rounded-2xl ml-4 border-2"
         style={{
           height: 'calc(100vh - 2rem)',
           backgroundColor: getBackgroundColor(overall.label),

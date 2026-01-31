@@ -106,10 +106,18 @@ export default function ReportTopCards({
         (a, b) => (a.score / Math.max(1, a.maxScore)) - (b.score / Math.max(1, b.maxScore))
       )[0];
       const title = lowestSection?.title?.trim() ?? "";
+      // Phrase as an action: avoid "Improve Get your website..." – use title as-is if it's already imperative
       const actionLabel = lowestSection
-        ? title.toLowerCase().startsWith("improve ")
-          ? title
-          : `Improve ${title}`
+        ? (() => {
+            const lower = title.toLowerCase();
+            if (lower.startsWith("improve ") || lower.startsWith("get ") || lower.startsWith("build ") || lower.startsWith("make ")) {
+              return title; // Already imperative
+            }
+            if (lower.startsWith("add ") || lower.startsWith("ensure ") || lower.startsWith("fix ")) {
+              return title;
+            }
+            return `Improve: ${title}`; // Use colon so "Improve: Get your website..." reads correctly
+          })()
         : null;
       const aiLabels = priorities.slice(0, 3).map((p) => p.issue.trim()).filter(Boolean);
       const combined: string[] = [];

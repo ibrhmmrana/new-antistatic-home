@@ -1077,6 +1077,17 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
     });
   }
   
+  // Normalize business name for matching (so we don't mark wrong business as "You")
+  const targetBusinessNameNorm = (meta.businessName || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+  const nameMatchesTarget = (compName: string | undefined): boolean => {
+    if (!compName || !targetBusinessNameNorm) return false;
+    const n = compName.toLowerCase().trim().replace(/\s+/g, ' ');
+    return n === targetBusinessNameNorm || n.includes(targetBusinessNameNorm) || targetBusinessNameNorm.includes(n);
+  };
+
   // Sort all businesses by rating (desc), then by reviews (desc)
   const sortedCompetitors = allBusinesses
     .sort((a, b) => {
@@ -1086,11 +1097,13 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
       return (b.reviews || 0) - (a.reviews || 0);
     })
     .map((comp, idx) => {
-      // Check if this is the target business
-      const isTarget = 
-        comp.isUserBusiness ||
+      // Check if this is the target business: must match place_id or website AND name
+      const placeOrWebsiteMatch =
         (targetPlaceId && comp.place_id === targetPlaceId) ||
         (targetDomainNormalized && comp.website && normalizeDomain(comp.website) === targetDomainNormalized);
+      const isTarget =
+        comp.isUserBusiness ||
+        (placeOrWebsiteMatch && nameMatchesTarget(comp.name));
       
       return {
         name: comp.name || 'Unknown',

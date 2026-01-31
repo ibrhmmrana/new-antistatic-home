@@ -53,13 +53,13 @@ body::-webkit-scrollbar {
 /* "We found X issues" card: score-based background only below desktop (md = 768px) */
 @media (max-width: 767px) {
   .report-issues-card[data-grade="Good"] {
-    background-color: #f0fdf4;
+    background-color: #dcfce7;
   }
   .report-issues-card[data-grade="Okay"] {
-    background-color: #fff7ed;
+    background-color: #ffddd2;
   }
   .report-issues-card[data-grade="Poor"] {
-    background-color: #fef2f2;
+    background-color: #fee2e2;
   }
 }
 
