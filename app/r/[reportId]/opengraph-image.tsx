@@ -17,7 +17,7 @@ export const revalidate = 86400;
 
 const GRADE_DISPLAY: Record<string, string> = {
   Poor: "POOR",
-  Okay: "OK",
+  Okay: "WEAK",
   Good: "GOOD",
 };
 
@@ -26,6 +26,9 @@ const GRADE_COLOR: Record<string, string> = {
   Okay: "#fbbf24",
   Good: "#22c55e",
 };
+
+/** Approximate width of "Online Health Grade:" at 56px Product Sans Medium */
+const LABEL_TEXT_WIDTH = 620;
 
 async function getBaseUrl(): Promise<string> {
   const h = await headers();
@@ -76,7 +79,7 @@ export default async function OpenGraphImage({
   let businessName = "Business";
   let logoUrl: string | null = null;
   let label: "Good" | "Okay" | "Poor" = "Okay";
-  let gradeDisplay = "OK";
+  let gradeDisplay = "WEAK";
   let gradeColor = GRADE_COLOR.Okay;
 
   const snapshot = await loadSnapshot(reportId);
@@ -90,7 +93,7 @@ export default async function OpenGraphImage({
       rawLabel === "Good" || rawLabel === "Okay" || rawLabel === "Poor"
         ? rawLabel
         : "Okay";
-    gradeDisplay = GRADE_DISPLAY[label] ?? "OK";
+    gradeDisplay = GRADE_DISPLAY[label] ?? "WEAK";
     gradeColor = GRADE_COLOR[label] ?? GRADE_COLOR.Okay;
   }
 
@@ -138,6 +141,7 @@ export default async function OpenGraphImage({
     (
       <div
         style={{
+          display: "flex",
           position: "relative",
           width: "100%",
           height: "100%",
@@ -187,13 +191,12 @@ export default async function OpenGraphImage({
               <img
                 src={businessLogoDataUrl}
                 alt=""
-                width={120}
+                width={LABEL_TEXT_WIDTH}
                 height={120}
                 style={{
-                  width: 120,
+                  width: LABEL_TEXT_WIDTH,
                   height: 120,
-                  borderRadius: 9999,
-                  objectFit: "cover",
+                  objectFit: "contain",
                 }}
               />
             ) : (
@@ -224,8 +227,9 @@ export default async function OpenGraphImage({
             <span
               style={{
                 fontSize: 56,
-                fontWeight: 500,
+                fontWeight: 900,
                 color: "white",
+                textShadow: "0 0 2px rgba(255,255,255,0.8), 0 0 1px white",
               }}
             >
               Online Health Grade:
@@ -265,14 +269,14 @@ export default async function OpenGraphImage({
               <img
                 src={logoDataUrl}
                 alt="Antistatic"
-                width={160}
-                height={48}
+                width={220}
+                height={66}
                 style={{ objectFit: "contain" }}
               />
             ) : (
               <span
                 style={{
-                  fontSize: 40,
+                  fontSize: 56,
                   fontWeight: 700,
                   color: "white",
                 }}
