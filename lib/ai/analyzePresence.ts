@@ -390,6 +390,7 @@ export interface CompetitorSummary {
   rating: number | null;
   reviewCount: number | null;
   rank: number;
+  isTargetBusiness?: boolean;
 }
 
 /**
