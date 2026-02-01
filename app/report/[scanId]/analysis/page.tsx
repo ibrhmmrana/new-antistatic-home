@@ -3,14 +3,18 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { assembleReport } from "@/lib/report/assembleReport";
+import { buildWebsiteSummary, buildGbpSummary } from "@/lib/report/aiDataSummaries";
 import type { ReportSchema } from "@/lib/report/types";
+import type { Competitor } from "@/lib/report/types";
 import type { ReportSnapshotV1, ReviewSnapshot, MarkerLocation } from "@/lib/report/snapshotTypes";
 import ReportLeftRail from "@/components/report/ReportLeftRail";
 import ReportTopCards from "@/components/report/ReportTopCards";
+import ReportVisualInsights from "@/components/report/ReportVisualInsights";
 import ReportSearchVisibility from "@/components/report/ReportSearchVisibility";
 import ReportChecklistSection from "@/components/report/ReportChecklistSection";
 import ReportAIAnalysis from "@/components/report/ReportAIAnalysis";
 import ReportGoogleReviews from "@/components/report/ReportGoogleReviews";
+import ReportInstagramComments from "@/components/report/ReportInstagramComments";
 import ShareButton from "@/components/report/ShareButton";
 
 // Helper function to extract username from URL
@@ -340,6 +344,24 @@ export default function AnalysisPage() {
     const businessName = placesDetails?.name || gbpAnalysis?.analysis?.businessName || 'Business';
     const businessCategory = gbpAnalysis?.analysis?.category || websiteResult?.business_identity?.category_label || 'Business';
 
+    // Curated summaries for AI (not full crawler/GBP payloads)
+    let websiteSummary = null;
+    try {
+      const websiteCrawlForSummary = websiteResult ?? (() => {
+        const cached = localStorage.getItem(`analysis_${scanId}_website`);
+        if (!cached) return null;
+        try {
+          return JSON.parse(cached);
+        } catch {
+          return null;
+        }
+      })();
+      websiteSummary = websiteCrawlForSummary ? buildWebsiteSummary(websiteCrawlForSummary) : null;
+    } catch (_) {}
+    const gbpSummary = (placesDetails || gbpAnalysis?.analysis)
+      ? buildGbpSummary(placesDetails ?? {}, gbpAnalysis?.analysis)
+      : null;
+
     // Prepare data for AI analysis
     const aiData: any = {
       instagram: igResult?.profile ? {
@@ -347,7 +369,10 @@ export default function AnalysisPage() {
         website: igResult.profile.website,
         category: igResult.profile.category,
         followerCount: igResult.profile.followerCount,
-        postCount: igResult.posts?.length || 0,
+        postCount: igResult.profile.postCount ?? igResult.posts?.length ?? 0,
+        fullName: igResult.profile.fullName ?? undefined,
+        isVerified: igResult.profile.isVerified ?? undefined,
+        isBusinessAccount: igResult.profile.isBusinessAccount ?? undefined,
       } : undefined,
       facebook: fbResult?.profile ? {
         description: fbResult.profile.description,
@@ -356,8 +381,8 @@ export default function AnalysisPage() {
         address: fbResult.profile.address,
         hours: fbResult.profile.hours,
       } : undefined,
-      website: socialsData?.websiteUrl ? {
-        description: null, // Could extract from website crawl
+      website: socialsData?.websiteUrl && !websiteSummary ? {
+        description: null,
         phone: null,
         address: null,
         hours: null,
@@ -368,7 +393,67 @@ export default function AnalysisPage() {
         authorName: r.authorName,
         relativeTime: r.relativeTime,
       })) : undefined,
+      instagramComments: (igResult?.comments?.length ?? 0) > 0
+        ? igResult.comments.map((c: { text: string; postContext?: string }) => ({
+            text: c.text,
+            postContext: c.postContext,
+          }))
+        : undefined,
+      instagramRecentCaptions: (igResult?.recentCaptions?.length ?? 0) > 0
+        ? igResult.recentCaptions.map((cap: { caption: string; date?: string }) => ({
+            caption: cap.caption,
+            date: cap.date,
+          }))
+        : undefined,
+      websiteSummary: websiteSummary ?? undefined,
+      gbpSummary: gbpSummary ?? undefined,
     };
+
+    // Add competitive context (competitors + user rank + user scores) from assembled report
+    try {
+      let websiteCrawlForAi = websiteResult;
+      if (!websiteCrawlForAi) {
+        const cached = localStorage.getItem(`analysis_${scanId}_website`);
+        if (cached) {
+          try {
+            websiteCrawlForAi = JSON.parse(cached);
+          } catch {}
+        }
+      }
+      const assembledForAi = assembleReport({
+        placeId,
+        placeName: placesDetails?.name || undefined,
+        placeAddress: placesDetails?.address ?? placesDetails?.formatted_address ?? undefined,
+        placesDetails: placesDetails || undefined,
+        websiteCrawl: websiteCrawlForAi || undefined,
+        gbpAnalysis: gbpAnalysis?.analysis || undefined,
+        socials: socialsData || undefined,
+        instagram: igResult || undefined,
+        facebook: fbResult || undefined,
+      });
+      const pct = (s: { score: number; maxScore: number }) =>
+        s.maxScore > 0 ? Math.round((s.score / s.maxScore) * 100) : 0;
+      aiData.competitors = assembledForAi.summaryCards.competitors.list.map((c: Competitor) => ({
+        name: c.name,
+        rating: c.rating,
+        reviewCount: c.reviewCount,
+        rank: c.rank,
+        isTargetBusiness: c.isTargetBusiness,
+      }));
+      aiData.userRank = assembledForAi.summaryCards.competitors.userRank ?? null;
+      aiData.userScores = {
+        searchResults: pct(assembledForAi.scores.searchResults),
+        websiteExperience: pct(assembledForAi.scores.websiteExperience),
+        localListings: pct(assembledForAi.scores.localListings),
+        socialPresence: pct(assembledForAi.scores.socialPresence),
+      };
+      aiData.searchVisibilityScore =
+        typeof assembledForAi.searchVisibility?.visibilityScore === 'number'
+          ? assembledForAi.searchVisibility.visibilityScore
+          : undefined;
+    } catch (_) {
+      // Optional: skip competitive context if assembly fails
+    }
 
     // Call AI analysis API
     fetch('/api/ai/analyze', {
@@ -553,6 +638,16 @@ export default function AnalysisPage() {
           supporting: {
             markerLocations,
           },
+          instagramComments: (igResult?.comments?.length ?? 0) > 0
+            ? igResult.comments.map((c: { text: string; postContext?: string; authorUsername?: string }) => ({
+                text: c.text,
+                postContext: c.postContext,
+                authorUsername: c.authorUsername,
+              }))
+            : undefined,
+          sentimentAnalysis: aiAnalysis?.sentimentAnalysis ?? undefined,
+          thematicSentiment: aiAnalysis?.thematicSentiment ?? undefined,
+          competitiveBenchmark: aiAnalysis?.competitiveBenchmark ?? undefined,
         };
         
         console.log('[SNAPSHOT] Persisting snapshot...');
@@ -588,7 +683,7 @@ export default function AnalysisPage() {
     };
     
     buildAndPersistSnapshot();
-  }, [report, aiAnalysis, aiAnalysisLoading, reviews, placeId, placeName, placeAddr, scanId, placesDetails, router, isPersisting, reportId, snapshotWaitTick]);
+  }, [report, aiAnalysis, aiAnalysisLoading, reviews, igResult, placeId, placeName, placeAddr, scanId, placesDetails, router, isPersisting, reportId, snapshotWaitTick]);
 
   // Retry persist function (for error state)
   const retryPersist = () => {
@@ -619,11 +714,7 @@ export default function AnalysisPage() {
   return (
     <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex">
       {/* Left Rail - hidden on mobile; score content shown in main flow via ReportTopCards etc. */}
-      <ReportLeftRail
-        scores={report.scores}
-        businessName={report.meta.businessName}
-        websiteLogoUrl={report.meta.websiteLogoUrl ?? null}
-      />
+      <ReportLeftRail scores={report.scores} />
       
       {/* Main Content */}
       <div className="flex-1 p-8 pb-24 md:pb-8">
@@ -664,6 +755,17 @@ export default function AnalysisPage() {
             overallGrade={report.scores.overall.label}
             aiAnalysis={aiAnalysis}
           />
+
+          {/* Competitive Edge - benchmark radar, impact card, thematic sentiment */}
+          <ReportVisualInsights
+            scores={report.scores}
+            businessName={report.meta.businessName}
+            thematicSentiment={aiAnalysis?.thematicSentiment}
+            competitiveBenchmark={aiAnalysis?.competitiveBenchmark}
+          />
+          
+          {/* AI Analysis */}
+          <ReportAIAnalysis analysis={aiAnalysis} isLoading={aiAnalysisLoading} />
           
           {/* Search Visibility Table */}
           <ReportSearchVisibility
@@ -671,9 +773,6 @@ export default function AnalysisPage() {
             targetPlaceId={report.meta.placeId}
             targetDomain={report.meta.websiteUrl || null}
           />
-          
-          {/* AI Analysis */}
-          <ReportAIAnalysis analysis={aiAnalysis} isLoading={aiAnalysisLoading} />
           
           {/* Summary Header */}
           <div className="mb-6">
@@ -690,6 +789,9 @@ export default function AnalysisPage() {
           
           {/* Google Reviews Section */}
           <ReportGoogleReviews reviews={reviews} />
+
+          {/* Instagram Comments (extracted from scraped posts) */}
+          <ReportInstagramComments comments={igResult?.comments ?? []} />
         </div>
       </div>
     </div>

@@ -700,7 +700,7 @@ export default function ReportScanClient({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ 
                   username,
-                  includeComments: false // Don't need comments for analysis
+                  includeComments: true // Full scrape: profile, posts, comments (same as /new-test)
                 }),
               });
               if (response.ok) {
@@ -792,7 +792,7 @@ export default function ReportScanClient({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ 
                   username,
-                  includeComments: false // Don't need comments for analysis
+                  includeComments: true // Full scrape: profile, posts, comments (same as /new-test)
                 }),
               });
               if (response.ok) {
@@ -1038,23 +1038,55 @@ export default function ReportScanClient({
   
   // Helper function to extract username from social URL
   /**
-   * Transforms the new Instagram API response to the format expected by the report analysis
-   * New API returns: { profile: InstagramProfile, posts: InstagramPost[], scrapedAt: string }
-   * Expected format: { profile: { biography, website, category, followerCount }, posts: [{ date, likeCount, commentCount }] }
+   * Transforms the new Instagram API response to the format expected by the report analysis.
+   * Same API as /new-test: { profile, posts (with comments when includeComments: true), scrapedAt }.
+   * Produces: profile + posts (for assembleReport) + comments (flattened for AI and report display).
    */
   function transformInstagramApiResponse(apiResponse: any): any {
+    const posts = apiResponse.posts || [];
+    const commentsFlat: Array<{ text: string; postContext?: string; authorUsername?: string }> = [];
+    for (const post of posts) {
+      const postContext = post.caption
+        ? (post.caption.length > 80 ? post.caption.slice(0, 80) + "…" : post.caption)
+        : (post.shortcode ? `Post /p/${post.shortcode}` : undefined);
+      const addComment = (c: { text?: string; owner?: { username?: string }; replies?: Array<{ text?: string; owner?: { username?: string } }> }) => {
+        if (c?.text?.trim()) {
+          commentsFlat.push({
+            text: c.text.trim(),
+            postContext,
+            authorUsername: c.owner?.username ?? undefined,
+          });
+        }
+        (c as any).replies?.forEach((r: any) => addComment(r));
+      };
+      post.comments?.forEach(addComment);
+    }
+    // Recent post captions for AI (last 10 posts) – richer context than comments alone
+    const recentCaptions: Array<{ caption: string; date?: string }> = posts
+      .slice(0, 10)
+      .filter((post: any) => post.caption?.trim())
+      .map((post: any) => ({
+        caption: (post.caption || "").trim(),
+        date: post.takenAt ? new Date(post.takenAt * 1000).toISOString() : undefined,
+      }));
     return {
       profile: {
         biography: apiResponse.profile?.biography || null,
         website: apiResponse.profile?.website || null,
         category: apiResponse.profile?.category || null,
-        followerCount: apiResponse.profile?.followerCount || null,
+        followerCount: apiResponse.profile?.followerCount ?? null,
+        fullName: apiResponse.profile?.fullName ?? null,
+        isVerified: apiResponse.profile?.isVerified ?? null,
+        isBusinessAccount: apiResponse.profile?.isBusinessAccount ?? null,
+        postCount: apiResponse.profile?.postCount ?? (posts.length > 0 ? posts.length : null),
       },
-      posts: (apiResponse.posts || []).map((post: any) => ({
-        date: post.takenAt ? new Date(post.takenAt * 1000).toISOString() : null, // Convert Unix timestamp to ISO string
+      posts: posts.map((post: any) => ({
+        date: post.takenAt ? new Date(post.takenAt * 1000).toISOString() : null,
         likeCount: post.likeCount || null,
         commentCount: post.commentCount || null,
       })),
+      comments: commentsFlat,
+      recentCaptions,
     };
   }
 

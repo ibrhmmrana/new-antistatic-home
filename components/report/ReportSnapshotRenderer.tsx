@@ -4,10 +4,12 @@ import { useEffect, useRef } from "react";
 import type { ReportSnapshotV1 } from "@/lib/report/snapshotTypes";
 import ReportLeftRail from "./ReportLeftRail";
 import ReportTopCards from "./ReportTopCards";
+import ReportVisualInsights from "./ReportVisualInsights";
 import ReportSearchVisibility from "./ReportSearchVisibility";
 import ReportChecklistSection from "./ReportChecklistSection";
 import ReportAIAnalysis from "./ReportAIAnalysis";
 import ReportGoogleReviews from "./ReportGoogleReviews";
+import ReportInstagramComments from "./ReportInstagramComments";
 import ShareButton from "./ShareButton";
 
 interface ReportSnapshotRendererProps {
@@ -64,11 +66,7 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
   return (
     <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex">
       {/* Left Rail - hidden on mobile */}
-      <ReportLeftRail
-        scores={report.scores}
-        businessName={report.meta.businessName}
-        websiteLogoUrl={report.meta.websiteLogoUrl ?? null}
-      />
+      <ReportLeftRail scores={report.scores} />
 
       {/* Main Content */}
       <div className="flex-1 p-8 pb-24 md:pb-8">
@@ -93,6 +91,17 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             snapshotPhotoUrl={place.businessPhotoUrl}
           />
 
+          {/* Competitive Edge - benchmark radar, impact card, thematic sentiment */}
+          <ReportVisualInsights
+            scores={report.scores}
+            businessName={report.meta.businessName}
+            thematicSentiment={snapshot.thematicSentiment}
+            competitiveBenchmark={snapshot.competitiveBenchmark}
+          />
+
+          {/* AI Analysis - pass directly, no loading state in snapshot mode */}
+          <ReportAIAnalysis analysis={aiAnalysis} isLoading={false} />
+
           {/* Search Visibility Table - snapshot mode: pass marker data directly */}
           <ReportSearchVisibility
             searchVisibility={report.searchVisibility}
@@ -101,9 +110,6 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             snapshotMode={true}
             snapshotMarkerLocations={supporting.markerLocations}
           />
-
-          {/* AI Analysis - pass directly, no loading state in snapshot mode */}
-          <ReportAIAnalysis analysis={aiAnalysis} isLoading={false} />
 
           {/* Summary Header */}
           <div className="mb-6">
@@ -120,6 +126,9 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
 
           {/* Google Reviews */}
           <ReportGoogleReviews reviews={reviews} />
+
+          {/* Instagram Comments (from snapshot) */}
+          <ReportInstagramComments comments={snapshot.instagramComments ?? []} />
         </div>
       </div>
     </div>

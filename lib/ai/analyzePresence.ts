@@ -3,6 +3,12 @@
  */
 
 import { getOpenAIClient, AnalysisResult, ConsistencyResult, ReviewAnalysisResult } from './openaiClient';
+import type {
+  SentimentAnalysisSnapshot,
+  ThematicSentimentSnapshot,
+  CompetitiveBenchmarkSnapshot,
+} from '@/lib/report/snapshotTypes';
+import type { WebsiteSummary, GbpSummary } from '@/lib/report/aiDataSummaries';
 
 interface SocialMediaProfile {
   platform: 'instagram' | 'facebook' | 'website';
@@ -15,6 +21,10 @@ interface SocialMediaProfile {
   hours?: string | null;
   followerCount?: number | null;
   postCount?: number | null;
+  /** Instagram-only: from scraper */
+  fullName?: string | null;
+  isVerified?: boolean | null;
+  isBusinessAccount?: boolean | null;
 }
 
 interface Review {
@@ -43,8 +53,11 @@ Profile Data:
 - Phone: ${profile.phone || 'Not set'}
 - Address: ${profile.address || 'Not set'}
 - Hours: ${profile.hours || 'Not set'}
-${profile.followerCount ? `- Followers: ${profile.followerCount}` : ''}
-${profile.postCount ? `- Posts: ${profile.postCount}` : ''}
+${profile.followerCount != null ? `- Followers: ${profile.followerCount}` : ''}
+${profile.postCount != null ? `- Posts: ${profile.postCount}` : ''}
+${profile.platform === 'instagram' && profile.fullName ? `- Display name: ${profile.fullName}` : ''}
+${profile.platform === 'instagram' && profile.isVerified != null ? `- Verified: ${profile.isVerified}` : ''}
+${profile.platform === 'instagram' && profile.isBusinessAccount != null ? `- Business account: ${profile.isBusinessAccount}` : ''}
 
 Analyze:
 1. Is the biography/description compelling and relevant to the business type?
@@ -169,12 +182,14 @@ Respond in JSON format:
 }
 
 /**
- * Analyze Google reviews and identify pain points
+ * Analyze Google reviews and identify pain points.
+ * Optional gbpContext (GBP description, hours, etc.) helps interpret reviews in context.
  */
 export async function analyzeReviews(
   businessName: string,
   businessCategory: string,
-  reviews: Review[]
+  reviews: Review[],
+  gbpContext?: string
 ): Promise<ReviewAnalysisResult> {
   const openai = getOpenAIClient();
 
@@ -191,13 +206,13 @@ export async function analyzeReviews(
 
   // Limit to most recent 50 reviews for analysis
   const reviewsToAnalyze = reviews.slice(0, 50);
-  const reviewTexts = reviewsToAnalyze.map((r, i) => 
+  const reviewTexts = reviewsToAnalyze.map((r, i) =>
     `Review ${i + 1} (${r.rating}★): "${r.text}"`
   ).join('\n\n');
+  const contextBlock = gbpContext ? `Business context (Google Business Profile):\n${gbpContext}\n\n` : '';
 
   const prompt = `You are a customer feedback analyst for local businesses. Analyze these Google reviews for "${businessName}" (${businessCategory}).
-
-Reviews (${reviewsToAnalyze.length} of ${reviews.length} total):
+${contextBlock}Reviews (${reviewsToAnalyze.length} of ${reviews.length} total):
 ${reviewTexts}
 
 Identify:
@@ -257,32 +272,41 @@ Respond in JSON format:
 }
 
 /**
- * Analyze social media comments for engagement insights
+ * Analyze social media comments for engagement insights.
+ * Optional recentCaptions (Instagram post captions) give context on what the business posts.
  */
 export async function analyzeComments(
   businessName: string,
   platform: 'instagram' | 'facebook',
-  comments: Array<{ text: string; postContext?: string }>
+  comments: Array<{ text: string; postContext?: string }>,
+  recentCaptions?: Array<{ caption: string; date?: string }>
 ): Promise<AnalysisResult> {
   const openai = getOpenAIClient();
 
-  if (comments.length === 0) {
+  if (comments.length === 0 && !(recentCaptions && recentCaptions.length > 0)) {
     return {
       score: 50,
-      summary: 'No comments available for analysis.',
+      summary: 'No comments or post content available for analysis.',
       issues: [],
       highlights: [],
     };
   }
 
-  const commentTexts = comments.slice(0, 30).map((c, i) => 
+  const commentTexts = comments.slice(0, 30).map((c, i) =>
     `Comment ${i + 1}: "${c.text}"${c.postContext ? ` (on: ${c.postContext})` : ''}`
   ).join('\n');
+  const captionContext =
+    recentCaptions && recentCaptions.length > 0
+      ? `\nRecent post captions from the business (for context on what they post):\n${recentCaptions
+          .slice(0, 10)
+          .map((cap, i) => `Post ${i + 1}${cap.date ? ` (${cap.date})` : ''}: "${cap.caption.slice(0, 300)}${cap.caption.length > 300 ? '…' : ''}"`)
+          .join('\n')}\n`
+      : '';
 
-  const prompt = `You are a social media engagement analyst. Analyze these ${platform} comments for "${businessName}".
+  const prompt = `You are a social media engagement analyst. Analyze these ${platform} comments for "${businessName}".${captionContext}
 
 Comments:
-${commentTexts}
+${commentTexts || '(None provided)'}
 
 Analyze:
 1. What are customers asking about most? (unanswered questions)
@@ -340,6 +364,9 @@ export interface FullPresenceAnalysis {
   reviews: ReviewAnalysisResult;
   instagramComments?: AnalysisResult;
   facebookComments?: AnalysisResult;
+  sentimentAnalysis?: SentimentAnalysisSnapshot;
+  thematicSentiment?: ThematicSentimentSnapshot;
+  competitiveBenchmark?: CompetitiveBenchmarkSnapshot;
   overallScore: number;
   topPriorities: Array<{
     priority: number;
@@ -347,6 +374,326 @@ export interface FullPresenceAnalysis {
     issue: string;
     recommendation: string;
   }>;
+}
+
+/** User category scores as 0-100 percentages for competitive analysis */
+export interface UserScoresPct {
+  searchResults: number;
+  websiteExperience: number;
+  localListings: number;
+  socialPresence: number;
+}
+
+/** Competitor summary for AI */
+export interface CompetitorSummary {
+  name: string;
+  rating: number | null;
+  reviewCount: number | null;
+  rank: number;
+}
+
+/**
+ * Combined sentiment analysis of GBP reviews + Instagram comments (Voice of the Customer)
+ */
+export async function analyzeSentiment(
+  businessName: string,
+  businessCategory: string,
+  reviews: Review[],
+  instagramComments: Array<{ text: string; postContext?: string }>
+): Promise<SentimentAnalysisSnapshot> {
+  const openai = getOpenAIClient();
+
+  const hasReviews = reviews.length > 0;
+  const hasComments = instagramComments.length > 0;
+  if (!hasReviews && !hasComments) {
+    return {
+      positiveCount: 0,
+      neutralCount: 0,
+      negativeCount: 0,
+      combinedSummary: 'No reviews or comments available for sentiment analysis.',
+    };
+  }
+
+  const reviewLines = hasReviews
+    ? reviews.slice(0, 50).map((r, i) => `Review ${i + 1} (${r.rating}★): "${r.text}"`).join('\n\n')
+    : '';
+  const commentLines = hasComments
+    ? instagramComments.slice(0, 30).map((c, i) =>
+        `Comment ${i + 1}: "${c.text}"${c.postContext ? ` (on: ${c.postContext})` : ''}`
+      ).join('\n')
+    : '';
+
+  const prompt = `You are a customer feedback analyst. Analyze the combined feedback below for "${businessName}" (${businessCategory}).
+
+${hasReviews ? `Google Reviews (${Math.min(reviews.length, 50)} shown):\n${reviewLines}` : ''}
+${hasReviews && hasComments ? '\n' : ''}
+${hasComments ? `Instagram Comments (${Math.min(instagramComments.length, 30)} shown):\n${commentLines}` : ''}
+
+Tasks:
+1. Classify each piece of feedback as Positive, Neutral, or Negative. Count how many fall into each category.
+2. Write a concise "Voice of the Customer" summary (2-4 sentences) that highlights common themes across BOTH reviews and comments: what customers love, what they complain about, and any repeated requests or concerns.
+
+Respond with ONLY valid JSON in this exact shape (no markdown, no extra text):
+{
+  "positiveCount": <number>,
+  "neutralCount": <number>,
+  "negativeCount": <number>,
+  "combinedSummary": "<2-4 sentence Voice of the Customer summary>"
+}`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+      max_tokens: 500,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error('No response from OpenAI');
+
+    const parsed = JSON.parse(content) as SentimentAnalysisSnapshot;
+    if (
+      typeof parsed.positiveCount !== 'number' ||
+      typeof parsed.neutralCount !== 'number' ||
+      typeof parsed.negativeCount !== 'number' ||
+      typeof parsed.combinedSummary !== 'string'
+    ) {
+      throw new Error('Invalid sentiment response shape');
+    }
+    return parsed;
+  } catch (error) {
+    console.error('Error analyzing sentiment:', error);
+    const total = reviews.length + instagramComments.length;
+    return {
+      positiveCount: 0,
+      neutralCount: total,
+      negativeCount: 0,
+      combinedSummary: 'Unable to analyze sentiment at this time.',
+    };
+  }
+}
+
+/**
+ * Thematic sentiment: Service, Food, Atmosphere, Value (0-100 each)
+ */
+export async function analyzeThematicSentiment(
+  businessName: string,
+  businessCategory: string,
+  reviews: Review[],
+  instagramComments: Array<{ text: string; postContext?: string }>
+): Promise<ThematicSentimentSnapshot> {
+  const openai = getOpenAIClient();
+
+  const hasReviews = reviews.length > 0;
+  const hasComments = instagramComments.length > 0;
+  if (!hasReviews && !hasComments) {
+    return { service: 50, food: 50, atmosphere: 50, value: 50 };
+  }
+
+  const reviewLines = hasReviews
+    ? reviews.slice(0, 50).map((r, i) => `Review ${i + 1} (${r.rating}★): "${r.text}"`).join('\n\n')
+    : '';
+  const commentLines = hasComments
+    ? instagramComments.slice(0, 30).map((c, i) =>
+        `Comment ${i + 1}: "${c.text}"${c.postContext ? ` (on: ${c.postContext})` : ''}`
+      ).join('\n')
+    : '';
+
+  const prompt = `You are a customer feedback analyst. Analyze the combined feedback below for "${businessName}" (${businessCategory}).
+
+${hasReviews ? `Google Reviews:\n${reviewLines}` : ''}
+${hasReviews && hasComments ? '\n' : ''}
+${hasComments ? `Instagram Comments:\n${commentLines}` : ''}
+
+Tasks:
+1. Score sentiment by theme from 0-100 (0=very negative, 100=very positive). Categories: Service (staff, wait times, booking, responsiveness), Food (quality, taste, menu; or product quality if not food), Atmosphere (ambiance, cleanliness, location, vibe), Value (price vs quality, worth the money).
+2. For EACH category, provide: (a) "justification": a 2-sentence explanation of why that score was given; (b) "supportingQuotes": an array of 2-3 exact short quotes from the reviews or comments above that justify the score (use verbatim phrases in quotes).
+
+Respond with ONLY valid JSON (no markdown). Use this exact shape:
+{
+  "service": <0-100>,
+  "food": <0-100>,
+  "atmosphere": <0-100>,
+  "value": <0-100>,
+  "categoryDetails": {
+    "service": { "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] },
+    "food": { "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] },
+    "atmosphere": { "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] },
+    "value": { "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] }
+  }
+}`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+      max_tokens: 1200,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error('No response from OpenAI');
+
+    const parsed = JSON.parse(content);
+    const clamp = (n: number) => Math.min(100, Math.max(0, typeof n === 'number' ? n : 50));
+    const result: ThematicSentimentSnapshot = {
+      service: clamp(parsed.service),
+      food: clamp(parsed.food),
+      atmosphere: clamp(parsed.atmosphere),
+      value: clamp(parsed.value),
+    };
+    if (parsed.categoryDetails && typeof parsed.categoryDetails === 'object') {
+      const d = parsed.categoryDetails;
+      const mk = (k: 'service' | 'food' | 'atmosphere' | 'value') => ({
+        justification: typeof d[k]?.justification === 'string' ? d[k].justification : '',
+        supportingQuotes: Array.isArray(d[k]?.supportingQuotes) ? d[k].supportingQuotes.filter((q: unknown) => typeof q === 'string').slice(0, 3) : [],
+      });
+      result.categoryDetails = { service: mk('service'), food: mk('food'), atmosphere: mk('atmosphere'), value: mk('value') };
+    }
+    return result;
+  } catch (error) {
+    console.error('Error analyzing thematic sentiment:', error);
+    return { service: 50, food: 50, atmosphere: 50, value: 50 };
+  }
+}
+
+/**
+ * Competitive benchmark: market leader average + advantage/gap/impact narrative
+ * Optional thematicSentiment + searchVisibilityScore for "Missed Connections" insight.
+ */
+export async function analyzeCompetitiveBenchmark(
+  businessName: string,
+  businessCategory: string,
+  userScores: UserScoresPct,
+  competitors: CompetitorSummary[],
+  userRank: number | null,
+  options?: { thematicSentiment?: ThematicSentimentSnapshot; searchVisibilityScore?: number }
+): Promise<CompetitiveBenchmarkSnapshot> {
+  const openai = getOpenAIClient();
+
+  const top3 = competitors.filter(c => !c.isTargetBusiness).slice(0, 3);
+  if (top3.length === 0) {
+    return {
+      marketLeaderAverage: {
+        searchResults: 75,
+        websiteExperience: 75,
+        localListings: 75,
+        socialPresence: 75,
+      },
+      competitiveAdvantage: 'No competitor data available yet.',
+      urgentGap: 'Improve visibility and presence to outrank local competitors once data is available.',
+      potentialImpact: 'Strengthening your online presence can help you capture more local search and foot traffic.',
+    };
+  }
+
+  const compList = top3.map(c => `${c.name} (rating: ${c.rating ?? 'N/A'}, reviews: ${c.reviewCount ?? 0}, rank: ${c.rank})`).join('\n');
+  const thematic = options?.thematicSentiment;
+  const searchVis = options?.searchVisibilityScore ?? 0;
+  const highSentiment = thematic && (thematic.service > 85 || thematic.food > 85 || thematic.atmosphere > 85 || thematic.value > 85);
+  const lowVisibility = searchVis < 70;
+  const useMissedConnections = highSentiment && lowVisibility;
+
+  const impactInstruction = useMissedConnections
+    ? `PRIORITY: Generate a "Missed Connections" potentialImpact. Customers love something (high sentiment in reviews) but the business has low search visibility (${searchVis}%). Example: "Your customers rave about your [specific thing, e.g. 'Irish Mojito'] (X mentions), but you aren't ranking for '[relevant local query, e.g. best cocktails in Camps Bay].' Fixing your website metadata could bridge this gap." Use the business category and any strong sentiment themes to make it specific.`
+    : `Write ONE "Potential Impact" sentence: revenue/search opportunity. Example: "By closing the Website Experience gap with [Competitor], you could capture a larger share of the search volume for '[relevant query]'." If review/sentiment data is sparse, use the general Website Experience revenue gap.`;
+
+  const prompt = `You are a local business competitive analyst. The business "${businessName}" (${businessCategory}) has these category scores (0-100): Search Results ${userScores.searchResults}, Website Experience ${userScores.websiteExperience}, Local Listings ${userScores.localListings}, Social Presence ${userScores.socialPresence}. Their rank vs competitors: ${userRank ?? 'unknown'}. Search visibility score: ${searchVis}%.
+${thematic ? `Thematic sentiment (reviews/comments): Service ${thematic.service}, Food ${thematic.food}, Atmosphere ${thematic.atmosphere}, Value ${thematic.value}.` : ''}
+
+Top competitors in the market:
+${compList}
+
+Tasks:
+1. Estimate the "Market Leader Average" for the top 3 competitors: four scores 0-100 for searchResults, websiteExperience, localListings, socialPresence (typical strong local businesses in this category).
+2. Identify ONE specific "Competitive Advantage": what "${businessName}" does BETTER than the top 3 (e.g. stronger social presence, better reviews).
+3. Identify ONE "Urgent Gap": what the top 3 are doing that "${businessName}" is missing or underperforming on.
+4. potentialImpact: ${impactInstruction}
+
+Respond with ONLY valid JSON (no markdown):
+{
+  "marketLeaderAverage": {
+    "searchResults": <0-100>,
+    "websiteExperience": <0-100>,
+    "localListings": <0-100>,
+    "socialPresence": <0-100>
+  },
+  "competitiveAdvantage": "<one sentence>",
+  "urgentGap": "<one sentence>",
+  "potentialImpact": "<one sentence>"
+}`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+      max_tokens: 500,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error('No response from OpenAI');
+
+    const parsed = JSON.parse(content) as CompetitiveBenchmarkSnapshot;
+    const avg = parsed.marketLeaderAverage;
+    const clamp = (n: number) => Math.min(100, Math.max(0, typeof n === 'number' ? n : 75));
+    return {
+      marketLeaderAverage: {
+        searchResults: clamp(avg?.searchResults ?? 75),
+        websiteExperience: clamp(avg?.websiteExperience ?? 75),
+        localListings: clamp(avg?.localListings ?? 75),
+        socialPresence: clamp(avg?.socialPresence ?? 75),
+      },
+      competitiveAdvantage: typeof parsed.competitiveAdvantage === 'string' ? parsed.competitiveAdvantage : 'Strong local presence.',
+      urgentGap: typeof parsed.urgentGap === 'string' ? parsed.urgentGap : 'Improve category scores to match top competitors.',
+      potentialImpact: typeof parsed.potentialImpact === 'string' ? parsed.potentialImpact : 'Closing the gap with market leaders can increase visibility and revenue.',
+    };
+  } catch (error) {
+    console.error('Error analyzing competitive benchmark:', error);
+    return {
+      marketLeaderAverage: {
+        searchResults: 75,
+        websiteExperience: 75,
+        localListings: 75,
+        socialPresence: 75,
+      },
+      competitiveAdvantage: 'Unable to analyze competitors at this time.',
+      urgentGap: 'Focus on improving your weakest category to compete with top-ranked businesses.',
+      potentialImpact: 'Improving your online presence can help capture more local search and customer demand.',
+    };
+  }
+}
+
+/** Serialize GBP summary for AI context (reviews analysis) */
+function gbpSummaryToContext(gbp: GbpSummary): string {
+  const parts: string[] = [];
+  if (gbp.description) parts.push(`Description: ${gbp.description}`);
+  if (gbp.category_label) parts.push(`Category: ${gbp.category_label}`);
+  if (gbp.types?.length) parts.push(`Types: ${gbp.types.join(', ')}`);
+  if (gbp.opening_hours?.weekday_text?.length) parts.push(`Hours: ${gbp.opening_hours.weekday_text.join('; ')}`);
+  if (gbp.rating != null) parts.push(`Rating: ${gbp.rating} (${gbp.review_count ?? 0} reviews)`);
+  if (gbp.gbp_checks?.description_keyword_match_pct != null) parts.push(`Description keyword match: ${gbp.gbp_checks.description_keyword_match_pct}%`);
+  if (gbp.gbp_checks?.checklist_summary?.length) parts.push(`Checklist: ${gbp.gbp_checks.checklist_summary.join('; ')}`);
+  return parts.join('\n');
+}
+
+/** Build website profile for consistency/AI from curated website summary */
+function websiteSummaryToProfile(summary: WebsiteSummary): SocialMediaProfile {
+  const homepage = summary.homepage;
+  const contact = homepage?.contact_methods;
+  const desc = homepage?.meta_description || homepage?.title || summary.business_identity?.business_name || null;
+  return {
+    platform: 'website',
+    description: desc ?? null,
+    phone: contact?.phone?.[0] ?? null,
+    address: null,
+    hours: null,
+    website: summary.site_overview?.homepage_url ?? null,
+    category: summary.business_identity?.category_label ?? null,
+  };
 }
 
 export async function analyzeFullPresence(
@@ -359,8 +706,25 @@ export async function analyzeFullPresence(
     reviews?: Review[];
     instagramComments?: Array<{ text: string; postContext?: string }>;
     facebookComments?: Array<{ text: string; postContext?: string }>;
+    /** Optional: recent post captions for richer Instagram analysis */
+    instagramRecentCaptions?: Array<{ caption: string; date?: string }>;
+    /** Optional: curated website crawl summary (not full crawl) */
+    websiteSummary?: WebsiteSummary | null;
+    /** Optional: curated GBP summary for reviews context */
+    gbpSummary?: GbpSummary | null;
+    /** Optional: for competitive benchmark (market leader avg + narrative) */
+    competitors?: CompetitorSummary[];
+    userRank?: number | null;
+    userScores?: UserScoresPct;
+    /** Optional: for "Missed Connections" insight (review-first potentialImpact) */
+    searchVisibilityScore?: number;
   }
 ): Promise<FullPresenceAnalysis> {
+  // Use curated website summary to build website profile when provided (so consistency gets real data)
+  const websiteProfile: SocialMediaProfile | undefined =
+    data.websiteSummary ? websiteSummaryToProfile(data.websiteSummary) : data.website;
+  const gbpContext = data.gbpSummary ? gbpSummaryToContext(data.gbpSummary) : undefined;
+
   const results: FullPresenceAnalysis = {
     consistency: {
       isConsistent: true,
@@ -399,8 +763,8 @@ export async function analyzeFullPresence(
     );
   }
 
-  // Consistency analysis
-  const profiles = [data.instagram, data.facebook, data.website].filter(Boolean) as SocialMediaProfile[];
+  // Consistency analysis (use website profile from websiteSummary when available)
+  const profiles = [data.instagram, data.facebook, websiteProfile].filter(Boolean) as SocialMediaProfile[];
   if (profiles.length >= 2) {
     promises.push(
       analyzeConsistency(businessName, profiles)
@@ -408,18 +772,18 @@ export async function analyzeFullPresence(
     );
   }
 
-  // Reviews analysis
+  // Reviews analysis (with GBP context when available)
   if (data.reviews && data.reviews.length > 0) {
     promises.push(
-      analyzeReviews(businessName, businessCategory, data.reviews)
+      analyzeReviews(businessName, businessCategory, data.reviews, gbpContext)
         .then(r => { results.reviews = r; })
     );
   }
 
-  // Comments analysis
+  // Comments analysis (with recent post captions when available)
   if (data.instagramComments && data.instagramComments.length > 0) {
     promises.push(
-      analyzeComments(businessName, 'instagram', data.instagramComments)
+      analyzeComments(businessName, 'instagram', data.instagramComments, data.instagramRecentCaptions)
         .then(r => { results.instagramComments = r; })
     );
   }
@@ -431,7 +795,37 @@ export async function analyzeFullPresence(
     );
   }
 
+  // Thematic sentiment (Service, Food, Atmosphere, Value)
+  const hasReviews = (data.reviews?.length ?? 0) > 0;
+  const hasComments = (data.instagramComments?.length ?? 0) > 0;
+  if (hasReviews || hasComments) {
+    promises.push(
+      analyzeThematicSentiment(
+        businessName,
+        businessCategory,
+        data.reviews ?? [],
+        data.instagramComments ?? []
+      ).then(r => { results.thematicSentiment = r; })
+    );
+  }
+
   await Promise.allSettled(promises);
+
+  // Competitive benchmark runs after thematic so potentialImpact can use "Missed Connections" when high sentiment + low visibility
+  if (data.competitors && data.competitors.length > 0 && data.userScores) {
+    const benchmark = await analyzeCompetitiveBenchmark(
+      businessName,
+      businessCategory,
+      data.userScores,
+      data.competitors,
+      data.userRank ?? null,
+      {
+        thematicSentiment: results.thematicSentiment,
+        searchVisibilityScore: data.searchVisibilityScore,
+      }
+    );
+    results.competitiveBenchmark = benchmark;
+  }
 
   // Calculate overall score
   const scores: number[] = [];

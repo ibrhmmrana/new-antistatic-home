@@ -518,7 +518,7 @@ async function fetchUserFeed(
   userId: string,
   sessionId: string,
   authHeader: string | null,
-  count: number = 12
+  count: number = 24
 ): Promise<InstagramPost[]> {
   const url = `https://www.instagram.com/api/v1/feed/user/${userId}/?count=${count}`;
 
@@ -927,7 +927,7 @@ async function scrapeInstagramAPI(username: string): Promise<{
 
   // Fetch user feed
   console.log(`[API] Fetching posts for user ${profile.userId}...`);
-  const posts = await fetchUserFeed(profile.userId, sessionId, authHeader, 12);
+  const posts = await fetchUserFeed(profile.userId, sessionId, authHeader, 24);
   console.log(`[API] Fetched ${posts.length} posts`);
 
   return { profile, posts };

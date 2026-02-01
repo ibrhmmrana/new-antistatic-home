@@ -30,6 +30,27 @@ const GRADE_COLOR: Record<string, string> = {
 /** Approximate width of "Online Health Grade:" at 56px Product Sans Medium */
 const LABEL_TEXT_WIDTH = 620;
 
+/** Max height of business logo / name slot (px) */
+const LOGO_SLOT_HEIGHT = 120;
+
+const BUSINESS_NAME_FONT_SIZE = 72;
+const BUSINESS_NAME_FONT_SIZE_MIN = 20;
+
+function splitBusinessName(name: string): { firstLine: string; rest: string } {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const firstLine = words.slice(0, 3).join(" ");
+  const rest = words.slice(3).join(" ");
+  return { firstLine, rest };
+}
+
+/** Font size for the rest line so it fits in the width of the first line (by character ratio). */
+function restLineFontSize(firstLine: string, rest: string): number {
+  if (!rest || !firstLine) return BUSINESS_NAME_FONT_SIZE;
+  const ratio = firstLine.length / rest.length;
+  const size = Math.round(BUSINESS_NAME_FONT_SIZE * ratio);
+  return Math.min(BUSINESS_NAME_FONT_SIZE, Math.max(BUSINESS_NAME_FONT_SIZE_MIN, size));
+}
+
 async function getBaseUrl(): Promise<string> {
   const h = await headers();
   const host = h.get("host") || h.get("x-forwarded-host");
@@ -87,7 +108,7 @@ export default async function OpenGraphImage({
     const report = snapshot.report;
     const place = snapshot.place;
     businessName = report.meta?.businessName ?? place.name ?? "Business";
-    logoUrl = report.meta?.websiteLogoUrl ?? place.businessPhotoUrl ?? null;
+    logoUrl = report.meta?.websiteLogoUrl ?? null;
     const rawLabel = report.scores?.overall?.label ?? "Okay";
     label =
       rawLabel === "Good" || rawLabel === "Okay" || rawLabel === "Poor"
@@ -192,25 +213,55 @@ export default async function OpenGraphImage({
                 src={businessLogoDataUrl}
                 alt=""
                 width={LABEL_TEXT_WIDTH}
-                height={120}
+                height={LOGO_SLOT_HEIGHT}
                 style={{
                   width: LABEL_TEXT_WIDTH,
-                  height: 120,
+                  height: LOGO_SLOT_HEIGHT,
                   objectFit: "contain",
                 }}
               />
-            ) : (
-              <span
-                style={{
-                  fontSize: 64,
-                  fontWeight: 700,
-                  color: "white",
-                  textAlign: "center",
-                }}
-              >
-                {businessName}
-              </span>
-            )}
+            ) : (() => {
+              const { firstLine, rest } = splitBusinessName(businessName);
+              const restSize = restLineFontSize(firstLine, rest);
+              return (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    height: LOGO_SLOT_HEIGHT,
+                    width: LABEL_TEXT_WIDTH,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: BUSINESS_NAME_FONT_SIZE,
+                      fontWeight: 700,
+                      color: "white",
+                      textAlign: "center",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {firstLine}
+                  </span>
+                  {rest ? (
+                    <span
+                      style={{
+                        fontSize: restSize,
+                        fontWeight: 700,
+                        color: "white",
+                        textAlign: "center",
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      {rest}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Center: "Online Health Grade:" + grade */}

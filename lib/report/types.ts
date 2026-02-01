@@ -156,6 +156,50 @@ export interface ReportArtifacts {
   };
 }
 
+/**
+ * Combined sentiment breakdown (GBP reviews + Instagram comments)
+ * Stored in report snapshot as sentimentAnalysis
+ */
+export interface SentimentAnalysis {
+  positiveCount: number;
+  neutralCount: number;
+  negativeCount: number;
+  combinedSummary: string;
+}
+
+/** Per-category sentiment detail for modal */
+export interface ThematicSentimentCategoryDetail {
+  justification: string;
+  supportingQuotes: string[];
+}
+
+/** Category-specific sentiment (0-100) for snapshot */
+export interface ThematicSentiment {
+  service: number;
+  food: number;
+  atmosphere: number;
+  value: number;
+  categoryDetails?: {
+    service: ThematicSentimentCategoryDetail;
+    food: ThematicSentimentCategoryDetail;
+    atmosphere: ThematicSentimentCategoryDetail;
+    value: ThematicSentimentCategoryDetail;
+  };
+}
+
+/** Competitive benchmark for snapshot */
+export interface CompetitiveBenchmark {
+  marketLeaderAverage: {
+    searchResults: number;
+    websiteExperience: number;
+    localListings: number;
+    socialPresence: number;
+  };
+  competitiveAdvantage: string;
+  urgentGap: string;
+  potentialImpact: string;
+}
+
 export interface ReportSchema {
   meta: ReportMeta;
   scores: ReportScores;

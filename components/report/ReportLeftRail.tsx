@@ -5,13 +5,9 @@ import type { ReportScores } from "@/lib/report/types";
 
 interface ReportLeftRailProps {
   scores: ReportScores;
-  /** Business name (from report meta); shown above score when logo is present */
-  businessName?: string;
-  /** Crawled website logo URL; persisted with report so it stays visible on shareable URL */
-  websiteLogoUrl?: string | null;
 }
 
-export default function ReportLeftRail({ scores, businessName, websiteLogoUrl }: ReportLeftRailProps) {
+export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
   const { overall, searchResults, websiteExperience, localListings } = scores;
   
   // Calculate percentage for circular gauge
@@ -103,23 +99,6 @@ export default function ReportLeftRail({ scores, businessName, websiteLogoUrl }:
           borderColor: getBorderColor(overall.label),
         }}
       >
-      {/* Business logo + name from crawled website (persisted with report) */}
-      {(websiteLogoUrl || businessName) && (
-        <div className="flex flex-col items-center mb-6 w-full">
-          {websiteLogoUrl && (
-            <img
-              src={websiteLogoUrl}
-              alt={businessName ? `${businessName} logo` : 'Business logo'}
-              className="w-14 h-14 object-contain rounded-lg bg-white border border-gray-200 flex-shrink-0 mb-2"
-            />
-          )}
-          {businessName && (
-            <span className="text-sm font-medium text-gray-900 text-center line-clamp-2 px-1">
-              {businessName}
-            </span>
-          )}
-        </div>
-      )}
       {/* Circular Gauge */}
       <div className="relative w-40 h-40 mb-4">
         <svg className="transform -rotate-90 w-40 h-40">

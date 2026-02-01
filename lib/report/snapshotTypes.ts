@@ -97,6 +97,65 @@ export interface AIAnalysisSnapshot {
 }
 
 /**
+ * Combined sentiment analysis of GBP reviews + Instagram comments (Voice of the Customer)
+ */
+export interface SentimentAnalysisSnapshot {
+  positiveCount: number;
+  neutralCount: number;
+  negativeCount: number;
+  combinedSummary: string;
+}
+
+/**
+ * Per-category sentiment detail (justification + supporting quotes for modal)
+ */
+export interface ThematicSentimentCategoryDetail {
+  justification: string;
+  supportingQuotes: string[];
+}
+
+/**
+ * Category-specific sentiment (0-100) + optional evidence for modal
+ */
+export interface ThematicSentimentSnapshot {
+  service: number;
+  food: number;
+  atmosphere: number;
+  value: number;
+  /** Optional: "why" + 2–3 exact quotes per category for evidence modal */
+  categoryDetails?: {
+    service: ThematicSentimentCategoryDetail;
+    food: ThematicSentimentCategoryDetail;
+    atmosphere: ThematicSentimentCategoryDetail;
+    value: ThematicSentimentCategoryDetail;
+  };
+}
+
+/**
+ * Competitive benchmark (market leader avg + narrative)
+ */
+export interface CompetitiveBenchmarkSnapshot {
+  marketLeaderAverage: {
+    searchResults: number;
+    websiteExperience: number;
+    localListings: number;
+    socialPresence: number;
+  };
+  competitiveAdvantage: string;
+  urgentGap: string;
+  potentialImpact: string;
+}
+
+/**
+ * Instagram comment (flattened from posts; for report display and AI)
+ */
+export interface InstagramCommentSnapshot {
+  text: string;
+  postContext?: string;
+  authorUsername?: string;
+}
+
+/**
  * Google Review shape (matches what's rendered in the report)
  */
 export interface ReviewSnapshot {
@@ -184,6 +243,26 @@ export interface ReportSnapshotV1 {
    * Google Reviews list
    */
   reviews: ReviewSnapshot[];
+  
+  /**
+   * Instagram comments (flattened from scraped posts; optional for backwards compatibility)
+   */
+  instagramComments?: InstagramCommentSnapshot[];
+  
+  /**
+   * Combined sentiment analysis (GBP reviews + Instagram comments); optional
+   */
+  sentimentAnalysis?: SentimentAnalysisSnapshot;
+  
+  /**
+   * Thematic sentiment (Service, Food, Atmosphere, Value); optional
+   */
+  thematicSentiment?: ThematicSentimentSnapshot;
+  
+  /**
+   * Competitive benchmark (market leader avg + advantage/gap/impact); optional
+   */
+  competitiveBenchmark?: CompetitiveBenchmarkSnapshot;
   
   /**
    * Supporting data to prevent any component from fetching

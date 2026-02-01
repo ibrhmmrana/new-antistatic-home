@@ -13,6 +13,8 @@ import {
   FullPresenceAnalysis,
 } from '@/lib/ai/analyzePresence';
 
+import type { WebsiteSummary, GbpSummary } from '@/lib/report/aiDataSummaries';
+
 interface AnalyzeRequest {
   type: 'full' | 'instagram' | 'facebook' | 'consistency' | 'reviews' | 'comments';
   businessName: string;
@@ -26,6 +28,9 @@ interface AnalyzeRequest {
       address?: string | null;
       followerCount?: number | null;
       postCount?: number | null;
+      fullName?: string | null;
+      isVerified?: boolean | null;
+      isBusinessAccount?: boolean | null;
     };
     facebook?: {
       description?: string | null;
@@ -48,6 +53,18 @@ interface AnalyzeRequest {
     }>;
     instagramComments?: Array<{ text: string; postContext?: string }>;
     facebookComments?: Array<{ text: string; postContext?: string }>;
+    /** Recent post captions for richer Instagram analysis */
+    instagramRecentCaptions?: Array<{ caption: string; date?: string }>;
+    /** Curated website crawl summary (not full crawl) */
+    websiteSummary?: WebsiteSummary | null;
+    /** Curated GBP summary for reviews context */
+    gbpSummary?: GbpSummary | null;
+    /** For competitive benchmark */
+    competitors?: Array<{ name: string; rating: number | null; reviewCount: number | null; rank: number; isTargetBusiness?: boolean }>;
+    userRank?: number | null;
+    userScores?: { searchResults: number; websiteExperience: number; localListings: number; socialPresence: number };
+    /** For "Missed Connections" insight (review-first potentialImpact) */
+    searchVisibilityScore?: number;
   };
 }
 
@@ -84,6 +101,13 @@ export async function POST(request: NextRequest) {
           reviews: data.reviews,
           instagramComments: data.instagramComments,
           facebookComments: data.facebookComments,
+          instagramRecentCaptions: data.instagramRecentCaptions,
+          websiteSummary: data.websiteSummary ?? undefined,
+          gbpSummary: data.gbpSummary ?? undefined,
+          competitors: data.competitors,
+          userRank: data.userRank ?? null,
+          userScores: data.userScores,
+          searchVisibilityScore: data.searchVisibilityScore,
         });
         break;
 
