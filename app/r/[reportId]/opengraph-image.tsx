@@ -55,11 +55,13 @@ async function fetchAsset(baseUrl: string, path: string): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
+type OgFontWeight = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
+
 async function loadFont(
   baseUrl: string,
   path: string,
-  weight: number
-): Promise<{ name: string; data: ArrayBuffer; weight: number; style: "normal" }> {
+  weight: OgFontWeight
+): Promise<{ name: string; data: ArrayBuffer; weight: OgFontWeight; style: "normal" }> {
   const data = await fetchAsset(baseUrl, path);
   return { name: "Product Sans", data, weight, style: "normal" };
 }
