@@ -275,25 +275,30 @@ function buildSearchResultsSection(
     evidence: { fieldPath: 'crawl_map[0].h1_count', sampleValue: h1Count.toString() },
   });
   
-  const hasServiceArea = locationParts.some(part => h1Text.toLowerCase().includes(part.toLowerCase()));
+  const h1Texts = homepage?.h1_text || [];
+  const hasServiceArea = locationParts.some(part =>
+    h1Texts.some((h1: string) => h1.toLowerCase().includes(part.toLowerCase()))
+  );
   checks.push({
     key: 'h1_service_area',
     label: 'Includes the service area',
     status: hasServiceArea ? 'good' : 'bad',
     whyItMatters: 'Mentioning your service area in the headline helps with local SEO',
-    whatWeFound: h1Text,
+    whatWeFound: h1Texts.length > 0 ? h1Texts[0] : 'None found',
     whatWeWereLookingFor: 'H1 should include one of: ' + locationParts.slice(0, 3).join(', '),
     howToFix: 'Update your H1 to include your neighborhood or city (e.g., "Best Burgers in TriBeCa")',
     evidence: { fieldPath: 'crawl_map[0].h1_text[0]', sampleValue: h1Text },
   });
   
-  const hasKeywords = serviceKeywords.some(kw => h1Text.toLowerCase().includes(kw.toLowerCase()));
+  const hasKeywords = serviceKeywords.some(kw =>
+    h1Texts.some((h1: string) => h1.toLowerCase().includes(kw.toLowerCase()))
+  );
   checks.push({
     key: 'h1_keywords',
     label: 'Includes relevant keywords',
     status: hasKeywords ? 'good' : 'bad',
     whyItMatters: 'Including relevant keywords in your headline improves search visibility',
-    whatWeFound: h1Text,
+    whatWeFound: h1Texts.length > 0 ? h1Texts[0] : 'None found',
     whatWeWereLookingFor: 'H1 should include one of: ' + serviceKeywords.slice(0, 5).join(', '),
     howToFix: 'Add your main service keywords to your H1 (e.g., "Orthodontist", "Burgers", "Plumber")',
     evidence: { fieldPath: 'crawl_map[0].h1_text[0]', sampleValue: h1Text },
@@ -413,11 +418,24 @@ function buildSearchResultsSection(
     evidence: { fieldPath: 'crawl_map[0].indexability.is_indexable', sampleValue: isIndexable.toString() },
   });
   
-  // Structured data
+  // Structured data: check top-level sd.type and inside sd.data (@type or @graph[].@type) per crawl output
   const structuredData = homepage?.structured_data || [];
-  const hasLocalBusiness = structuredData.some((sd: any) => 
-    sd.type === 'LocalBusiness' || sd.type === 'Organization'
-  );
+  function sdHasLocalOrOrg(sd: any): boolean {
+    if (sd.type === 'LocalBusiness' || sd.type === 'Organization') return true;
+    const data = sd?.data;
+    if (!data || typeof data !== 'object') return false;
+    const t = data['@type'];
+    if (t === 'LocalBusiness' || t === 'Organization') return true;
+    const graph = data['@graph'];
+    if (Array.isArray(graph)) {
+      return graph.some((node: any) => {
+        const type = node?.['@type'];
+        return type === 'LocalBusiness' || type === 'Organization';
+      });
+    }
+    return false;
+  }
+  const hasLocalBusiness = structuredData.some((sd: any) => sdHasLocalOrOrg(sd));
   
   checks.push({
     key: 'structured_data',
@@ -498,18 +516,19 @@ function buildWebsiteExperienceSection(
     evidence: { fieldPath: 'crawl_map[0].contact_methods.email', sampleValue: emails[0] || 'null' },
   });
   
+  // Crawl output: forms[] with type "general" (newsletter, search) or "contact" — count any form as contact path
   const forms = homepage?.forms || [];
-  const contactForms = forms.filter((f: any) => f.type === 'contact');
+  const formCount = Array.isArray(forms) ? forms.length : 0;
   
   checks.push({
     key: 'contact_forms',
     label: 'Contact form',
-    status: contactForms.length > 0 ? 'good' : 'bad',
+    status: formCount > 0 ? 'good' : 'bad',
     whyItMatters: 'Contact forms make it easy for visitors to reach out without leaving your site',
-    whatWeFound: contactForms.length > 0 ? `${contactForms.length} contact form(s) found` : 'None found',
-    whatWeWereLookingFor: 'At least one contact form on the site',
+    whatWeFound: formCount > 0 ? `${formCount} form(s) found` : 'None found',
+    whatWeWereLookingFor: 'At least one contact or general form on the site',
     howToFix: 'Add a contact form to your contact page or homepage',
-    evidence: { fieldPath: 'crawl_map[0].forms', sampleValue: contactForms.length.toString() },
+    evidence: { fieldPath: 'crawl_map[0].forms', sampleValue: formCount.toString() },
   });
   
   // Mobile friendly - check if viewport meta tag exists (heuristic)
@@ -709,7 +728,7 @@ function buildLocalListingsSection(
   
   return {
     id: 'local-listings',
-    title: 'Make your business easy to find',
+    title: 'Google Business Profile',
     score: score.score,
     maxScore: score.maxScore,
     checks,
@@ -946,12 +965,18 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
   
   // Build meta
   const businessIdentity = websiteCrawl?.business_identity;
+  const websiteLogoUrl =
+    websiteCrawl?.crawl_map?.[0]?.images?.logo_url ||
+    websiteCrawl?.site_overview?.favicon_url ||
+    null;
+
   const meta: ReportMeta = {
     businessName: gbpAnalysis?.businessName || businessIdentity?.business_name || placeName || 'Business',
     categoryLabel: businessIdentity?.category_label || 'Business',
     locationLabel: businessIdentity?.location_label || placeAddress || '',
     scanDate: websiteCrawl?.scrape_metadata?.timestamp || new Date().toISOString(),
     websiteUrl: placesDetails?.website || socials?.websiteUrl || null,
+    websiteLogoUrl,
     googleRating: placesDetails?.rating || gbpAnalysis?.rating || null,
     googleReviewCount: placesDetails?.user_ratings_total || gbpAnalysis?.reviews || null,
     placeId,
@@ -1026,7 +1051,11 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
   if (!businessAvatar) {
     businessAvatar = socials?.websiteScreenshot || null;
   }
-  
+  // Fallback to crawled website logo so report always has a business image when available
+  if (!businessAvatar && websiteLogoUrl) {
+    businessAvatar = websiteLogoUrl;
+  }
+
   const impactCard: ImpactCard = {
     estimatedLossMonthly: estimatedLoss,
     topProblems,

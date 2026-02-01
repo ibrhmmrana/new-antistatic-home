@@ -1251,35 +1251,37 @@ export default function ReportScanClient({
           </ul>
         </div>
 
-        {/* Navigation: single "Start fixing" button */}
-        <div className="p-4 border-t border-gray-200">
-          {appInviteError && (
-            <p className="text-sm text-red-600 mb-2">{appInviteError}</p>
-          )}
-          {appInviteSent && (
-            <p className="text-sm text-green-600 mb-2">
-              Check your email for a sign-in link
-            </p>
-          )}
-          <button
-            onClick={handleStartFixing}
-            disabled={appInviteLoading}
-            className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-              appInviteLoading
-                ? "bg-gray-100 text-gray-400 cursor-wait"
-                : "bg-blue-600 text-white hover:bg-blue-700"
-            }`}
-          >
-            {appInviteLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Sending…
-              </>
-            ) : (
-              "Start fixing"
+        {/* "Start fixing" only after email verified; hide footer CTA until then */}
+        {emailVerified && (
+          <div className="p-4 border-t border-gray-200">
+            {appInviteError && (
+              <p className="text-sm text-red-600 mb-2">{appInviteError}</p>
             )}
-          </button>
-        </div>
+            {appInviteSent && (
+              <p className="text-sm text-green-600 mb-2">
+                Check your email for a sign-in link
+              </p>
+            )}
+            <button
+              onClick={handleStartFixing}
+              disabled={appInviteLoading}
+              className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                appInviteLoading
+                  ? "bg-gray-100 text-gray-400 cursor-wait"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
+              }`}
+            >
+              {appInviteLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                "Start fixing"
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Content Area */}
@@ -1387,7 +1389,7 @@ export default function ReportScanClient({
         </div>
       </div>
 
-      {/* Mobile: floating footer with current stage and "Start fixing" */}
+      {/* Mobile: floating footer with current stage and "Start fixing" (only after email verified) */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-20 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/80 px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex-1 min-w-0 text-left">
@@ -1397,33 +1399,43 @@ export default function ReportScanClient({
             <p className="text-xs text-gray-500 mt-0.5">
               Step {currentStep + 1} of 6
             </p>
-            {appInviteError && (
-              <p className="text-xs text-red-600 mt-1">{appInviteError}</p>
-            )}
-            {appInviteSent && (
-              <p className="text-xs text-green-600 mt-1">
-                Check your email for a sign-in link
+            {!emailVerified ? (
+              <p className="text-xs text-gray-500 mt-1">
+                Verify your email to get started
               </p>
+            ) : (
+              <>
+                {appInviteError && (
+                  <p className="text-xs text-red-600 mt-1">{appInviteError}</p>
+                )}
+                {appInviteSent && (
+                  <p className="text-xs text-green-600 mt-1">
+                    Check your email for a sign-in link
+                  </p>
+                )}
+              </>
             )}
           </div>
-          <button
-            onClick={handleStartFixing}
-            disabled={appInviteLoading}
-            className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
-              appInviteLoading
-                ? "bg-gray-100 text-gray-400 cursor-wait"
-                : "bg-blue-600 text-white hover:bg-blue-700"
-            }`}
-          >
-            {appInviteLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Sending…
-              </>
-            ) : (
-              "Start fixing"
-            )}
-          </button>
+          {emailVerified && (
+            <button
+              onClick={handleStartFixing}
+              disabled={appInviteLoading}
+              className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
+                appInviteLoading
+                  ? "bg-gray-100 text-gray-400 cursor-wait"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
+              }`}
+            >
+              {appInviteLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                "Start fixing"
+              )}
+            </button>
+          )}
         </div>
       </div>
 

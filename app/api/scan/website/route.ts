@@ -13,10 +13,10 @@ import { consumeBody } from '@/lib/net/consumeBody';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const TIMEOUT_MS = 60000; // 60 seconds
-const ROUTE_HARD_TIMEOUT_MS = 55000; // Return 504 before platform kills; must be < maxDuration
+// No route-level timeout: slow pages are skipped (30s per-page), full run completes and returns 200
 
 // Simple mutex to prevent concurrent browser launches
 let browserLaunchLock = false;
@@ -1996,11 +1996,7 @@ export async function POST(request: NextRequest) {
     const baseDomain = targetUrl.hostname;
     const baseUrl = targetUrl.origin;
 
-    const timeoutPromise = new Promise<{ _timeout: true }>((resolve) => {
-      setTimeout(() => resolve({ _timeout: true }), ROUTE_HARD_TIMEOUT_MS);
-    });
-
-    const runPromise = (async (): Promise<NextResponse> => {
+    const result = await (async (): Promise<ScrapeResult> => {
     // Launch browser
     const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
     const localExecutablePath = process.env.CHROME_PATH || process.env.CHROME_EXECUTABLE_PATH;
@@ -2436,7 +2432,7 @@ export async function POST(request: NextRequest) {
       
       console.log(`[WEBSITE-SCRAPE] Completed in ${crawlDuration}s, scraped ${pageResults.length} pages`);
       
-      return NextResponse.json(result);
+      return result;
       
     } catch (error) {
       await browser.close();
@@ -2444,15 +2440,7 @@ export async function POST(request: NextRequest) {
     }
     })();
 
-    const raceResult = await Promise.race([runPromise, timeoutPromise]);
-    if (raceResult && typeof raceResult === 'object' && '_timeout' in raceResult && raceResult._timeout) {
-      console.error(`[RID ${rid}] [WEBSITE-SCRAPE] Timeout after ${ROUTE_HARD_TIMEOUT_MS}ms`);
-      return NextResponse.json(
-        { rid, error: 'Upstream timeout' },
-        { status: 504 }
-      );
-    }
-    return raceResult as NextResponse;
+    return NextResponse.json(result);
     
   } catch (error) {
     const rid = getRequestId(request);

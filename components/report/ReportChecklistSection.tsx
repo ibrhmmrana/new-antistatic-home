@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, CheckCircle2, AlertCircle, XCircle } from "lucide-react";
+import { ChevronDown, ChevronUp, Check, X, AlertCircle } from "lucide-react";
 import type { ChecklistSection } from "@/lib/report/types";
 
 interface ReportChecklistSectionProps {
@@ -22,104 +22,103 @@ export default function ReportChecklistSection({ section }: ReportChecklistSecti
   };
   
   const getStatusIcon = (status: string) => {
+    const iconClass = "w-3 h-3 text-white flex-shrink-0";
     switch (status) {
       case 'good':
-        return <CheckCircle2 className="w-5 h-5 text-green-600" />;
+        return (
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-600 flex-shrink-0">
+            <Check className={iconClass} strokeWidth={3} />
+          </span>
+        );
       case 'warn':
-        return <AlertCircle className="w-5 h-5 text-yellow-600" />;
+        return (
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 flex-shrink-0">
+            <AlertCircle className={iconClass} strokeWidth={2.5} />
+          </span>
+        );
       default:
-        return <XCircle className="w-5 h-5 text-red-600" />;
+        return (
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-600 flex-shrink-0">
+            <X className={iconClass} strokeWidth={3} />
+          </span>
+        );
     }
   };
-  
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'good':
-        return 'text-green-600';
-      case 'warn':
-        return 'text-yellow-600';
-      default:
-        return 'text-red-600';
-    }
-  };
-  
+
   const needWork = section.checks.filter(c => c.status === 'bad' || c.status === 'warn').length;
   const total = section.checks.length;
-  
+  const isFaulty = (status: string) => status === 'bad' || status === 'warn';
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 shadow-md">
-      {/* Section Header */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
+      {/* Section heading */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-1">
           <h2 className="text-xl font-semibold text-gray-900">{section.title}</h2>
-          <div className="text-lg font-semibold text-gray-700">
+          <span className="text-sm font-medium text-gray-500">
             {section.score}/{section.maxScore}
-          </div>
+          </span>
         </div>
         {total > 0 && (
-          <p className="text-sm text-gray-600">
-            {total} things reviewed, {needWork} need work
+          <p className="text-sm text-gray-500">
+            {total} things reviewed{needWork > 0 ? `, ${needWork} need work` : ''}
           </p>
         )}
       </div>
-      
-      {/* Checklist Items */}
+
+      {/* Checklist items */}
       {section.checks.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
-          <p>No checklist items available for this section.</p>
+        <div className="text-center py-8 text-gray-500 text-sm">
+          No checklist items available for this section.
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-1">
           {section.checks.map((check) => {
             const isExpanded = expandedItems.has(check.key);
-            
+            const faulty = isFaulty(check.status);
+
             return (
-              <div
-                key={check.key}
-                className="border border-gray-200 rounded-xl overflow-hidden shadow-sm"
-              >
-                {/* Item Header */}
+              <div key={check.key} className="overflow-hidden">
                 <button
                   onClick={() => toggleItem(check.key)}
-                  className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+                  className="w-full py-3 flex items-start gap-3 hover:bg-gray-50 transition-colors text-left rounded"
                 >
-                  <div className="flex items-center gap-3 flex-1">
-                    {getStatusIcon(check.status)}
-                    <span className="font-medium text-gray-900">{check.label}</span>
+                  <div className="flex-shrink-0 mt-0.5">{getStatusIcon(check.status)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900">{check.label}</div>
+                    {/* Subtext: when faulty explain importance; when acceptable show what we found */}
+                    <div className="text-sm text-gray-500 mt-0.5">
+                      {faulty
+                        ? check.whyItMatters
+                        : check.whatWeFound}
+                    </div>
                   </div>
-                  {isExpanded ? (
-                    <ChevronUp className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  )}
+                  <div className="flex-shrink-0 pt-0.5">
+                    {isExpanded ? (
+                      <ChevronUp className="w-5 h-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                    )}
+                  </div>
                 </button>
-                
-                {/* Expanded Content */}
+
+                {/* Expanded: what we found + what we were looking for (and how to fix if faulty) */}
                 {isExpanded && (
-                  <div className="border-t border-gray-200 p-4 bg-gray-50 space-y-3">
-                    {/* Why it matters */}
+                  <div className="pb-3 pt-1 bg-gray-50 space-y-3 text-sm">
                     <div>
-                      <h5 className="text-sm font-semibold text-gray-900 mb-1">Why it matters</h5>
-                      <p className="text-sm text-gray-600">{check.whyItMatters}</p>
+                      <h5 className="font-semibold text-gray-900 mb-1">What we found</h5>
+                      <p className="text-gray-600">{check.whatWeFound}</p>
                     </div>
-                    
-                    {/* What we found */}
                     <div>
-                      <h5 className="text-sm font-semibold text-gray-900 mb-1">What we found</h5>
-                      <p className="text-sm text-gray-600">{check.whatWeFound}</p>
+                      <h5 className="font-semibold text-gray-900 mb-1">What we were looking for</h5>
+                      <p className="text-gray-600">{check.whatWeWereLookingFor}</p>
                     </div>
-                    
-                    {/* What we were looking for */}
-                    <div>
-                      <h5 className="text-sm font-semibold text-gray-900 mb-1">What we were looking for</h5>
-                      <p className="text-sm text-gray-600">{check.whatWeWereLookingFor}</p>
-                    </div>
-                    
-                    {/* How to fix */}
-                    <div>
-                      <h5 className="text-sm font-semibold text-gray-900 mb-1">How to fix</h5>
-                      <p className="text-sm text-gray-600">{check.howToFix}</p>
-                    </div>
+                    {faulty && (
+                      <div>
+                        <h5 className="font-semibold text-gray-900 mb-1">How to fix</h5>
+                        <p className="text-gray-600">{check.howToFix}</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

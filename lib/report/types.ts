@@ -15,6 +15,8 @@ export interface ReportMeta {
   locationLabel: string;
   scanDate: string; // ISO timestamp
   websiteUrl: string | null;
+  /** Crawled logo from website (crawl_map[0].images.logo_url or site_overview.favicon_url); persisted with report. Optional for backwards compatibility with older snapshots. */
+  websiteLogoUrl?: string | null;
   googleRating: number | null;
   googleReviewCount: number | null;
   placeId: string;

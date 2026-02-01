@@ -172,60 +172,59 @@ export default function ReportTopCards({
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
       {/* Impact Card - score-based background only below desktop (see .report-issues-card in globals.css) */}
       <div
-        className="report-issues-card rounded-xl border border-gray-200 p-6 shadow-md bg-white"
+        className="report-issues-card flex flex-col min-h-[274px] rounded-xl border border-gray-200 p-4 shadow-md bg-white"
         {...(overallGrade ? { "data-grade": overallGrade } : {})}
       >
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 mb-1">
           {getImpactHeader()}
         </h3>
-        
-        {/* Business Info */}
-        <div className="flex items-center gap-3 mb-4">
-          {avatarUrl ? (
-            <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-              <img
-                src={avatarUrl}
-                alt={businessName}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  // Fallback to initial on error
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                  const parent = target.parentElement;
-                  if (parent) {
-                    parent.innerHTML = `<span class="text-gray-500 text-lg font-medium">${businessName.charAt(0)}</span>`;
-                    parent.className = 'w-12 h-12 rounded-lg bg-gray-200 flex-shrink-0 flex items-center justify-center';
-                  }
-                }}
-              />
-            </div>
-          ) : (
-            <div className="w-12 h-12 rounded-lg bg-gray-200 flex-shrink-0 flex items-center justify-center">
-              <span className="text-gray-500 text-lg font-medium">{businessName.charAt(0)}</span>
-            </div>
-          )}
-          <div>
-            <div className="font-medium text-gray-900">{businessName}</div>
-            {websiteUrl && (
-              <div className="text-sm text-gray-500">{websiteUrl.replace(/^https?:\/\//, '')}</div>
+
+        {/* Business Info - larger block */}
+        <div className="flex items-center gap-6 mb-4 pt-3 pb-4">
+            {avatarUrl ? (
+              <div className="w-28 h-28 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+                <img
+                  src={avatarUrl}
+                  alt={businessName}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent) {
+                      parent.innerHTML = `<span class="text-gray-500 text-2xl font-medium">${businessName.charAt(0)}</span>`;
+                      parent.className = 'w-28 h-28 rounded-xl bg-gray-200 flex-shrink-0 flex items-center justify-center';
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="w-28 h-28 rounded-xl bg-gray-200 flex-shrink-0 flex items-center justify-center">
+                <span className="text-gray-500 text-2xl font-medium">{businessName.charAt(0)}</span>
+              </div>
             )}
-          </div>
+            <div>
+              <div className="font-semibold text-gray-900 text-xl">{businessName}</div>
+              {websiteUrl && (
+                <div className="text-lg text-gray-500 mt-1.5">{websiteUrl.replace(/^https?:\/\//, '')}</div>
+              )}
+            </div>
         </div>
-        
+
         {/* Top Problems */}
         <div className="space-y-2">
           {topIssues.map((issue, idx) => (
-            <div key={idx} className="flex items-start gap-2">
+            <div key={idx} className="flex items-start gap-2.5">
               <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <span className="text-sm text-gray-700">{issue.label}</span>
+              <span className="text-base text-gray-700">{issue.label}</span>
             </div>
           ))}
         </div>
       </div>
       
       {/* Competitors Card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-md">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-md overflow-hidden">
+        <h3 className="text-lg font-semibold text-gray-900 mb-3">
           {(() => {
             // Find the user's business in the competitors list
             const userBusiness = competitors.list.find(c => c.isTargetBusiness);
@@ -248,23 +247,24 @@ export default function ReportTopCards({
           })()}
         </h3>
         
-        {/* Scrollable list showing 5 items, scroll to see more */}
-        <div className="md:max-h-[180px] md:overflow-y-auto space-y-0.5 pr-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          {competitors.list.map((competitor) => (
+        {/* Rankings table with scrollbar; white fade at bottom */}
+        <div className="relative">
+          <div className="md:max-h-[260px] overflow-y-auto overflow-x-hidden space-y-0.5 pr-1 min-w-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {competitors.list.map((competitor) => (
             <div 
               key={competitor.rank} 
-              className={`flex items-center justify-between py-1 ${
+              className={`flex items-center justify-between gap-2 py-1 min-w-0 ${
                 competitor.isTargetBusiness ? 'bg-blue-50 rounded-lg px-2 -mx-2' : ''
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
                   competitor.isTargetBusiness ? 'bg-blue-200' : 'bg-gray-100'
                 }`}>
                   <span className="text-xs">🍴</span>
                 </div>
-                <div>
-                  <div className={`font-medium text-sm ${
+                <div className="min-w-0 flex-1">
+                  <div className={`font-medium text-sm truncate ${
                     competitor.isTargetBusiness ? 'text-blue-600' : 'text-gray-900'
                   }`}>
                     {competitor.name}{competitor.isTargetBusiness ? ' (You)' : ''}
@@ -291,6 +291,8 @@ export default function ReportTopCards({
               </div>
             </div>
           ))}
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none bg-gradient-to-t from-white to-transparent" aria-hidden />
         </div>
       </div>
     </div>

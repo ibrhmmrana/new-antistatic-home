@@ -9,46 +9,14 @@
 
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { isReportSnapshotV1, type ReportSnapshotV1 } from "@/lib/report/snapshotTypes";
+import { loadSnapshot } from "@/lib/report/loadSnapshot";
 import ReportSnapshotRenderer from "@/components/report/ReportSnapshotRenderer";
 import Link from "next/link";
 
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.antistatic.ai";
+
 interface ShareableReportPageProps {
   params: Promise<{ reportId: string }>;
-}
-
-/**
- * Load snapshot from Supabase by reportId
- */
-async function loadSnapshot(reportId: string): Promise<ReportSnapshotV1 | null> {
-  try {
-    const supabase = getSupabaseAdmin();
-    
-    const { data, error } = await supabase
-      .from("analysis_reports")
-      .select("report_payload")
-      .eq("report_id", reportId)
-      .single();
-
-    if (error || !data) {
-      console.error("[SHARE] Failed to load report:", error?.message || "Not found");
-      return null;
-    }
-
-    const payload = data.report_payload;
-
-    // Validate it's a proper snapshot
-    if (!isReportSnapshotV1(payload)) {
-      console.error("[SHARE] Invalid snapshot format for reportId:", reportId);
-      return null;
-    }
-
-    return payload;
-  } catch (err) {
-    console.error("[SHARE] Error loading snapshot:", err);
-    return null;
-  }
 }
 
 /**
@@ -123,20 +91,49 @@ export default async function ShareableReportPage({ params }: ShareableReportPag
 }
 
 /**
- * Generate metadata for the page
+ * Generate metadata for the page (title, description, Open Graph, Twitter)
  */
 export async function generateMetadata({ params }: ShareableReportPageProps) {
   const { reportId } = await params;
   const snapshot = await loadSnapshot(reportId);
 
+  const baseUrl = BASE_URL.replace(/\/$/, "");
+  const ogImageUrl = new URL(`/r/${reportId}/opengraph-image`, baseUrl).toString();
+
   if (!snapshot) {
     return {
       title: "Report Not Found | Antistatic",
+      openGraph: {
+        title: "Report Not Found | Antistatic",
+        type: "website",
+        images: [{ url: ogImageUrl, width: 1200, height: 630, alt: "Antistatic report preview" }],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: "Report Not Found | Antistatic",
+        images: [ogImageUrl],
+      },
     };
   }
 
+  const title = `${snapshot.place.name} - Business Report | Antistatic`;
+  const description = `Online presence analysis for ${snapshot.place.name}. Overall score: ${snapshot.report.scores.overall.score}/100.`;
+
   return {
-    title: `${snapshot.place.name} - Business Report | Antistatic`,
-    description: `Online presence analysis for ${snapshot.place.name}. Overall score: ${snapshot.report.scores.overall.score}/100.`,
+    metadataBase: new URL(baseUrl),
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: "Antistatic report preview" }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImageUrl],
+    },
   };
 }

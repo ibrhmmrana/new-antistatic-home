@@ -5,9 +5,13 @@ import type { ReportScores } from "@/lib/report/types";
 
 interface ReportLeftRailProps {
   scores: ReportScores;
+  /** Business name (from report meta); shown above score when logo is present */
+  businessName?: string;
+  /** Crawled website logo URL; persisted with report so it stays visible on shareable URL */
+  websiteLogoUrl?: string | null;
 }
 
-export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
+export default function ReportLeftRail({ scores, businessName, websiteLogoUrl }: ReportLeftRailProps) {
   const { overall, searchResults, websiteExperience, localListings } = scores;
   
   // Calculate percentage for circular gauge
@@ -17,25 +21,25 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
   const getGradeColor = (label: string) => {
     if (label === 'Good') return 'text-green-600';
     if (label === 'Okay') return 'text-orange-500';
-    return 'text-red-500';
+    return 'text-orange-600'; // Poor: orangey red
   };
   
   const getProgressColor = (label: string) => {
     if (label === 'Good') return '#10b981'; // green
     if (label === 'Okay') return '#f97316'; // orange
-    return '#ef4444'; // red
+    return '#ea580c'; // Poor: orange-600 (red a little orangey)
   };
   
   const getBackgroundColor = (label: string) => {
     if (label === 'Good') return '#dcfce7'; // Slightly darker green (green-100)
     if (label === 'Okay') return '#ffddd2'; // Orange with a slight red tint (coral)
-    return '#fee2e2'; // Slightly darker red (red-100)
+    return '#f7d7d1'; // Poor
   };
   
   const getBorderColor = (label: string) => {
     if (label === 'Good') return '#a7f3d0'; // Darker green border (green-200)
     if (label === 'Okay') return '#fda4a4'; // Orange-red border (slightly reddish)
-    return '#fca5a5'; // Darker red border (red-300)
+    return '#fdba74'; // Poor: orange-300 (red a little orangey)
   };
   
   // Calculate arc for circular gauge (SVG)
@@ -59,7 +63,7 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
             cx="16"
             cy="16"
             r={miniRadius}
-            stroke="#e5e7eb"
+            stroke="#ecd1cc"
             strokeWidth="3"
             fill="none"
           />
@@ -99,6 +103,23 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
           borderColor: getBorderColor(overall.label),
         }}
       >
+      {/* Business logo + name from crawled website (persisted with report) */}
+      {(websiteLogoUrl || businessName) && (
+        <div className="flex flex-col items-center mb-6 w-full">
+          {websiteLogoUrl && (
+            <img
+              src={websiteLogoUrl}
+              alt={businessName ? `${businessName} logo` : 'Business logo'}
+              className="w-14 h-14 object-contain rounded-lg bg-white border border-gray-200 flex-shrink-0 mb-2"
+            />
+          )}
+          {businessName && (
+            <span className="text-sm font-medium text-gray-900 text-center line-clamp-2 px-1">
+              {businessName}
+            </span>
+          )}
+        </div>
+      )}
       {/* Circular Gauge */}
       <div className="relative w-40 h-40 mb-4">
         <svg className="transform -rotate-90 w-40 h-40">
@@ -107,7 +128,7 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
             cx="80"
             cy="80"
             r={radius}
-            stroke="#e5e7eb"
+            stroke="#ecd1cc"
             strokeWidth="14"
             fill="none"
           />

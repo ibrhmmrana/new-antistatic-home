@@ -204,7 +204,11 @@ export default function AnalysisPage() {
   return (
     <div className="min-h-screen bg-[#f6f7f8] flex">
       {/* Left Rail */}
-      <ReportLeftRail scores={report.scores} />
+      <ReportLeftRail
+        scores={report.scores}
+        businessName={report.meta.businessName}
+        websiteLogoUrl={report.meta.websiteLogoUrl ?? null}
+      />
       
       {/* Main Content */}
       <div className="flex-1 p-8">
