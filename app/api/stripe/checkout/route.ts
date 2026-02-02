@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2023-10-16",
+  apiVersion: "2026-01-28.clover",
 });
 
 /** ZA = South Africa (R499/R999); rest of world uses USD ($29/$99) */
