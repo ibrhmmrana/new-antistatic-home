@@ -21,20 +21,11 @@ function getDisplayLabel(sectionId: string, checkKey: string, fallbackLabel: str
   return fallbackLabel;
 }
 
-/** Section id → 1 or 2 modules (hardcoded). website-experience has no block. */
-const SECTION_MODULES: Record<string, [ModuleId] | [ModuleId, ModuleId] | null> = {
-  "local-listings": ["reputation_hub"],
-  "social-presence": ["social_studio"],
-  "search-results": ["competitor_radar"],
-  "website-experience": null,
-};
-
 interface ReportChecklistSectionProps {
   section: ChecklistSection;
-  onOpenPrescription?: (prescription: Prescription) => void;
 }
 
-export default function ReportChecklistSection({ section, onOpenPrescription }: ReportChecklistSectionProps) {
+export default function ReportChecklistSection({ section }: ReportChecklistSectionProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   
   const toggleItem = (key: string) => {
