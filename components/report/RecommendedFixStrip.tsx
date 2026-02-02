@@ -20,8 +20,6 @@ export default function RecommendedFixStrip({
   hasAnyFault,
   onOpenPrescription,
 }: RecommendedFixStripProps) {
-  if (modules.length === 0) return null;
-
   const verb = hasAnyFault ? "Fix with Antistatic's" : "Improve with Antistatic's";
 
   return (
