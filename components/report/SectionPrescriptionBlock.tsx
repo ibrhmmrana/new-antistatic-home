@@ -17,8 +17,6 @@ export default function SectionPrescriptionBlock({
   hasAnyFault,
   onOpenPrescription,
 }: SectionPrescriptionBlockProps) {
-  if (modules.length === 0) return null;
-
   const verb = hasAnyFault ? "Fix with" : "Improve with";
   const names = modules.map((id) => MODULES[id].name);
 
