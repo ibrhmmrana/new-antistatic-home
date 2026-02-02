@@ -10,6 +10,9 @@ const CARD_STYLE = {
   boxShadow: "inset 0 -2px 4px rgba(213, 226, 255, 1)",
 };
 
+/** ZA = South Africa (R499/R999); rest of world = $29/$99 */
+const isZA = (countryCode: string) => countryCode === "ZA";
+
 type PlanId = "essential" | "full_engine";
 
 interface ReportPaywallModalProps {
@@ -19,10 +22,12 @@ interface ReportPaywallModalProps {
 
 /**
  * Paywall modal: pricing plans; Get started creates Stripe Checkout and redirects to payment page.
+ * Fetches country from /api/geo/country for country-specific pricing (ZA vs USD).
  */
 export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywallModalProps) {
   const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [countryCode, setCountryCode] = useState<string>("XX");
 
   useEffect(() => {
     if (!open) return;
@@ -33,6 +38,18 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onOpenChange]);
 
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/geo/country")
+      .then((r) => r.json())
+      .then((data: { country?: string }) => setCountryCode(data?.country ?? "XX"))
+      .catch(() => setCountryCode("XX"));
+  }, [open]);
+
+  const za = isZA(countryCode);
+  const essentialPrice = za ? "R499" : "$29";
+  const fullEnginePrice = za ? "R999" : "$99";
+
   const handleGetStarted = async (plan: PlanId) => {
     setError(null);
     setLoadingPlan(plan);
@@ -40,7 +57,7 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, country: countryCode }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -111,7 +128,7 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
               </h3>
               <p className="text-sm text-gray-600 mb-4">Basic features</p>
               <div className="mb-4">
-                <span className="text-3xl md:text-4xl font-bold text-gray-900">R499</span>
+                <span className="text-3xl md:text-4xl font-bold text-gray-900">{essentialPrice}</span>
                 <span className="text-sm text-gray-500 ml-2">billed monthly</span>
               </div>
               <div className="mb-4">
@@ -159,7 +176,7 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
               </h3>
               <p className="text-sm text-gray-600 mb-4">Everything in Essential, plus more</p>
               <div className="mb-4">
-                <span className="text-3xl md:text-4xl font-bold text-gray-900">R999</span>
+                <span className="text-3xl md:text-4xl font-bold text-gray-900">{fullEnginePrice}</span>
                 <span className="text-sm text-gray-500 ml-2">billed monthly</span>
               </div>
               <div className="mb-4">

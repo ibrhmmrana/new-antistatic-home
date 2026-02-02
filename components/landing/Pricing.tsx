@@ -3,7 +3,14 @@
 import Image from "next/image";
 import ScrollReveal from "@/components/landing/ScrollReveal";
 
-export default function Pricing() {
+/** ZA = South Africa (R499/R999); rest of world = $29/$99 */
+const isZA = (countryCode: string) => countryCode === "ZA";
+
+export default function Pricing({ countryCode = "XX" }: { countryCode?: string }) {
+  const za = isZA(countryCode);
+  const essentialPrice = za ? "R499" : "$29";
+  const fullEnginePrice = za ? "R999" : "$99";
+
   return (
     <section className="relative w-full pt-4 md:pt-6 lg:pt-8 pb-12 md:pb-16 lg:pb-20 bg-white">
       <div className="w-full px-6 md:px-8 lg:px-12">
@@ -56,10 +63,10 @@ export default function Pricing() {
               Basic features
             </p>
             
-            {/* Price */}
+            {/* Price — ZA: R499, rest: $29/m */}
             <div className="mb-6">
-              <span className="text-4xl md:text-5xl font-bold text-gray-900">R499</span>
-              <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+              <span className="text-4xl md:text-5xl font-bold text-gray-900">{essentialPrice}</span>
+              <span className="text-sm text-gray-500 ml-2">/month</span>
             </div>
 
             {/* Separator */}
@@ -135,10 +142,10 @@ export default function Pricing() {
               Everything in Essential, plus more
             </p>
             
-            {/* Price */}
+            {/* Price — ZA: R999, rest: $99/m */}
             <div className="mb-6">
-              <span className="text-4xl md:text-5xl font-bold text-gray-900">R999</span>
-              <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+              <span className="text-4xl md:text-5xl font-bold text-gray-900">{fullEnginePrice}</span>
+              <span className="text-sm text-gray-500 ml-2">/month</span>
             </div>
 
             {/* Separator */}

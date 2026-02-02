@@ -1,51 +1,38 @@
-import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 
-type PlanId = "essential" | "full_engine";
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2023-10-16",
+});
+
+/** ZA = South Africa (R499/R999); rest of world uses USD ($29/$99) */
+const PLANS_ZA = {
+  essential: process.env.STRIPE_PRICE_ESSENTIAL!,
+  full_engine: process.env.STRIPE_PRICE_FULL_ENGINE!,
+} as const;
+
+const PLANS_USD = {
+  essential: process.env.STRIPE_PRICE_ESSENTIAL_USD!,
+  full_engine: process.env.STRIPE_PRICE_FULL_ENGINE_USD!,
+} as const;
+
+type PlanId = keyof typeof PLANS_ZA;
 
 /**
  * POST /api/stripe/checkout
- * Body: { plan: "essential" | "full_engine" }
+ * Body: { plan: "essential" | "full_engine", country?: string, email?: string }
  * Returns: { url: string } — Stripe Checkout URL to redirect the user to.
+ * Uses ZA price IDs when country is "ZA", otherwise USD price IDs.
  */
 export async function POST(request: NextRequest) {
-  let secretKey = process.env.STRIPE_SECRET_KEY;
-
-  // If Next.js didn't load .env.local (e.g. when opened via /r/[id]), try loading it explicitly
-  if (!secretKey || secretKey.trim() === "") {
-    try {
-      const { config } = await import("dotenv");
-      const envPath = path.resolve(process.cwd(), ".env.local");
-      config({ path: envPath });
-      secretKey = process.env.STRIPE_SECRET_KEY;
-    } catch {
-      // dotenv failed; continue with empty key so we return the 503 below
-    }
-  }
-
-  if (!secretKey || secretKey.trim() === "") {
-    // Dev-only: show which STRIPE_* env keys Next.js has (names only) to debug loading
-    const stripeEnvKeys = Object.keys(process.env).filter((k) => k.startsWith("STRIPE_"));
-    const isDev = process.env.NODE_ENV === "development";
+  if (!process.env.STRIPE_SECRET_KEY) {
     return NextResponse.json(
-      {
-        error: "Stripe is not configured (STRIPE_SECRET_KEY missing).",
-        ...(isDev && {
-          debug: "Ensure .env.local is in the project root (same folder as package.json), has STRIPE_SECRET_KEY=sk_... with no spaces around =, and restart the dev server (npm run dev).",
-          stripeEnvKeysPresent: stripeEnvKeys.length ? stripeEnvKeys : "(none – .env.local may not be loaded or file is in wrong place)",
-        }),
-      },
+      { error: "Stripe is not configured (STRIPE_SECRET_KEY missing)." },
       { status: 503 }
     );
   }
 
-  const priceIds: Record<PlanId, string | undefined> = {
-    essential: process.env.STRIPE_PRICE_ESSENTIAL,
-    full_engine: process.env.STRIPE_PRICE_FULL_ENGINE,
-  };
-
-  let body: { plan?: string };
+  let body: { plan?: string; country?: string; email?: string };
   try {
     body = await request.json();
   } catch {
@@ -56,17 +43,21 @@ export async function POST(request: NextRequest) {
   }
 
   const plan = body.plan as PlanId | undefined;
-  if (!plan || (plan !== "essential" && plan !== "full_engine")) {
+  if (!plan || !PLANS_ZA[plan]) {
     return NextResponse.json(
       { error: "Invalid or missing plan. Use 'essential' or 'full_engine'." },
       { status: 400 }
     );
   }
 
-  const priceId = priceIds[plan];
-  if (!priceId || priceId.trim() === "") {
+  /** Optional: prefill Stripe Checkout with email; also used as client_reference_id for app.antistatic.ai to find/link user */
+  const customerEmail = typeof body.email === "string" && body.email.trim() ? body.email.trim() : undefined;
+
+  const isZA = (body.country ?? "").toUpperCase() === "ZA";
+  const priceId = isZA ? PLANS_ZA[plan] : PLANS_USD[plan];
+  if (!priceId) {
     return NextResponse.json(
-      { error: `Stripe Price ID not configured for plan: ${plan}.` },
+      { error: `Stripe Price ID not configured for plan: ${plan} (${isZA ? "ZA" : "USD"}).` },
       { status: 503 }
     );
   }
@@ -77,12 +68,10 @@ export async function POST(request: NextRequest) {
     process.env.NEXT_PUBLIC_APP_URL ||
     (forwardedProto && forwardedHost ? `${forwardedProto}://${forwardedHost}` : request.nextUrl.origin);
 
-  const successUrl = `${origin}/report?session_id={CHECKOUT_SESSION_ID}`;
+  /** After payment, send user to app.antistatic.ai so they get an account and plan assigned (see STRIPE_APP_ONBOARDING.md) */
+  const appBaseUrl = process.env.STRIPE_SUCCESS_BASE_URL || "https://app.antistatic.ai";
+  const successUrl = `${appBaseUrl}/onboarding?session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${origin}/report`;
-
-  const stripe = new Stripe(secretKey, {
-    apiVersion: "2026-01-28.clover",
-  });
 
   try {
     const session = await stripe.checkout.sessions.create({
@@ -96,6 +85,12 @@ export async function POST(request: NextRequest) {
       success_url: successUrl,
       cancel_url: cancelUrl,
       allow_promotion_codes: true,
+      /** So app.antistatic.ai can assign the correct plan when handling webhook or onboarding page */
+      metadata: { plan },
+      /** Optional: prefill email in Checkout; app can use this to create/find user */
+      ...(customerEmail && { customer_email: customerEmail }),
+      /** So app.antistatic.ai can link this payment to a user (e.g. email or internal user id) */
+      ...(customerEmail && { client_reference_id: customerEmail }),
     });
 
     if (!session.url) {

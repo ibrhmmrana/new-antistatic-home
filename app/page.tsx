@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import Nav from "@/components/landing/Nav";
 import Hero from "@/components/landing/Hero";
 import ProductFeatures from "@/components/landing/ProductFeatures";
@@ -7,8 +8,12 @@ import MetricsSection from "@/components/landing/MetricsSection";
 import Footer from "@/components/landing/Footer";
 import HeroImageGate from "@/components/landing/HeroImageGate";
 import Image from "next/image";
+import { getCountryFromHeaders } from "@/lib/geo";
 
-export default function Home() {
+export default async function Home() {
+  const h = await headers();
+  const { country } = getCountryFromHeaders(h);
+
   return (
     <HeroImageGate>
     <main className="relative min-h-screen">
@@ -38,9 +43,9 @@ export default function Home() {
         <ProductFeatures />
       </div>
 
-      {/* Pricing Section */}
+      {/* Pricing Section — country-specific (ZA: R499/R999, rest: $29/$99) */}
       <div id="pricing" className="relative z-10 bg-white scroll-mt-24 md:scroll-mt-28 lg:scroll-mt-32">
-        <Pricing />
+        <Pricing countryCode={country} />
       </div>
 
       {/* Social Proof Section */}

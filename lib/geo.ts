@@ -1,37 +1,33 @@
 import { NextRequest } from "next/server";
 
+/** Headers-like object (NextRequest.headers or ReadonlyHeaders from next/headers) */
+type HeadersLike = { get(name: string): string | null };
+
 /**
- * Detects the user's country code from request headers.
- * Priority:
- * 1. cf-ipcountry (Cloudflare)
- * 2. x-vercel-ip-country (Vercel)
- * 3. Fallback to "XX" (unknown)
+ * Detects the user's country code from headers.
+ * Priority: cf-ipcountry (Cloudflare) → x-vercel-ip-country (Vercel) → "XX".
+ */
+export function getCountryFromHeaders(headers: HeadersLike): {
+  country: string;
+  sourceHeader: string | null;
+} {
+  const cfCountry = headers.get("cf-ipcountry");
+  if (cfCountry && cfCountry !== "XX" && cfCountry.length === 2) {
+    return { country: cfCountry.toUpperCase(), sourceHeader: "cf-ipcountry" };
+  }
+  const vercelCountry = headers.get("x-vercel-ip-country");
+  if (vercelCountry && vercelCountry !== "XX" && vercelCountry.length === 2) {
+    return { country: vercelCountry.toUpperCase(), sourceHeader: "x-vercel-ip-country" };
+  }
+  return { country: "XX", sourceHeader: null };
+}
+
+/**
+ * Detects the user's country code from request headers (for route handlers).
  */
 export function getCountryFromRequest(request: NextRequest): {
   country: string;
   sourceHeader: string | null;
 } {
-  // Priority 1: Cloudflare header (if domain is proxied through Cloudflare)
-  const cfCountry = request.headers.get("cf-ipcountry");
-  if (cfCountry && cfCountry !== "XX" && cfCountry.length === 2) {
-    return {
-      country: cfCountry.toUpperCase(),
-      sourceHeader: "cf-ipcountry",
-    };
-  }
-
-  // Priority 2: Vercel header
-  const vercelCountry = request.headers.get("x-vercel-ip-country");
-  if (vercelCountry && vercelCountry !== "XX" && vercelCountry.length === 2) {
-    return {
-      country: vercelCountry.toUpperCase(),
-      sourceHeader: "x-vercel-ip-country",
-    };
-  }
-
-  // Fallback: unknown country
-  return {
-    country: "XX",
-    sourceHeader: null,
-  };
+  return getCountryFromHeaders(request.headers);
 }
