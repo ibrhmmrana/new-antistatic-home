@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { ReportSnapshotV1, Prescription } from "@/lib/report/snapshotTypes";
 import ReportLeftRail from "./ReportLeftRail";
+import ReportAntistaticIntro from "./ReportAntistaticIntro";
 import ReportTopCards from "./ReportTopCards";
 import ReportVisualInsights from "./ReportVisualInsights";
 import ReportSearchVisibility from "./ReportSearchVisibility";
@@ -102,7 +103,36 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
       {/* Main Content - left margin on desktop so content doesn't sit under fixed sidebar */}
       <div className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 pb-24 md:pb-8 md:ml-[21rem]">
         <div className="max-w-6xl mx-auto w-full max-w-full">
-          {/* Top Cards - snapshot mode: pass photo URL directly, skip fetches */}
+          {/* Antistatic intro - top of report */}
+          <ReportAntistaticIntro />
+
+          {/* Competitive Edge - above Top Cards */}
+          <ReportVisualInsights
+            scores={report.scores}
+            businessName={report.meta.businessName}
+            thematicSentiment={snapshot.thematicSentiment}
+            competitiveBenchmark={snapshot.competitiveBenchmark}
+            aiAnalysis={aiAnalysis ?? null}
+          />
+          {competitiveBenchmark && (
+            <RecommendedFixStrip
+              modules={VISUAL_INSIGHTS_MODULES}
+              hasAnyFault={hasVisualFault}
+              onOpenPrescription={handleOpenPrescription}
+            />
+          )}
+
+          {/* AI-Powered Analysis - above Top Cards */}
+          <ReportAIAnalysis analysis={aiAnalysis} isLoading={false} onlyTopPriorities />
+          {aiAnalysis && (
+            <RecommendedFixStrip
+              modules={AI_ANALYSIS_MODULES}
+              hasAnyFault={hasAIFault}
+              onOpenPrescription={handleOpenPrescription}
+            />
+          )}
+
+          {/* Top Cards - "We found N issues affecting your visibility" */}
           <ReportTopCards
             impact={report.summaryCards.impact}
             competitors={report.summaryCards.competitors}
@@ -122,31 +152,6 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             onOpenPrescription={handleOpenPrescription}
           />
 
-          {/* Competitive Edge - benchmark radar, impact card, thematic sentiment */}
-          <ReportVisualInsights
-            scores={report.scores}
-            businessName={report.meta.businessName}
-            thematicSentiment={snapshot.thematicSentiment}
-            competitiveBenchmark={snapshot.competitiveBenchmark}
-          />
-          {competitiveBenchmark && (
-            <RecommendedFixStrip
-              modules={VISUAL_INSIGHTS_MODULES}
-              hasAnyFault={hasVisualFault}
-              onOpenPrescription={handleOpenPrescription}
-            />
-          )}
-
-          {/* AI Analysis - pass directly, no loading state in snapshot mode */}
-          <ReportAIAnalysis analysis={aiAnalysis} isLoading={false} />
-          {aiAnalysis && (
-            <RecommendedFixStrip
-              modules={AI_ANALYSIS_MODULES}
-              hasAnyFault={hasAIFault}
-              onOpenPrescription={handleOpenPrescription}
-            />
-          )}
-
           {/* Search Visibility Table - snapshot mode: pass marker data directly */}
           <ReportSearchVisibility
             searchVisibility={report.searchVisibility}
@@ -156,7 +161,7 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             snapshotMarkerLocations={supporting.markerLocations}
           />
 
-          {/* Summary Header */}
+          {/* Summary Header — main heading unblurred */}
           <div className="mb-6">
             <h2 className="text-2xl font-semibold text-gray-900 mb-1">
               {totalChecks} things reviewed, {needWork} need work
@@ -164,13 +169,13 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             <p className="text-sm text-gray-600">See what&apos;s wrong and how to improve</p>
           </div>
 
-          {/* Checklist Sections */}
+          {/* Checklist Sections — analysis content blurred */}
           {report.sections.map((section) => {
             const sectionModules = CHECKLIST_SECTION_MODULES[section.id];
             const sectionNeedWork = section.checks.filter((c) => c.status === "bad" || c.status === "warn").length > 0;
             return (
               <div key={section.id}>
-                <ReportChecklistSection section={section} />
+                <ReportChecklistSection section={section} blurContent />
                 {sectionModules && (
                   <RecommendedFixStrip
                     modules={sectionModules}

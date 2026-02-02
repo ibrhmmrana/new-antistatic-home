@@ -214,7 +214,8 @@ export default function ReportSearchVisibility({
             const topMapCompetitor = query.mapPack.results[0];
             const isRankedMap = query.mapPack.rank !== null;
             const isRankedOrganic = query.organic.rank !== null;
-            
+            const blurRest = idx >= 2;
+
             return (
               <div
                 key={idx}
@@ -234,8 +235,8 @@ export default function ReportSearchVisibility({
                       <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                     </svg>
                   </div>
-                  {/* Row 1 col 2: Search query */}
-                  <span className="font-medium text-gray-900 text-sm md:text-base truncate min-w-0 md:order-2 md:flex-1 md:mr-2">{query.query}</span>
+                  {/* Row 1 col 2: Search query — blur from row 3 onward */}
+                  <span className={`font-medium text-gray-900 text-sm md:text-base truncate min-w-0 md:order-2 md:flex-1 md:mr-2 ${blurRest ? "blur-sm select-none" : ""}`}>{query.query}</span>
                   {/* Row 1 col 3: Chevron */}
                   <div className="flex-shrink-0 md:order-4">
                     {isExpanded ? (
@@ -244,12 +245,12 @@ export default function ReportSearchVisibility({
                       <ChevronDown className="w-4 h-4 md:w-5 md:h-5 text-gray-400" />
                     )}
                   </div>
-                  {/* Row 2 (mobile) / inline (desktop): Badges */}
+                  {/* Row 2 (mobile) / inline (desktop): Badges — blur #1 business name from row 3 onward */}
                   <div className="col-span-3 md:col-span-1 flex flex-wrap items-center gap-1.5 md:gap-2 md:order-3">
                     {topMapCompetitor && (
                       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 md:px-2 md:py-1 bg-gray-100 text-black text-[10px] md:text-xs rounded">
                         <span className="text-[10px] md:text-xs">🏆</span>
-                        #1: {topMapCompetitor.name}
+                        #1: <span className={blurRest ? "blur-sm select-none" : ""}>{topMapCompetitor.name}</span>
                       </span>
                     )}
                     {/* Mobile: one "Unranked" when both unranked; when one unranked show which (Maps/Search); desktop: separate stickers */}
@@ -307,13 +308,13 @@ export default function ReportSearchVisibility({
                           <p className="text-[10px] md:text-xs text-gray-500">These results get the most clicks</p>
                         </div>
                         {query.mapPack.results.length === 0 ? (
-                          <div className="p-6">
+                          <div className={`p-6 ${blurRest ? "blur-sm select-none" : ""}`}>
                             <p className="text-sm text-gray-500">No map pack results available</p>
                           </div>
                         ) : (
                           <div className="flex pb-3 md:pl-3">
-                            {/* Map - Left side; hidden on mobile (list only) */}
-                            <div className="hidden md:block w-48 flex-shrink-0 relative overflow-hidden rounded-lg bg-gray-100" style={{ minHeight: '220px', pointerEvents: 'none' }}>
+                            {/* Map - Left side; hidden on mobile (list only); blur when blurRest */}
+                            <div className={`hidden md:block w-48 flex-shrink-0 relative overflow-hidden rounded-lg bg-gray-100 ${blurRest ? "blur-sm select-none" : ""}`} style={{ minHeight: '220px', pointerEvents: 'none' }}>
                               {query.mapPack.results.some(r => r.placeId) && isLoaded ? (
                                 <div className="rounded-lg overflow-hidden" style={{ pointerEvents: 'none' }}>
                                   <GoogleMap
@@ -371,7 +372,7 @@ export default function ReportSearchVisibility({
                                     <div className="flex items-center gap-2 flex-1 min-w-0">
                                       <span className="text-base flex-shrink-0">🍴</span>
                                       <div className="min-w-0">
-                                        <span className="font-medium text-gray-900 text-xs md:text-sm truncate block">
+                                        <span className={`font-medium text-gray-900 text-xs md:text-sm truncate block ${blurRest ? "blur-sm select-none" : ""}`}>
                                           {result.name}
                                         </span>
                                         {result.rating && (
@@ -393,7 +394,7 @@ export default function ReportSearchVisibility({
                         )}
                       </div>
                       
-                      {/* Google Search Results - Single block: header + list rows */}
+                      {/* Google Search Results - section heading unblurred; list content blurred when blurRest */}
                       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                         <div className="p-3 md:p-4">
                           <h4 className="text-sm md:text-base font-semibold text-gray-900 mb-0.5 md:mb-1">Google Search results</h4>
@@ -430,25 +431,25 @@ export default function ReportSearchVisibility({
                                       <img
                                         src={result.faviconUrl}
                                         alt=""
-                                        className="w-3.5 h-3.5"
+                                        className={`w-3.5 h-3.5 ${blurRest ? "blur-sm select-none" : ""}`}
                                         onError={(e) => {
                                           const target = e.target as HTMLImageElement;
                                           target.style.display = 'none';
                                         }}
                                       />
                                     ) : (
-                                      <span className="text-[10px] text-gray-400">🌐</span>
+                                      <span className={`text-[10px] text-gray-400 ${blurRest ? "blur-sm select-none" : ""}`}>🌐</span>
                                     )}
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <div className="text-[10px] md:text-xs text-gray-500 mb-0.5">
+                                    <div className={`text-[10px] md:text-xs text-gray-500 mb-0.5 ${blurRest ? "blur-sm select-none" : ""}`}>
                                         {result.displayLink}
                                       </div>
                                       <a
                                         href={result.link}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-xs md:text-sm text-blue-600 hover:underline line-clamp-1 font-medium"
+                                        className={`text-xs md:text-sm text-blue-600 hover:underline line-clamp-1 font-medium ${blurRest ? "blur-sm select-none" : ""}`}
                                       >
                                       {result.title}
                                     </a>

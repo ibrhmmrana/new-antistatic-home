@@ -103,6 +103,8 @@ export default function ReportLeftRail({ scores, reportId }: ReportLeftRailProps
       >
         {/* Inner flex column: fills height, allows middle to shrink */}
         <div className="flex flex-col flex-1 min-h-0 w-full items-center gap-0">
+          {/* Spacer where logo was (logo moved to intro section) */}
+          <div className="flex-shrink-0 w-full h-4 mb-2" aria-hidden />
           {/* Circular Gauge - viewport-relative so it scales on short windows */}
           <div
             className="relative flex-shrink-0"

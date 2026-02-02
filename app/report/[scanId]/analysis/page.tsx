@@ -9,6 +9,7 @@ import type { ReportSchema } from "@/lib/report/types";
 import type { Competitor } from "@/lib/report/types";
 import type { ReportSnapshotV1, Prescription, MarkerLocation } from "@/lib/report/snapshotTypes";
 import ReportLeftRail from "@/components/report/ReportLeftRail";
+import ReportAntistaticIntro from "@/components/report/ReportAntistaticIntro";
 import ReportTopCards from "@/components/report/ReportTopCards";
 import ReportVisualInsights from "@/components/report/ReportVisualInsights";
 import ReportSearchVisibility from "@/components/report/ReportSearchVisibility";
@@ -793,7 +794,37 @@ export default function AnalysisPage() {
             </div>
           </div>
 
-          {/* Top Cards */}
+          {/* Antistatic intro - top of report */}
+          <ReportAntistaticIntro />
+
+          {/* Competitive Edge - above Top Cards */}
+          <ReportVisualInsights
+            scores={report.scores}
+            businessName={report.meta.businessName}
+            thematicSentiment={aiAnalysis?.thematicSentiment}
+            competitiveBenchmark={aiAnalysis?.competitiveBenchmark}
+            aiAnalysis={aiAnalysis ?? null}
+            isLoading={aiAnalysisLoading}
+          />
+          {competitiveBenchmark && (
+            <RecommendedFixStrip
+              modules={VISUAL_INSIGHTS_MODULES}
+              hasAnyFault={hasVisualFault}
+              onOpenPrescription={handleOpenPrescription}
+            />
+          )}
+
+          {/* AI-Powered Analysis - above Top Cards */}
+          <ReportAIAnalysis analysis={aiAnalysis} isLoading={aiAnalysisLoading} onlyTopPriorities />
+          {aiAnalysis && (
+            <RecommendedFixStrip
+              modules={AI_ANALYSIS_MODULES}
+              hasAnyFault={hasAIFault}
+              onOpenPrescription={handleOpenPrescription}
+            />
+          )}
+
+          {/* Top Cards - "We found N issues affecting your visibility" */}
           <ReportTopCards
             impact={report.summaryCards.impact}
             competitors={report.summaryCards.competitors}
@@ -811,32 +842,6 @@ export default function AnalysisPage() {
             onOpenPrescription={handleOpenPrescription}
           />
 
-          {/* Competitive Edge - benchmark radar, impact card, thematic sentiment */}
-          <ReportVisualInsights
-            scores={report.scores}
-            businessName={report.meta.businessName}
-            thematicSentiment={aiAnalysis?.thematicSentiment}
-            competitiveBenchmark={aiAnalysis?.competitiveBenchmark}
-            isLoading={aiAnalysisLoading}
-          />
-          {competitiveBenchmark && (
-            <RecommendedFixStrip
-              modules={VISUAL_INSIGHTS_MODULES}
-              hasAnyFault={hasVisualFault}
-              onOpenPrescription={handleOpenPrescription}
-            />
-          )}
-
-          {/* AI Analysis */}
-          <ReportAIAnalysis analysis={aiAnalysis} isLoading={aiAnalysisLoading} />
-          {aiAnalysis && (
-            <RecommendedFixStrip
-              modules={AI_ANALYSIS_MODULES}
-              hasAnyFault={hasAIFault}
-              onOpenPrescription={handleOpenPrescription}
-            />
-          )}
-          
           {/* Search Visibility Table */}
           <ReportSearchVisibility
             searchVisibility={report.searchVisibility}

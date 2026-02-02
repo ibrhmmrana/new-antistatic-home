@@ -138,12 +138,16 @@ interface AIAnalysisResult {
   }>;
 }
 
+export interface AIAnalysisResultType extends AIAnalysisResult {}
+
 interface ReportAIAnalysisProps {
   analysis: AIAnalysisResult | null;
   isLoading?: boolean;
+  /** When true, only render header and Top Priorities (rest is shown below Thematic sentiment). */
+  onlyTopPriorities?: boolean;
 }
 
-export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalysisProps) {
+export default function ReportAIAnalysis({ analysis, isLoading, onlyTopPriorities = false }: ReportAIAnalysisProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['top-priorities']));
 
   const toggleSection = (section: string) => {
@@ -225,9 +229,6 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
       <div className="flex items-center gap-3 mb-6">
         <Sparkles className="w-6 h-6 text-blue-600" />
         <h2 className="text-xl font-semibold text-gray-900">AI-Powered Analysis</h2>
-        <div className="ml-auto px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-          {analysis.overallScore}/100
-        </div>
       </div>
 
       {/* Top Priorities */}
@@ -247,14 +248,14 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
           {expandedSections.has('top-priorities') && (
             <div className="mt-2 pb-2 pt-1 bg-gray-50 rounded-lg space-y-2">
               {analysis.topPriorities.map((priority, idx) => (
-                <div key={idx} className="flex items-start gap-3 py-3 px-3 flex-wrap">
+                <div key={idx} className="flex items-start gap-3 py-3 px-3">
                   <span className="flex-shrink-0 text-sm font-semibold text-gray-700 tabular-nums">{idx + 1}.</span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                      <span className="flex items-center justify-center shrink-0" title={priority.source}>
+                    <div className="text-sm font-semibold text-gray-900 mb-0.5">
+                      <span className="inline-flex align-middle shrink-0 mr-1.5" title={priority.source}>
                         <SourceIcon source={priority.source} />
                       </span>
-                      <span className="text-sm text-gray-900 font-semibold">{priority.issue}</span>
+                      <span>{priority.issue}</span>
                     </div>
                     <p className="text-sm text-gray-600">{priority.recommendation}</p>
                   </div>
@@ -265,8 +266,8 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
         </div>
       )}
 
-      {/* Review Analysis */}
-      {analysis.reviews.totalReviews > 0 && (
+      {/* Rest of AI sections (Review, Consistency, Social) — when not onlyTopPriorities */}
+      {!onlyTopPriorities && analysis.reviews.totalReviews > 0 && (
         <div className="mb-6">
           <button
             onClick={() => toggleSection('reviews')}
@@ -332,8 +333,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
         </div>
       )}
 
-      {/* Consistency Analysis */}
-      {(analysis.consistency.inconsistencies.length > 0 || analysis.consistency.missingInfo.length > 0) && (
+      {!onlyTopPriorities && (analysis.consistency.inconsistencies.length > 0 || analysis.consistency.missingInfo.length > 0) && (
         <div className="mb-6">
           <button
             onClick={() => toggleSection('consistency')}
@@ -383,8 +383,7 @@ export default function ReportAIAnalysis({ analysis, isLoading }: ReportAIAnalys
         </div>
       )}
 
-      {/* Social Media Analysis */}
-      {(analysis.instagram || analysis.facebook) && (
+      {!onlyTopPriorities && (analysis.instagram || analysis.facebook) && (
         <div className="mb-6">
           <button
             onClick={() => toggleSection('social')}

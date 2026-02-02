@@ -15,15 +15,19 @@ import type {
   CompetitiveBenchmarkSnapshot,
 } from "@/lib/report/snapshotTypes";
 import ThematicSentiment from "./ThematicSentiment";
+import ReportAIAnalysisRest from "./ReportAIAnalysisRest";
+import type { AIAnalysisResultType } from "./ReportAIAnalysis";
 
-const ANTISTATIC_BLUE = "#2563eb";
-const LIGHT_GREY = "#94a3b8";
+// Palette: #060315, #ff48aa, #5b8df9 — darker variants for bars
+const BAR_COLOR_BUSINESS = "#c41a75";   // darker #ff48aa (pink)
+const BAR_COLOR_COMPETITORS = "#2563eb"; // darker #5b8df9 (blue)
 
 interface ReportVisualInsightsProps {
   scores: ReportScores;
   businessName?: string | null;
   thematicSentiment?: ThematicSentimentSnapshot | null;
   competitiveBenchmark?: CompetitiveBenchmarkSnapshot | null;
+  aiAnalysis?: AIAnalysisResultType | null;
   isLoading?: boolean;
 }
 
@@ -90,6 +94,7 @@ export default function ReportVisualInsights({
   businessName,
   thematicSentiment,
   competitiveBenchmark,
+  aiAnalysis,
   isLoading = false,
 }: ReportVisualInsightsProps) {
   if (isLoading) {
@@ -101,10 +106,14 @@ export default function ReportVisualInsights({
   const yourLabel = businessName?.trim() || "Your Business";
   const marketLabel = "Top 3 Competitors (Avg)";
 
+  const sectionTitle = businessName?.trim()
+    ? `${businessName.trim()} Competitive Edge & Insights`
+    : "Competitive Edge & Insights";
+
   return (
     <section className="mb-8 report-visual-insights">
       <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-        Competitive Edge &amp; Insights
+        {sectionTitle}
       </h2>
 
       {/* Single block: Performance gap + Revenue Opportunity + Thematic sentiment */}
@@ -139,9 +148,9 @@ export default function ReportVisualInsights({
                     formatter={(value: number, name: string) => [`${value}%`, name]}
                   />
                   {hasBenchmark && <Legend />}
-                  <Bar dataKey="yourBusiness" name={yourLabel} fill={ANTISTATIC_BLUE} radius={[4, 4, 0, 0]} maxBarSize={32} />
+                  <Bar dataKey="yourBusiness" name={yourLabel} fill={BAR_COLOR_BUSINESS} radius={[4, 4, 0, 0]} maxBarSize={32} />
                   {hasBenchmark && (
-                    <Bar dataKey="marketLeader" name={marketLabel} fill={LIGHT_GREY} radius={[4, 4, 0, 0]} maxBarSize={32} />
+                    <Bar dataKey="marketLeader" name={marketLabel} fill={BAR_COLOR_COMPETITORS} radius={[4, 4, 0, 0]} maxBarSize={32} />
                   )}
                 </BarChart>
               </ResponsiveContainer>
@@ -189,6 +198,9 @@ export default function ReportVisualInsights({
 
         {/* Thematic sentiment (embedded, no extra card) */}
         <ThematicSentiment thematicSentiment={thematicSentiment} embedded />
+
+        {/* AI analysis rest (Review, Consistency, Social) — right below thematic sentiment */}
+        {aiAnalysis && <ReportAIAnalysisRest analysis={aiAnalysis} />}
       </div>
     </section>
   );

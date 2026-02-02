@@ -23,9 +23,11 @@ function getDisplayLabel(sectionId: string, checkKey: string, fallbackLabel: str
 
 interface ReportChecklistSectionProps {
   section: ChecklistSection;
+  /** When true, blur all analysis text (for demo/snapshot). */
+  blurContent?: boolean;
 }
 
-export default function ReportChecklistSection({ section }: ReportChecklistSectionProps) {
+export default function ReportChecklistSection({ section, blurContent = false }: ReportChecklistSectionProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   
   const toggleItem = (key: string) => {
@@ -66,9 +68,11 @@ export default function ReportChecklistSection({ section }: ReportChecklistSecti
   const total = section.checks.length;
   const isFaulty = (status: string) => status === 'bad' || status === 'warn';
 
+  const blurCls = blurContent ? "blur-sm select-none" : "";
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 shadow-md">
-      {/* Section heading */}
+      {/* Section heading — main headings unblurred */}
       <div className="mb-4">
         <div className="flex items-center justify-between mb-1">
           <h2 className="text-xl font-semibold text-gray-900">{section.title}</h2>
@@ -102,8 +106,8 @@ export default function ReportChecklistSection({ section }: ReportChecklistSecti
                 >
                   <div className="flex-shrink-0 mt-0.5">{getStatusIcon(check.status)}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900">{getDisplayLabel(section.id, check.key, check.label)}</div>
-                    <div className="text-sm text-gray-500 mt-0.5">
+                    <div className={`font-medium text-gray-900 ${blurCls}`}>{getDisplayLabel(section.id, check.key, check.label)}</div>
+                    <div className={`text-sm text-gray-500 mt-0.5 ${blurCls}`}>
                       {faulty ? check.howToFix : check.whatWeFound}
                     </div>
                   </div>
@@ -116,9 +120,9 @@ export default function ReportChecklistSection({ section }: ReportChecklistSecti
                   </div>
                 </button>
 
-                {/* Expanded: what we found + what we were looking for (and how to fix if faulty) */}
+                {/* Expanded: headings unblurred; only analysis (p) text blurred */}
                 {isExpanded && (
-                  <div className="pb-3 pt-1 bg-gray-50 space-y-3 text-sm">
+                  <div className={`pb-3 pt-1 bg-gray-50 space-y-3 text-sm ${blurContent ? "[&_p]:blur-sm [&_p]:select-none" : ""}`}>
                     <div>
                       <h5 className="font-semibold text-gray-900 mb-1">What we found</h5>
                       <p className="text-gray-600">{check.whatWeFound}</p>

@@ -491,6 +491,27 @@ body::-webkit-scrollbar {
   }
 }
 
+/* Strip CTA (report fix strips) — left-aligned roll to match button padding */
+.strip-cta-left::after {
+  left: 1rem; /* Match pl-4 on mobile */
+  transform: translateY(150%);
+}
+
+.strip-cta-left:hover::after {
+  transform: translateY(-50%);
+}
+
+@media (min-width: 768px) {
+  .strip-cta-left::after {
+    left: 1.5rem; /* Match md:pl-6 */
+  }
+}
+
+/* Paywall Get started: left-align content so rolling text (strip-cta-left) matches visible text */
+.button-roll-text-justify-start {
+  justify-content: flex-start;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .button-roll-text span,
   .button-roll-text::after {

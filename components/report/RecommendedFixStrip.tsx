@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import type { ModuleId } from "@/lib/report/snapshotTypes";
 import type { Prescription } from "@/lib/report/snapshotTypes";
 import { MODULES, getGenericPrescription } from "@/lib/diagnosis/modules";
@@ -13,7 +14,8 @@ interface RecommendedFixStripProps {
 }
 
 /**
- * Renders outside section blocks (below them). Clean strip with recommended modules.
+ * Renders outside section blocks (below them). Same visual style as homepage footer CTA:
+ * rounded-[32px], footer bg image, overflow-hidden.
  */
 export default function RecommendedFixStrip({
   modules,
@@ -23,22 +25,49 @@ export default function RecommendedFixStrip({
   const verb = hasAnyFault ? "Fix with Antistatic's" : "Improve with Antistatic's";
 
   return (
-    <div className="mb-8 w-full min-w-0 overflow-x-auto overflow-y-hidden rounded-xl border border-gray-200/80 bg-gray-50/80 px-4 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div className="flex flex-nowrap items-center gap-2 min-w-max">
-        <span className="text-sm font-medium text-gray-600 whitespace-nowrap shrink-0">{verb}</span>
-        <div className="flex flex-nowrap items-center gap-2 shrink-0">
-          {modules.map((moduleId, i) => (
-            <span key={moduleId} className="flex items-center gap-2 shrink-0">
-              {i > 0 && <span className="text-gray-400 font-medium shrink-0">+</span>}
-              <button
-                type="button"
-                onClick={() => onOpenPrescription(getGenericPrescription(moduleId))}
-                className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 hover:border-gray-400 transition-colors whitespace-nowrap shrink-0"
-              >
-                {MODULES[moduleId].name}
-              </button>
-            </span>
-          ))}
+    <div className="mb-8 w-full min-w-0 relative rounded-[32px] overflow-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* Same background as homepage footer CTA */}
+      <div className="absolute inset-0">
+        <Image
+          src="/images/footer bg.svg"
+          alt=""
+          fill
+          className="object-cover"
+          aria-hidden
+        />
+      </div>
+      <div className="relative z-10 px-4 sm:px-6 md:px-8 lg:px-10 py-4 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-center gap-2 md:gap-5 md:flex-nowrap">
+          <span className="text-sm md:text-lg font-medium text-white/90 shrink-0">{verb}</span>
+          <div className="flex flex-wrap items-center justify-center gap-2 shrink-0 md:flex-nowrap">
+            {modules.map((moduleId, i) => (
+              <span key={moduleId} className="flex items-center gap-2 shrink-0">
+                {i > 0 && <span className="text-white/60 font-medium shrink-0">+</span>}
+                <button
+                  type="button"
+                  onClick={() => onOpenPrescription(getGenericPrescription(moduleId))}
+                  className="relative inline-flex items-center justify-start bg-gradient-to-r from-blue-500 to-blue-600 text-white pl-4 pr-10 py-2.5 md:pl-6 md:pr-14 md:py-3 text-sm font-medium hover:from-blue-600 hover:to-blue-700 transition-all shrink-0 button-roll-text strip-cta-left"
+                  style={{ borderRadius: "50px" }}
+                  data-text={MODULES[moduleId].name}
+                >
+                  <span>{MODULES[moduleId].name}</span>
+                  <div
+                    className="absolute right-[1px] top-[1px] bottom-[1px] aspect-square flex items-center justify-center button-icon-rotate"
+                    style={{ borderRadius: "9999px" }}
+                  >
+                    <Image
+                      src="/images/arrow icon.svg"
+                      alt=""
+                      width={32}
+                      height={32}
+                      className="flex-shrink-0"
+                      aria-hidden
+                    />
+                  </div>
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </div>

@@ -239,7 +239,9 @@ export default function ReportTopCards({
         {/* Rankings table with scrollbar; white fade at bottom */}
         <div className="relative">
           <div className="md:max-h-[260px] overflow-y-auto overflow-x-hidden space-y-0.5 pr-1 min-w-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {competitors.list.map((competitor) => (
+            {competitors.list.map((competitor) => {
+              const blurName = !competitor.isTargetBusiness && competitor.rank <= 5;
+              return (
             <div 
               key={competitor.rank} 
               className={`flex items-center justify-between gap-2 py-1 min-w-0 ${
@@ -253,7 +255,7 @@ export default function ReportTopCards({
                   <span className="text-xs">🍴</span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className={`font-medium text-sm truncate ${
+                  <div className={`font-medium text-sm truncate ${blurName ? "blur-sm select-none" : ""} ${
                     competitor.isTargetBusiness ? 'text-blue-600' : 'text-gray-900'
                   }`}>
                     {competitor.name}{competitor.isTargetBusiness ? ' (You)' : ''}
@@ -279,7 +281,8 @@ export default function ReportTopCards({
                   : `${competitor.rank}th`}
               </div>
             </div>
-          ))}
+          );
+          })}
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none bg-gradient-to-t from-white to-transparent" aria-hidden />
         </div>

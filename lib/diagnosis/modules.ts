@@ -55,10 +55,11 @@ export const MODULE_DESCRIPTIONS: Record<ModuleId, { tagline: string; bullets: s
     ],
   },
   social_studio: {
-    tagline: 'Content & scheduling',
+    tagline: 'Content & insights',
     bullets: [
-      'Turn ideas or links into ready-to-post content with AI',
-      'Generate content for Instagram, Facebook, etc.',
+      'Generate high-performing content ideas, captions, hooks, and creatives with AI',
+      'Monitor social stats and engagement across platforms',
+      'Replicate competitor posts that are performing well with your own offer, tone, and branding',
     ],
   },
   competitor_radar: {

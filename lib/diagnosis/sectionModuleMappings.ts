@@ -7,10 +7,10 @@ import type { ModuleId } from "@/lib/report/snapshotTypes";
 
 export type SectionModuleMapping = [ModuleId] | [ModuleId, ModuleId] | null;
 
-/** Checklist section id → modules. website-experience has no strip. */
+/** Checklist section id → modules. website-experience and social-presence have no strip. */
 export const CHECKLIST_SECTION_MODULES: Record<string, SectionModuleMapping> = {
   "local-listings": ["reputation_hub", "creator_hub"],
-  "social-presence": ["social_studio", "creator_hub"],
+  "social-presence": null,
   "search-results": ["competitor_radar"],
   "website-experience": null,
 };
