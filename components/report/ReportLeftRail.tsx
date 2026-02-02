@@ -173,13 +173,13 @@ export default function ReportLeftRail({ scores, reportId }: ReportLeftRailProps
         </div>
       </div>
 
-      {/* Mobile: Share (left) + Fix (right) side by side at bottom */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 p-4 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))] pointer-events-none">
+      {/* Mobile: solid white sticky footer with Share + Fix (same rounded corners) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] p-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] flex justify-center pointer-events-none">
         <div className="pointer-events-auto w-full max-w-[400px] flex flex-row items-stretch gap-2">
           {reportId && (
-            <ShareButton reportId={reportId} className="flex-1 min-w-0 py-3 rounded-2xl" />
+            <ShareButton reportId={reportId} className="flex-1 min-w-0 py-3 rounded-xl text-sm" />
           )}
-          <button className="flex-1 min-w-0 bg-blue-600 text-white py-3 px-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg">
+          <button className="flex-1 min-w-0 bg-blue-600 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors text-sm">
             <Sparkles className="w-4 h-4 flex-shrink-0" />
             <span>Fix in 35 seconds</span>
           </button>

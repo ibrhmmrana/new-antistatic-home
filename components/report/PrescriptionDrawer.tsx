@@ -15,9 +15,9 @@ export default function PrescriptionDrawer({
 }: PrescriptionDrawerProps) {
   return (
     <>
-      {/* Overlay with fade */}
+      {/* Overlay with fade - hidden on mobile (no black overlay when drawer opens) */}
       <div
-        className="fixed inset-0 z-50 bg-black/40 transition-opacity duration-300 ease-out"
+        className="fixed inset-0 z-50 hidden bg-black/40 transition-opacity duration-300 ease-out md:block"
         style={{ opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none" }}
         aria-hidden="true"
         onClick={() => onOpenChange(false)}
