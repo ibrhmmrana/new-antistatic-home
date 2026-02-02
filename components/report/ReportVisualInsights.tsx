@@ -25,7 +25,6 @@ interface ReportVisualInsightsProps {
   thematicSentiment?: ThematicSentimentSnapshot | null;
   competitiveBenchmark?: CompetitiveBenchmarkSnapshot | null;
   isLoading?: boolean;
-  onOpenPrescription?: (prescription: Prescription) => void;
 }
 
 function pct(s: { score: number; maxScore: number }) {
