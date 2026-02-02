@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { X } from "lucide-react";
 
-const APP_URL = "https://app.antistatic.ai";
 const CARD_STYLE = {
   backgroundColor: "#F2F5FF",
   border: "1px solid #D5E2FF",
   boxShadow: "inset 0 -2px 4px rgba(213, 226, 255, 1)",
 };
+
+type PlanId = "essential" | "full_engine";
 
 interface ReportPaywallModalProps {
   open: boolean;
@@ -18,10 +18,12 @@ interface ReportPaywallModalProps {
 }
 
 /**
- * Paywall modal for report: pricing plans aligned with homepage Pricing section.
- * CTAs link to app.antistatic.ai for signup/trial.
+ * Paywall modal: pricing plans; Get started creates Stripe Checkout and redirects to payment page.
  */
 export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywallModalProps) {
+  const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -30,6 +32,33 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onOpenChange]);
+
+  const handleGetStarted = async (plan: PlanId) => {
+    setError(null);
+    setLoadingPlan(plan);
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Something went wrong. Please try again.");
+        setLoadingPlan(null);
+        return;
+      }
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setError("No checkout URL received.");
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoadingPlan(null);
+    }
+  };
 
   if (!open) return null;
 
@@ -66,6 +95,11 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
           <p className="text-sm text-gray-600 mb-6 text-center">
             Get the full picture with Antistatic. Choose a plan and get started.
           </p>
+          {error && (
+            <p className="text-sm text-red-600 mb-4 text-center" role="alert">
+              {error}
+            </p>
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6 max-w-4xl mx-auto">
             {/* Essential Monitoring */}
             <div
@@ -97,22 +131,22 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
                   <span className="text-sm text-gray-700">Reputation hub, basic social studio</span>
                 </li>
               </ul>
-              <Link
-                href={APP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="relative w-full inline-flex items-center justify-start bg-gradient-to-r from-blue-500 to-blue-600 text-white pl-6 pr-12 py-2.5 font-medium hover:from-blue-600 hover:to-blue-700 transition-all text-sm button-roll-text button-roll-text-justify-start strip-cta-left"
+              <button
+                type="button"
+                onClick={() => handleGetStarted("essential")}
+                disabled={!!loadingPlan}
+                className="relative w-full inline-flex items-center justify-start bg-gradient-to-r from-blue-500 to-blue-600 text-white pl-6 pr-12 py-2.5 font-medium hover:from-blue-600 hover:to-blue-700 transition-all text-sm button-roll-text button-roll-text-justify-start strip-cta-left disabled:opacity-70 disabled:cursor-not-allowed"
                 style={{ borderRadius: "50px" }}
                 data-text="Get started"
               >
-                <span>Get started</span>
+                <span>{loadingPlan === "essential" ? "Redirecting…" : "Get started"}</span>
                 <div
                   className="absolute right-[1px] top-[1px] bottom-[1px] aspect-square flex items-center justify-center button-icon-rotate"
                   style={{ borderRadius: "9999px" }}
                 >
                   <Image src="/images/arrow icon.svg" alt="" width={24} height={24} className="flex-shrink-0" />
                 </div>
-              </Link>
+              </button>
             </div>
 
             {/* Full engine */}
@@ -145,22 +179,22 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
                   <span className="text-sm text-gray-700">Marketplace access, priority support</span>
                 </li>
               </ul>
-              <Link
-                href={APP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="relative w-full inline-flex items-center justify-start bg-gradient-to-r from-blue-500 to-blue-600 text-white pl-6 pr-12 py-2.5 font-medium hover:from-blue-600 hover:to-blue-700 transition-all text-sm button-roll-text button-roll-text-justify-start strip-cta-left"
+              <button
+                type="button"
+                onClick={() => handleGetStarted("full_engine")}
+                disabled={!!loadingPlan}
+                className="relative w-full inline-flex items-center justify-start bg-gradient-to-r from-blue-500 to-blue-600 text-white pl-6 pr-12 py-2.5 font-medium hover:from-blue-600 hover:to-blue-700 transition-all text-sm button-roll-text button-roll-text-justify-start strip-cta-left disabled:opacity-70 disabled:cursor-not-allowed"
                 style={{ borderRadius: "50px" }}
                 data-text="Get started"
               >
-                <span>Get started</span>
+                <span>{loadingPlan === "full_engine" ? "Redirecting…" : "Get started"}</span>
                 <div
                   className="absolute right-[1px] top-[1px] bottom-[1px] aspect-square flex items-center justify-center button-icon-rotate"
                   style={{ borderRadius: "9999px" }}
                 >
                   <Image src="/images/arrow icon.svg" alt="" width={24} height={24} className="flex-shrink-0" />
                 </div>
-              </Link>
+              </button>
             </div>
           </div>
         </div>
