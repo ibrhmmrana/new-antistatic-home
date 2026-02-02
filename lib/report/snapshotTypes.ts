@@ -203,6 +203,29 @@ export interface SnapshotSupportingData {
   markerLocations: Record<string, MarkerLocation>;
 }
 
+/** Canonical module ids for Smart Diagnosis prescriptions */
+export type ModuleId = 'reputation_hub' | 'social_studio' | 'competitor_radar' | 'creator_hub';
+
+/** Single prescription: module + contextual steps + CTA */
+export interface Prescription {
+  id: string;
+  moduleId: ModuleId;
+  moduleName: string;
+  moduleTagline: string;
+  title: string;
+  whyThisMatters: string;
+  howToFix: string[];
+  ctaLabel: string;
+  ctaHref: string;
+}
+
+/** Diagnosis snapshot: prescriptions keyed by faultId */
+export interface DiagnosisSnapshot {
+  version: 1;
+  generatedAt: string;
+  prescriptions: Record<string, Prescription>;
+}
+
 /**
  * Version 1 of the Report Snapshot
  * Contains everything needed to render the full report without any network requests
@@ -268,6 +291,11 @@ export interface ReportSnapshotV1 {
    * Supporting data to prevent any component from fetching
    */
   supporting: SnapshotSupportingData;
+
+  /**
+   * Smart Diagnosis: prescriptions keyed by faultId (optional for backward compat)
+   */
+  diagnosis?: DiagnosisSnapshot;
 }
 
 /**

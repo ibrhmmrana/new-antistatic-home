@@ -488,16 +488,24 @@ async function fetchProfile(
   }
 
   const data = await response.json();
-  const user = data?.data?.user;
+  // Instagram web_profile_info can return user at data.data.user or data.user (or nested under xdt_* keys)
+  const user =
+    data?.data?.user ||
+    data?.user ||
+    data?.data?.xdt_api__v1__fb_user__profile_home__web?.user ||
+    null;
 
   if (!user) {
     return null;
   }
 
+  // Biography can be user.biography or user.bio (plain-text contact info often appears here)
+  const biography = user.biography ?? user.bio ?? "";
+
   return {
     username: user.username || username,
     fullName: user.full_name || "",
-    biography: user.biography || "",
+    biography: typeof biography === "string" ? biography : "",
     profilePicUrl: user.profile_pic_url || "",
     profilePicUrlHd: user.profile_pic_url_hd || "",
     followerCount: user.edge_followed_by?.count || 0,

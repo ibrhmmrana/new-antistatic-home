@@ -71,62 +71,62 @@ export default function ThematicSentiment({
   );
 
   const content = (
-    <>
-      <h3 className="text-sm font-semibold text-gray-800 mb-1">
+    <div className="flex flex-col items-stretch text-left max-w-full min-w-0">
+      <h3 className="text-sm font-semibold text-gray-800 mb-1 w-full">
         Thematic sentiment (reviews &amp; comments)
       </h3>
-      <p className="text-xs text-gray-500 mb-3">
+      <p className="text-xs text-gray-500 mb-3 w-full">
         Click a bar to see why it scored that way and supporting quotes.
       </p>
       {data.length > 0 ? (
-          <div className="h-[200px] w-full cursor-pointer">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                layout="vertical"
-                data={data}
-                margin={{ top: 4, right: 24, left: 72, bottom: 4 }}
+        <div className="h-[200px] w-full max-w-full min-w-0 cursor-pointer">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              layout="vertical"
+              data={data}
+              margin={{ top: 4, right: 24, left: 72, bottom: 4 }}
+            >
+              <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
+              <YAxis type="category" dataKey="key" width={68} tick={{ fontSize: 12 }} />
+              <Tooltip
+                formatter={(value: number) => [`${value}/100`, "Score"]}
+                contentStyle={{
+                  fontSize: "12px",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                }}
+              />
+              <Bar
+                dataKey="score"
+                name="Score"
+                radius={[0, 4, 4, 0]}
+                maxBarSize={28}
+                onClick={(data: { key?: string; categoryKey?: (typeof CATEGORY_KEYS)[number] }) => {
+                  if (data?.categoryKey) handleBarClick({ key: data.key ?? "", categoryKey: data.categoryKey });
+                }}
               >
-                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="key" width={68} tick={{ fontSize: 12 }} />
-                <Tooltip
-                  formatter={(value: number) => [`${value}/100`, "Score"]}
-                  contentStyle={{
-                    fontSize: "12px",
-                    borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
-                  }}
-                />
-                <Bar
-                  dataKey="score"
-                  name="Score"
-                  radius={[0, 4, 4, 0]}
-                  maxBarSize={28}
-                  onClick={(data: { key?: string; categoryKey?: (typeof CATEGORY_KEYS)[number] }) => {
-                    if (data?.categoryKey) handleBarClick({ key: data.key ?? "", categoryKey: data.categoryKey });
-                  }}
-                >
-                  {data.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={entry.fill}
-                      cursor={
-                        thematicSentiment?.categoryDetails?.[entry.categoryKey]
-                          ? "pointer"
-                          : "default"
-                      }
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+                {data.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={entry.fill}
+                    cursor={
+                      thematicSentiment?.categoryDetails?.[entry.categoryKey]
+                        ? "pointer"
+                        : "default"
+                    }
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       ) : (
-        <div className="h-[120px] flex items-center justify-center text-gray-400 text-sm">
+        <div className="h-[120px] flex items-center justify-center text-gray-400 text-sm text-center w-full">
           No thematic sentiment data yet. Add reviews or comments and re-run
           analysis.
         </div>
       )}
-    </>
+    </div>
   );
 
   return (

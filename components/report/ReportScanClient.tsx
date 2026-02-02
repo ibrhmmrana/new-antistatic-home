@@ -1069,16 +1069,22 @@ export default function ReportScanClient({
         caption: (post.caption || "").trim(),
         date: post.takenAt ? new Date(post.takenAt * 1000).toISOString() : undefined,
       }));
+    // Preserve full profile from scraper – biography often contains phone/contact in plain text
+    const rawProfile = apiResponse.profile || {};
+    const biography =
+      (typeof rawProfile.biography === "string" ? rawProfile.biography : null) ??
+      (typeof rawProfile.bio === "string" ? rawProfile.bio : null) ??
+      null;
     return {
       profile: {
-        biography: apiResponse.profile?.biography || null,
-        website: apiResponse.profile?.website || null,
-        category: apiResponse.profile?.category || null,
-        followerCount: apiResponse.profile?.followerCount ?? null,
-        fullName: apiResponse.profile?.fullName ?? null,
-        isVerified: apiResponse.profile?.isVerified ?? null,
-        isBusinessAccount: apiResponse.profile?.isBusinessAccount ?? null,
-        postCount: apiResponse.profile?.postCount ?? (posts.length > 0 ? posts.length : null),
+        biography: biography || null,
+        website: rawProfile.website ?? null,
+        category: rawProfile.category ?? null,
+        followerCount: rawProfile.followerCount ?? null,
+        fullName: rawProfile.fullName ?? null,
+        isVerified: rawProfile.isVerified ?? null,
+        isBusinessAccount: rawProfile.isBusinessAccount ?? null,
+        postCount: rawProfile.postCount ?? (posts.length > 0 ? posts.length : null),
       },
       posts: posts.map((post: any) => ({
         date: post.takenAt ? new Date(post.takenAt * 1000).toISOString() : null,

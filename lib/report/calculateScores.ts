@@ -120,8 +120,12 @@ export function calculateLocalListingsScore(
     hours: 3,
     phone: 2,
     price_range: 2,
+    price: 2,
+    social: 2,
     desc_keywords: 2,
+    description_keywords: 2,
     categories_keywords: 3,
+    category_keywords: 3,
   };
   
   gbpChecklist.forEach(item => {

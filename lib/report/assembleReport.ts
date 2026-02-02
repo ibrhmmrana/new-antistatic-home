@@ -658,25 +658,30 @@ function buildLocalListingsSection(
   const checks: ChecklistItem[] = [];
   
   // Convert GBP checklist items to our format
+  const gbpLabelMap: Record<string, string> = {
+    website: 'First-party website',
+    description: 'Description',
+    hours: 'Business hours',
+    phone: 'Phone number',
+    price_range: 'Price range',
+    price: 'Price range',
+    social: 'Social media links',
+    description_keywords: 'Description includes relevant keywords',
+    category_keywords: 'Categories match keywords',
+  };
   if (gbpAnalysis?.checklist) {
     gbpAnalysis.checklist.forEach(item => {
       const key = item.key || '';
-      const labelMap: Record<string, string> = {
-        website: 'First-party website',
-        description: 'Description',
-        hours: 'Business hours',
-        phone: 'Phone number',
-        price_range: 'Price range',
-      };
-      
+      const label = gbpLabelMap[key] || item.key || 'Unknown';
+      const howToFix = `Update your Google Business Profile to include ${gbpLabelMap[key] || key}`;
       checks.push({
         key: `gbp_${key}`,
-        label: labelMap[key] || item.key || 'Unknown',
+        label,
         status: item.status || 'bad',
-        whyItMatters: 'See GBP analysis for details',
+        whyItMatters: howToFix,
         whatWeFound: item.extractedValue || 'Not found',
         whatWeWereLookingFor: 'Should be set on Google Business Profile',
-        howToFix: `Update your Google Business Profile to include ${labelMap[key] || key}`,
+        howToFix,
       });
     });
   }

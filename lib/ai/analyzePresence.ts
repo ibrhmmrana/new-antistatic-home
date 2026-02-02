@@ -44,10 +44,16 @@ export async function analyzeSocialProfile(
 ): Promise<AnalysisResult> {
   const openai = getOpenAIClient();
 
+  const bioOrDesc = profile.biography || profile.description || 'Not set';
+  const instagramBioNote =
+    profile.platform === 'instagram' && bioOrDesc !== 'Not set'
+      ? '\n\nImportant: On Instagram, contact details (phone, address, hours) often appear only in the biography as plain text. If the biography contains a phone number, address, or opening hours written in text, treat that as contact information present—do NOT flag them as "missing". Only flag contact info as missing if the biography clearly contains no phone, address, or hours at all.'
+      : '';
+
   const prompt = `You are an expert social media analyst for local businesses. Analyze this ${profile.platform} profile for "${businessName}" (${businessCategory}).
 
 Profile Data:
-- Biography/Description: ${profile.biography || profile.description || 'Not set'}
+- Biography/Description: ${bioOrDesc}
 - Website Link: ${profile.website || 'Not set'}
 - Category: ${profile.category || 'Not set'}
 - Phone: ${profile.phone || 'Not set'}
@@ -58,11 +64,12 @@ ${profile.postCount != null ? `- Posts: ${profile.postCount}` : ''}
 ${profile.platform === 'instagram' && profile.fullName ? `- Display name: ${profile.fullName}` : ''}
 ${profile.platform === 'instagram' && profile.isVerified != null ? `- Verified: ${profile.isVerified}` : ''}
 ${profile.platform === 'instagram' && profile.isBusinessAccount != null ? `- Business account: ${profile.isBusinessAccount}` : ''}
+${instagramBioNote}
 
 Analyze:
 1. Is the biography/description compelling and relevant to the business type?
 2. Does it include relevant keywords for discoverability?
-3. Is contact information complete and professional?
+3. Is contact information complete and professional? (For Instagram: check the biography text for phone numbers, addresses, or hours written in plain text.)
 4. Are there any red flags or missed opportunities?
 
 Respond in JSON format:

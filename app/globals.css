@@ -63,6 +63,14 @@ body::-webkit-scrollbar {
   }
 }
 
+/* Report: mobile-only – performance gap legend centre aligned */
+@media (max-width: 767px) {
+  .report-visual-insights .recharts-legend-wrapper {
+    display: flex !important;
+    justify-content: center !important;
+  }
+}
+
 /* Page load: header eases in top-down */
 @keyframes heroHeaderSlideDown {
   from {

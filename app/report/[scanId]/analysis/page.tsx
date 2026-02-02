@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { assembleReport } from "@/lib/report/assembleReport";
 import { buildWebsiteSummary, buildGbpSummary } from "@/lib/report/aiDataSummaries";
+import { diagnoseSnapshot } from "@/lib/diagnosis/diagnoseReport";
 import type { ReportSchema } from "@/lib/report/types";
 import type { Competitor } from "@/lib/report/types";
-import type { ReportSnapshotV1, ReviewSnapshot, MarkerLocation } from "@/lib/report/snapshotTypes";
+import type { ReportSnapshotV1, Prescription, MarkerLocation } from "@/lib/report/snapshotTypes";
 import ReportLeftRail from "@/components/report/ReportLeftRail";
 import ReportTopCards from "@/components/report/ReportTopCards";
 import ReportVisualInsights from "@/components/report/ReportVisualInsights";
@@ -15,7 +16,15 @@ import ReportChecklistSection from "@/components/report/ReportChecklistSection";
 import ReportAIAnalysis from "@/components/report/ReportAIAnalysis";
 import ReportGoogleReviews from "@/components/report/ReportGoogleReviews";
 import ReportInstagramComments from "@/components/report/ReportInstagramComments";
-import ShareButton from "@/components/report/ShareButton";
+import PrescriptionDrawer from "@/components/report/PrescriptionDrawer";
+import RecommendedFixStrip from "@/components/report/RecommendedFixStrip";
+import AllModulesShowcase from "@/components/report/AllModulesShowcase";
+import {
+  TOP_CARDS_MODULES,
+  VISUAL_INSIGHTS_MODULES,
+  AI_ANALYSIS_MODULES,
+  CHECKLIST_SECTION_MODULES,
+} from "@/lib/diagnosis/sectionModuleMappings";
 
 // Helper function to extract username from URL
 function extractUsernameFromUrl(url: string, platform: 'instagram' | 'facebook'): string | null {
@@ -78,6 +87,24 @@ export default function AnalysisPage() {
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
   const aiAnalysisTriggeredRef = useRef(false); // Prevent duplicate AI analysis API calls
+
+  // Smart Diagnosis: drawer state (must be before any conditional return to satisfy Rules of Hooks)
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activePrescription, setActivePrescription] = useState<Prescription | undefined>(undefined);
+  const handleOpenPrescription = (prescription: Prescription) => {
+    setActivePrescription(prescription);
+    setDrawerOpen(true);
+  };
+
+  // Smart Diagnosis: compute prescriptions from report + aiAnalysis (for chips; also computed again at persist)
+  const diagnosis = useMemo(() => {
+    if (!report) return { version: 1 as const, generatedAt: new Date().toISOString(), prescriptions: {} };
+    return diagnoseSnapshot({
+      report,
+      aiAnalysis: aiAnalysis ?? null,
+      competitiveBenchmark: aiAnalysis?.competitiveBenchmark ?? null,
+    });
+  }, [report, aiAnalysis]);
 
   // Load cached analysis results from localStorage
   useEffect(() => {
@@ -610,6 +637,13 @@ export default function AnalysisPage() {
           businessPhotoUrl = placesDetails.photoUri;
         }
         
+        // Smart Diagnosis: compute prescriptions before persist
+        const diagnosisSnapshot = diagnoseSnapshot({
+          report,
+          aiAnalysis: aiAnalysis ?? null,
+          competitiveBenchmark: aiAnalysis?.competitiveBenchmark ?? null,
+        });
+
         // Build the snapshot
         const snapshot: ReportSnapshotV1 = {
           version: 1,
@@ -648,6 +682,7 @@ export default function AnalysisPage() {
           sentimentAnalysis: aiAnalysis?.sentimentAnalysis ?? undefined,
           thematicSentiment: aiAnalysis?.thematicSentiment ?? undefined,
           competitiveBenchmark: aiAnalysis?.competitiveBenchmark ?? undefined,
+          diagnosis: diagnosisSnapshot,
         };
         
         console.log('[SNAPSHOT] Persisting snapshot...');
@@ -711,15 +746,31 @@ export default function AnalysisPage() {
     0
   );
 
+  // Fault flags for fix strips (outside blocks)
+  const hasTopCardsFault =
+    (report.summaryCards.impact.topProblems?.length ?? 0) > 0 ||
+    report.sections.some((s) => s.checks.some((c) => c.status === "bad" || c.status === "warn")) ||
+    (report.summaryCards.competitors.list.some((c) => c.isTargetBusiness) &&
+      (report.summaryCards.competitors.list.find((c) => c.isTargetBusiness)?.rank ?? 1) > 1);
+  const competitiveBenchmark = aiAnalysis?.competitiveBenchmark;
+  const hasVisualFault =
+    !!competitiveBenchmark && !!(competitiveBenchmark.potentialImpact || competitiveBenchmark.urgentGap);
+  const hasAIFault =
+    (aiAnalysis?.topPriorities?.length ?? 0) > 0 ||
+    (aiAnalysis?.reviews?.painPoints?.length ?? 0) > 0 ||
+    (aiAnalysis?.consistency?.inconsistencies?.length ?? 0) > 0 ||
+    (aiAnalysis?.instagram?.issues?.length ?? 0) > 0 ||
+    (aiAnalysis?.facebook?.issues?.length ?? 0) > 0;
+
   return (
-    <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex">
+    <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex overflow-x-hidden">
       {/* Left Rail - hidden on mobile; score content shown in main flow via ReportTopCards etc. */}
-      <ReportLeftRail scores={report.scores} />
+      <ReportLeftRail scores={report.scores} reportId={reportId} />
       
-      {/* Main Content */}
-      <div className="flex-1 p-8 pb-24 md:pb-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Persist Status Bar */}
+      {/* Main Content - left margin on desktop so content doesn't sit under fixed sidebar */}
+      <div className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 pb-24 md:pb-8 md:ml-[21rem]">
+        <div className="max-w-6xl mx-auto w-full max-w-full">
+          {/* Persist Status Bar (Share button moved to left rail) */}
           <div className="flex justify-between items-center mb-4">
             <div>
               {isPersisting && (
@@ -740,7 +791,6 @@ export default function AnalysisPage() {
                 </div>
               )}
             </div>
-            {reportId && <ShareButton reportId={reportId} />}
           </div>
 
           {/* Top Cards */}
@@ -755,6 +805,11 @@ export default function AnalysisPage() {
             overallGrade={report.scores.overall.label}
             aiAnalysis={aiAnalysis}
           />
+          <RecommendedFixStrip
+            modules={TOP_CARDS_MODULES}
+            hasAnyFault={hasTopCardsFault}
+            onOpenPrescription={handleOpenPrescription}
+          />
 
           {/* Competitive Edge - benchmark radar, impact card, thematic sentiment */}
           <ReportVisualInsights
@@ -762,10 +817,25 @@ export default function AnalysisPage() {
             businessName={report.meta.businessName}
             thematicSentiment={aiAnalysis?.thematicSentiment}
             competitiveBenchmark={aiAnalysis?.competitiveBenchmark}
+            isLoading={aiAnalysisLoading}
           />
-          
+          {competitiveBenchmark && (
+            <RecommendedFixStrip
+              modules={VISUAL_INSIGHTS_MODULES}
+              hasAnyFault={hasVisualFault}
+              onOpenPrescription={handleOpenPrescription}
+            />
+          )}
+
           {/* AI Analysis */}
           <ReportAIAnalysis analysis={aiAnalysis} isLoading={aiAnalysisLoading} />
+          {aiAnalysis && (
+            <RecommendedFixStrip
+              modules={AI_ANALYSIS_MODULES}
+              hasAnyFault={hasAIFault}
+              onOpenPrescription={handleOpenPrescription}
+            />
+          )}
           
           {/* Search Visibility Table */}
           <ReportSearchVisibility
@@ -783,17 +853,40 @@ export default function AnalysisPage() {
           </div>
           
           {/* Checklist Sections */}
-          {report.sections.map((section) => (
-            <ReportChecklistSection key={section.id} section={section} />
-          ))}
-          
-          {/* Google Reviews Section */}
-          <ReportGoogleReviews reviews={reviews} />
+          {report.sections.map((section) => {
+            const sectionModules = CHECKLIST_SECTION_MODULES[section.id];
+            const sectionNeedWork = section.checks.filter((c) => c.status === "bad" || c.status === "warn").length > 0;
+            return (
+              <div key={section.id}>
+                <ReportChecklistSection section={section} />
+                {sectionModules && (
+                  <RecommendedFixStrip
+                    modules={sectionModules}
+                    hasAnyFault={sectionNeedWork}
+                    onOpenPrescription={handleOpenPrescription}
+                  />
+                )}
+              </div>
+            );
+          })}
 
-          {/* Instagram Comments (extracted from scraped posts) */}
-          <ReportInstagramComments comments={igResult?.comments ?? []} />
+          {/* How Antistatic can help - all 4 modules (pushes Creator Hub) */}
+          <AllModulesShowcase />
+
+          {/* Google Reviews Section - hidden */}
+          {/* <ReportGoogleReviews reviews={reviews} /> */}
+
+          {/* Instagram Comments (extracted from scraped posts) - hidden */}
+          {/* <ReportInstagramComments comments={igResult?.comments ?? []} /> */}
         </div>
       </div>
+
+      {/* Smart Diagnosis: prescription drawer */}
+      <PrescriptionDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        prescription={activePrescription}
+      />
     </div>
   );
 }

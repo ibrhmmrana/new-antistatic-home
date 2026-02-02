@@ -119,21 +119,20 @@ export default function ReportTopCards({
             return `Improve: ${title}`; // Use colon so "Improve: Get your website..." reads correctly
           })()
         : null;
-      const aiLabels = priorities.slice(0, 3).map((p) => p.issue.trim()).filter(Boolean);
-      const combined: string[] = [];
-      if (actionLabel) combined.push(actionLabel);
-      aiLabels.forEach((label) => {
-        if (combined.length < 3 && !combined.includes(label)) combined.push(label);
+      const aiLabels = priorities!.slice(0, 3).map((p) => p.issue.trim()).filter(Boolean);
+      const out: Array<{ label: string; faultId?: string }> = [];
+      if (actionLabel && lowestSection) out.push({ label: actionLabel, faultId: `section_low:${lowestSection.id}` });
+      aiLabels.forEach((label, i) => {
+        if (out.length < 3 && !out.some((o) => o.label === label)) out.push({ label, faultId: `ai_top_priority:${i}` });
       });
-      return combined.slice(0, 3).map((label) => ({ label }));
+      return out.slice(0, 3);
     }
 
-    // Fallback: from sections/checks or impact.topProblems
     if (!hasSections) {
-      return (impact.topProblems || []).slice(0, 3).map((p) => ({ label: p.label }));
+      return (impact.topProblems || []).slice(0, 3).map((p) => ({ label: p.label, faultId: `top_problem:${p.section}:${p.key}` }));
     }
 
-    const allIssues: Array<{ label: string; impact: 'high' | 'medium' | 'low'; status: 'bad' | 'warn' }> = [];
+    const allIssues: Array<{ label: string; impact: 'high' | 'medium' | 'low'; status: 'bad' | 'warn'; sectionId: string; checkKey: string }> = [];
     sections.forEach((section) => {
       section.checks.forEach((check) => {
         if (check.status === 'bad' || check.status === 'warn') {
@@ -148,7 +147,7 @@ export default function ReportTopCards({
           let impactLevel: 'high' | 'medium' | 'low' = 'low';
           if (highImpactKeys.includes(check.key)) impactLevel = 'high';
           else if (mediumImpactKeys.includes(check.key)) impactLevel = 'medium';
-          allIssues.push({ label: check.label, impact: impactLevel, status: check.status });
+          allIssues.push({ label: check.label, impact: impactLevel, status: check.status, sectionId: section.id, checkKey: check.key });
         }
       });
     });
@@ -159,7 +158,7 @@ export default function ReportTopCards({
     });
     return allIssues.slice(0, 3).map((issue) => ({ label: issue.label }));
   }, [sections, impact.topProblems, aiAnalysis?.topPriorities]);
-  
+
   // Generate problem-focused header
   const getImpactHeader = () => {
     const count = topIssues.length;
@@ -214,9 +213,9 @@ export default function ReportTopCards({
         {/* Top Problems */}
         <div className="space-y-2">
           {topIssues.map((issue, idx) => (
-            <div key={idx} className="flex items-start gap-2.5">
+            <div key={idx} className="flex items-start gap-2.5 flex-wrap">
               <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <span className="text-base text-gray-700">{issue.label}</span>
+              <span className="text-base text-gray-700 flex-1 min-w-0">{issue.label}</span>
             </div>
           ))}
         </div>
@@ -224,28 +223,18 @@ export default function ReportTopCards({
       
       {/* Competitors Card */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-md overflow-hidden">
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">
-          {(() => {
-            // Find the user's business in the competitors list
-            const userBusiness = competitors.list.find(c => c.isTargetBusiness);
-            if (!userBusiness) {
-              return `You're ranking below ${competitors.count} competitors`;
-            }
-            
-            // Count how many competitors are ranked above the user
-            const competitorsAbove = competitors.list.filter(
-              c => !c.isTargetBusiness && c.rank < userBusiness.rank
-            ).length;
-            
-            if (competitorsAbove === 0) {
-              return "You're ranked #1! 🎉";
-            } else if (competitorsAbove === 1) {
-              return "You're ranking below 1 competitor";
-            } else {
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <h3 className="text-lg font-semibold text-gray-900">
+            {(() => {
+              const userBusiness = competitors.list.find(c => c.isTargetBusiness);
+              if (!userBusiness) return `You're ranking below ${competitors.count} competitors`;
+              const competitorsAbove = competitors.list.filter(c => !c.isTargetBusiness && c.rank < userBusiness.rank).length;
+              if (competitorsAbove === 0) return "You're ranked #1! 🎉";
+              if (competitorsAbove === 1) return "You're ranking below 1 competitor";
               return `You're ranking below ${competitorsAbove} competitors`;
-            }
-          })()}
-        </h3>
+            })()}
+          </h3>
+        </div>
         
         {/* Rankings table with scrollbar; white fade at bottom */}
         <div className="relative">

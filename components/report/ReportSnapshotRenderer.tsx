@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import type { ReportSnapshotV1 } from "@/lib/report/snapshotTypes";
+import { useState, useEffect, useRef } from "react";
+import type { ReportSnapshotV1, Prescription } from "@/lib/report/snapshotTypes";
 import ReportLeftRail from "./ReportLeftRail";
 import ReportTopCards from "./ReportTopCards";
 import ReportVisualInsights from "./ReportVisualInsights";
@@ -10,7 +10,15 @@ import ReportChecklistSection from "./ReportChecklistSection";
 import ReportAIAnalysis from "./ReportAIAnalysis";
 import ReportGoogleReviews from "./ReportGoogleReviews";
 import ReportInstagramComments from "./ReportInstagramComments";
-import ShareButton from "./ShareButton";
+import PrescriptionDrawer from "./PrescriptionDrawer";
+import RecommendedFixStrip from "./RecommendedFixStrip";
+import AllModulesShowcase from "./AllModulesShowcase";
+import {
+  TOP_CARDS_MODULES,
+  VISUAL_INSIGHTS_MODULES,
+  AI_ANALYSIS_MODULES,
+  CHECKLIST_SECTION_MODULES,
+} from "@/lib/diagnosis/sectionModuleMappings";
 
 interface ReportSnapshotRendererProps {
   snapshot: ReportSnapshotV1;
@@ -26,6 +34,13 @@ interface ReportSnapshotRendererProps {
 export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSnapshotRendererProps) {
   const { report, aiAnalysis, reviews, place, supporting } = snapshot;
   const devAssertionRef = useRef(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activePrescription, setActivePrescription] = useState<Prescription | undefined>(undefined);
+
+  const handleOpenPrescription = (prescription: Prescription) => {
+    setActivePrescription(prescription);
+    setDrawerOpen(true);
+  };
 
   // DEV ONLY: Assert no API fetches happen in snapshot mode
   useEffect(() => {
@@ -63,19 +78,30 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
     0
   );
 
+  // Fault flags for fix strips (outside blocks)
+  const hasTopCardsFault =
+    (report.summaryCards.impact.topProblems?.length ?? 0) > 0 ||
+    report.sections.some((s) => s.checks.some((c) => c.status === "bad" || c.status === "warn")) ||
+    (report.summaryCards.competitors.list.some((c) => c.isTargetBusiness) &&
+      (report.summaryCards.competitors.list.find((c) => c.isTargetBusiness)?.rank ?? 1) > 1);
+  const competitiveBenchmark = snapshot.competitiveBenchmark;
+  const hasVisualFault =
+    !!competitiveBenchmark && !!(competitiveBenchmark.potentialImpact || competitiveBenchmark.urgentGap);
+  const hasAIFault =
+    (aiAnalysis?.topPriorities?.length ?? 0) > 0 ||
+    (aiAnalysis?.reviews?.painPoints?.length ?? 0) > 0 ||
+    (aiAnalysis?.consistency?.inconsistencies?.length ?? 0) > 0 ||
+    (aiAnalysis?.instagram?.issues?.length ?? 0) > 0 ||
+    (aiAnalysis?.facebook?.issues?.length ?? 0) > 0;
+
   return (
-    <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex">
+    <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex overflow-x-hidden">
       {/* Left Rail - hidden on mobile */}
-      <ReportLeftRail scores={report.scores} />
+      <ReportLeftRail scores={report.scores} reportId={reportId} />
 
-      {/* Main Content */}
-      <div className="flex-1 p-8 pb-24 md:pb-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Share Button */}
-          <div className="flex justify-end mb-4">
-            <ShareButton reportId={reportId} />
-          </div>
-
+      {/* Main Content - left margin on desktop so content doesn't sit under fixed sidebar */}
+      <div className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 pb-24 md:pb-8 md:ml-[21rem]">
+        <div className="max-w-6xl mx-auto w-full max-w-full">
           {/* Top Cards - snapshot mode: pass photo URL directly, skip fetches */}
           <ReportTopCards
             impact={report.summaryCards.impact}
@@ -90,6 +116,11 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             snapshotMode={true}
             snapshotPhotoUrl={place.businessPhotoUrl}
           />
+          <RecommendedFixStrip
+            modules={TOP_CARDS_MODULES}
+            hasAnyFault={hasTopCardsFault}
+            onOpenPrescription={handleOpenPrescription}
+          />
 
           {/* Competitive Edge - benchmark radar, impact card, thematic sentiment */}
           <ReportVisualInsights
@@ -98,9 +129,23 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             thematicSentiment={snapshot.thematicSentiment}
             competitiveBenchmark={snapshot.competitiveBenchmark}
           />
+          {competitiveBenchmark && (
+            <RecommendedFixStrip
+              modules={VISUAL_INSIGHTS_MODULES}
+              hasAnyFault={hasVisualFault}
+              onOpenPrescription={handleOpenPrescription}
+            />
+          )}
 
           {/* AI Analysis - pass directly, no loading state in snapshot mode */}
           <ReportAIAnalysis analysis={aiAnalysis} isLoading={false} />
+          {aiAnalysis && (
+            <RecommendedFixStrip
+              modules={AI_ANALYSIS_MODULES}
+              hasAnyFault={hasAIFault}
+              onOpenPrescription={handleOpenPrescription}
+            />
+          )}
 
           {/* Search Visibility Table - snapshot mode: pass marker data directly */}
           <ReportSearchVisibility
@@ -120,17 +165,40 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
           </div>
 
           {/* Checklist Sections */}
-          {report.sections.map((section) => (
-            <ReportChecklistSection key={section.id} section={section} />
-          ))}
+          {report.sections.map((section) => {
+            const sectionModules = CHECKLIST_SECTION_MODULES[section.id];
+            const sectionNeedWork = section.checks.filter((c) => c.status === "bad" || c.status === "warn").length > 0;
+            return (
+              <div key={section.id}>
+                <ReportChecklistSection section={section} />
+                {sectionModules && (
+                  <RecommendedFixStrip
+                    modules={sectionModules}
+                    hasAnyFault={sectionNeedWork}
+                    onOpenPrescription={handleOpenPrescription}
+                  />
+                )}
+              </div>
+            );
+          })}
 
-          {/* Google Reviews */}
-          <ReportGoogleReviews reviews={reviews} />
+          {/* How Antistatic can help - all 4 modules (pushes Creator Hub) */}
+          <AllModulesShowcase />
 
-          {/* Instagram Comments (from snapshot) */}
-          <ReportInstagramComments comments={snapshot.instagramComments ?? []} />
+          {/* Google Reviews - hidden */}
+          {/* <ReportGoogleReviews reviews={reviews} /> */}
+
+          {/* Instagram Comments (from snapshot) - hidden */}
+          {/* <ReportInstagramComments comments={snapshot.instagramComments ?? []} /> */}
         </div>
       </div>
+
+      {/* Smart Diagnosis: prescription drawer (right on desktop, full-screen on mobile) */}
+      <PrescriptionDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        prescription={activePrescription}
+      />
     </div>
   );
 }

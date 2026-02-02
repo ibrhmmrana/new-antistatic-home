@@ -5,12 +5,13 @@ import { Share2, Check, Copy, Link2 } from "lucide-react";
 
 interface ShareButtonProps {
   reportId: string;
+  className?: string;
 }
 
 /**
  * Share/Copy link button for report pages
  */
-export default function ShareButton({ reportId }: ShareButtonProps) {
+export default function ShareButton({ reportId, className }: ShareButtonProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -37,7 +38,7 @@ export default function ShareButton({ reportId }: ShareButtonProps) {
   return (
     <button
       onClick={handleCopy}
-      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors"
+      className={`flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors ${className ?? ''}`}
       title="Copy shareable link"
     >
       {copied ? (

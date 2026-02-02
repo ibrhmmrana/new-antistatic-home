@@ -4,11 +4,37 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp, Check, X, AlertCircle } from "lucide-react";
 import type { ChecklistSection } from "@/lib/report/types";
 
-interface ReportChecklistSectionProps {
-  section: ChecklistSection;
+/** Friendly labels for GBP/local-listings checks (so snapshots and any legacy data show correct headings) */
+const LOCAL_LISTINGS_LABEL_MAP: Record<string, string> = {
+  gbp_price: "Price range",
+  gbp_price_range: "Price range",
+  gbp_social: "Social media links",
+  gbp_description_keywords: "Description includes relevant keywords",
+  gbp_desc_keywords: "Description includes relevant keywords",
+  gbp_category_keywords: "Categories match keywords",
+};
+
+function getDisplayLabel(sectionId: string, checkKey: string, fallbackLabel: string): string {
+  if (sectionId === "local-listings" && LOCAL_LISTINGS_LABEL_MAP[checkKey]) {
+    return LOCAL_LISTINGS_LABEL_MAP[checkKey];
+  }
+  return fallbackLabel;
 }
 
-export default function ReportChecklistSection({ section }: ReportChecklistSectionProps) {
+/** Section id → 1 or 2 modules (hardcoded). website-experience has no block. */
+const SECTION_MODULES: Record<string, [ModuleId] | [ModuleId, ModuleId] | null> = {
+  "local-listings": ["reputation_hub"],
+  "social-presence": ["social_studio"],
+  "search-results": ["competitor_radar"],
+  "website-experience": null,
+};
+
+interface ReportChecklistSectionProps {
+  section: ChecklistSection;
+  onOpenPrescription?: (prescription: Prescription) => void;
+}
+
+export default function ReportChecklistSection({ section, onOpenPrescription }: ReportChecklistSectionProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   
   const toggleItem = (key: string) => {
@@ -85,15 +111,12 @@ export default function ReportChecklistSection({ section }: ReportChecklistSecti
                 >
                   <div className="flex-shrink-0 mt-0.5">{getStatusIcon(check.status)}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900">{check.label}</div>
-                    {/* Subtext: when faulty explain importance; when acceptable show what we found */}
+                    <div className="font-medium text-gray-900">{getDisplayLabel(section.id, check.key, check.label)}</div>
                     <div className="text-sm text-gray-500 mt-0.5">
-                      {faulty
-                        ? check.whyItMatters
-                        : check.whatWeFound}
+                      {faulty ? check.howToFix : check.whatWeFound}
                     </div>
                   </div>
-                  <div className="flex-shrink-0 pt-0.5">
+                  <div className="flex-shrink-0 pt-0.5" onClick={(e) => e.stopPropagation()}>
                     {isExpanded ? (
                       <ChevronUp className="w-5 h-5 text-gray-400" />
                     ) : (

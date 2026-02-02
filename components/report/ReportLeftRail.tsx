@@ -2,12 +2,14 @@
 
 import { Sparkles } from "lucide-react";
 import type { ReportScores } from "@/lib/report/types";
+import ShareButton from "./ShareButton";
 
 interface ReportLeftRailProps {
   scores: ReportScores;
+  reportId?: string | null;
 }
 
-export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
+export default function ReportLeftRail({ scores, reportId }: ReportLeftRailProps) {
   const { overall, searchResults, websiteExperience, localListings } = scores;
   
   // Calculate percentage for circular gauge
@@ -82,132 +84,103 @@ export default function ReportLeftRail({ scores }: ReportLeftRailProps) {
   };
   
   const fixButton = (
-    <button className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors md:mt-auto">
-      <Sparkles className="w-4 h-4" />
+    <button className="w-full bg-blue-600 text-white py-2.5 px-3 rounded-lg font-medium flex items-center justify-center gap-1.5 hover:bg-blue-700 transition-colors text-sm">
+      <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
       <span>Fix in 35 seconds</span>
     </button>
   );
 
   return (
     <>
-      {/* Sidebar - hidden on mobile */}
+      {/* Sidebar - hidden on mobile; fixed so it stays in place when scrolling */}
       <div
-        className="hidden md:flex flex-shrink-0 w-80 sticky top-4 p-8 flex-col items-center overflow-y-auto rounded-2xl ml-4 border-2"
+        className="hidden md:flex flex-shrink-0 w-80 fixed left-4 top-4 p-4 flex-col items-center overflow-hidden rounded-2xl border-2 z-10"
         style={{
           height: 'calc(100vh - 2rem)',
           backgroundColor: getBackgroundColor(overall.label),
           borderColor: getBorderColor(overall.label),
         }}
       >
-      {/* Circular Gauge */}
-      <div className="relative w-40 h-40 mb-4">
-        <svg className="transform -rotate-90 w-40 h-40">
-          {/* Background circle - light gray */}
-          <circle
-            cx="80"
-            cy="80"
-            r={radius}
-            stroke="#ecd1cc"
-            strokeWidth="14"
-            fill="none"
-          />
-          {/* Progress arc - red/orange based on grade */}
-          <circle
-            cx="80"
-            cy="80"
-            r={radius}
-            stroke={getProgressColor(overall.label)}
-            strokeWidth="14"
-            fill="none"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            className="transition-all duration-500"
-          />
-        </svg>
-        {/* Score text in center */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="text-4xl font-bold text-gray-900">
-            {overall.score}
-          </div>
-          <div className="text-base text-gray-600">/100</div>
-        </div>
-      </div>
-      
-      {/* Health Grade Label */}
-      <div className="text-center mb-8">
-        <div className="text-sm text-gray-600 mb-1">Online health grade</div>
-        <div className={`text-3xl font-bold ${getGradeColor(overall.label)}`}>
-          {overall.label}
-        </div>
-      </div>
-      
-      {/* Category Scores */}
-      <div className="w-full space-y-6 mb-8">
-        {/* Search Results */}
-        <div className="flex items-start gap-3">
-          <MiniCircularProgress 
-            score={searchResults.score} 
-            maxScore={searchResults.maxScore} 
-            label={searchResults.label}
-          />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-gray-900">Search Results</div>
-            <div className={`text-sm font-medium ${getGradeColor(searchResults.label)} mt-1`}>
-              {searchResults.label}
+        {/* Inner flex column: fills height, allows middle to shrink */}
+        <div className="flex flex-col flex-1 min-h-0 w-full items-center gap-0">
+          {/* Circular Gauge - viewport-relative so it scales on short windows */}
+          <div
+            className="relative flex-shrink-0"
+            style={{ width: 'min(10rem, 22vh)', height: 'min(10rem, 22vh)' }}
+          >
+            <svg className="transform -rotate-90 w-full h-full" viewBox="0 0 160 160" preserveAspectRatio="xMidYMid meet">
+              <circle cx="80" cy="80" r={radius} stroke="#ecd1cc" strokeWidth="14" fill="none" />
+              <circle
+                cx="80"
+                cy="80"
+                r={radius}
+                stroke={getProgressColor(overall.label)}
+                strokeWidth="14"
+                fill="none"
+                strokeDasharray={circumference}
+                strokeDashoffset={offset}
+                strokeLinecap="round"
+                className="transition-all duration-500"
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-[min(2.25rem,5vh)] font-bold text-gray-900 leading-none">{overall.score}</span>
+              <span className="text-[min(0.875rem,2.5vh)] text-gray-600">/100</span>
             </div>
           </div>
-          <div className="text-sm text-gray-600 whitespace-nowrap">
-            {searchResults.score}/{searchResults.maxScore}
-          </div>
-        </div>
-        
-        {/* Website Experience */}
-        <div className="flex items-start gap-3">
-          <MiniCircularProgress 
-            score={websiteExperience.score} 
-            maxScore={websiteExperience.maxScore} 
-            label={websiteExperience.label}
-          />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-gray-900">Website Experience</div>
-            <div className={`text-sm font-medium ${getGradeColor(websiteExperience.label)} mt-1`}>
-              {websiteExperience.label}
-            </div>
-          </div>
-          <div className="text-sm text-gray-600 whitespace-nowrap">
-            {websiteExperience.score}/{websiteExperience.maxScore}
-          </div>
-        </div>
-        
-        {/* Local Listings */}
-        <div className="flex items-start gap-3">
-          <MiniCircularProgress 
-            score={localListings.score} 
-            maxScore={localListings.maxScore} 
-            label={localListings.label}
-          />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-gray-900">Local Listings</div>
-            <div className={`text-sm font-medium ${getGradeColor(localListings.label)} mt-1`}>
-              {localListings.label}
-            </div>
-          </div>
-          <div className="text-sm text-gray-600 whitespace-nowrap">
-            {localListings.score}/{localListings.maxScore}
-          </div>
-        </div>
-      </div>
-      
-      {/* CTA Button - inside sidebar on desktop */}
-      {fixButton}
-    </div>
 
-      {/* Mobile: floating Fix it button at bottom */}
+          {/* Health Grade Label - compact */}
+          <div className="text-center flex-shrink-0 mt-2 mb-2">
+            <div className="text-[min(0.75rem,1.8vh)] text-gray-600">Online health grade</div>
+            <div className={`text-[min(1.5rem,4vh)] font-bold leading-tight ${getGradeColor(overall.label)}`}>
+              {overall.label}
+            </div>
+          </div>
+
+          {/* Category Scores - flex-1 min-h-0 so this block shrinks when space is tight */}
+          <div className="w-full flex-1 min-h-0 flex flex-col justify-center gap-[min(0.75rem,2vh)] py-2">
+            <div className="flex items-center gap-2">
+              <MiniCircularProgress score={searchResults.score} maxScore={searchResults.maxScore} label={searchResults.label} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[min(0.8125rem,1.9vh)] font-medium text-gray-900">Search Results</div>
+                <div className={`text-[min(0.8125rem,1.9vh)] font-medium ${getGradeColor(searchResults.label)}`}>{searchResults.label}</div>
+              </div>
+              <div className="text-[min(0.8125rem,1.9vh)] text-gray-600 whitespace-nowrap">{searchResults.score}/{searchResults.maxScore}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <MiniCircularProgress score={websiteExperience.score} maxScore={websiteExperience.maxScore} label={websiteExperience.label} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[min(0.8125rem,1.9vh)] font-medium text-gray-900">Website Experience</div>
+                <div className={`text-[min(0.8125rem,1.9vh)] font-medium ${getGradeColor(websiteExperience.label)}`}>{websiteExperience.label}</div>
+              </div>
+              <div className="text-[min(0.8125rem,1.9vh)] text-gray-600 whitespace-nowrap">{websiteExperience.score}/{websiteExperience.maxScore}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <MiniCircularProgress score={localListings.score} maxScore={localListings.maxScore} label={localListings.label} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[min(0.8125rem,1.9vh)] font-medium text-gray-900">Local Listings</div>
+                <div className={`text-[min(0.8125rem,1.9vh)] font-medium ${getGradeColor(localListings.label)}`}>{localListings.label}</div>
+              </div>
+              <div className="text-[min(0.8125rem,1.9vh)] text-gray-600 whitespace-nowrap">{localListings.score}/{localListings.maxScore}</div>
+            </div>
+          </div>
+
+          {/* Share + CTA - fixed at bottom of sidebar */}
+          <div className="w-full flex-shrink-0 space-y-2 pt-2">
+            {reportId && <ShareButton reportId={reportId} className="w-full py-2.5 rounded-lg text-sm" />}
+            {fixButton}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile: Share (left) + Fix (right) side by side at bottom */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 p-4 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))] pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-[320px]">
-          <button className="w-full bg-blue-600 text-white py-3 px-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg">
-            <Sparkles className="w-4 h-4" />
+        <div className="pointer-events-auto w-full max-w-[400px] flex flex-row items-stretch gap-2">
+          {reportId && (
+            <ShareButton reportId={reportId} className="flex-1 min-w-0 py-3 rounded-2xl" />
+          )}
+          <button className="flex-1 min-w-0 bg-blue-600 text-white py-3 px-4 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg">
+            <Sparkles className="w-4 h-4 flex-shrink-0" />
             <span>Fix in 35 seconds</span>
           </button>
         </div>
