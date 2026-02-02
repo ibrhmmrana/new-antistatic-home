@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
   const cancelUrl = `${origin}/report`;
 
   const stripe = new Stripe(secretKey, {
-    apiVersion: "2023-10-16",
+    apiVersion: "2026-01-28.clover",
   });
 
   try {
