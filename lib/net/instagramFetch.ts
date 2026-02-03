@@ -90,14 +90,16 @@ export async function fetchInstagram(
         );
       }
 
-      // Node 18+ global fetch supports dispatcher; undici fetch is used for compatibility
-      const { signal: _s, ...restInit } = init ?? {};
+      // Pass only method/headers/redirect/signal to avoid DOM vs undici RequestInit type conflict (e.g. BodyInit)
+      const { method, headers, redirect, cache } = init ?? {};
       const res = await undiciFetch(String(url), {
-        ...restInit,
+        method: method ?? "GET",
+        headers,
+        redirect,
+        cache,
         signal: combinedSignal,
-        // @ts-expect-error - undici fetch accepts dispatcher
         dispatcher,
-      });
+      } as Parameters<typeof undiciFetch>[1]);
 
       clearTimeout(timeoutId);
 
