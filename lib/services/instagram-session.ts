@@ -541,44 +541,49 @@ export class InstagramSessionService {
   }
 
   /**
-   * Validates existing session by making a test request
+   * Validates existing session by making a test request (via Decodo proxy when enabled).
    */
   async validateSession(sessionid?: string): Promise<boolean> {
     const sessionToValidate = sessionid || this.currentSession?.sessionid || process.env.INSTAGRAM_SESSION_ID;
-    
+
     if (!sessionToValidate) {
       return false;
     }
 
     try {
-      // Decode if URL-encoded
-      const decodedSession = sessionToValidate.includes('%') 
+      const decodedSession = sessionToValidate.includes("%")
         ? decodeURIComponent(sessionToValidate)
         : sessionToValidate;
 
-      // Make a lightweight request to Instagram API
-      const response = await fetch('https://www.instagram.com/api/v1/users/web_profile_info/?username=instagram', {
-        method: 'GET',
-        headers: {
-          'Cookie': `sessionid=${decodedSession}`,
-          'User-Agent': 'Instagram 267.0.0.19.301 Android',
-          'X-IG-App-ID': '567067343352427',
-        },
-        redirect: 'manual',
-      });
+      const { fetchInstagram } = await import("@/lib/net/instagramFetch");
 
-      // Check if we got redirected to login (invalid session)
+      const response = await fetchInstagram(
+        "https://www.instagram.com/api/v1/users/web_profile_info/?username=instagram",
+        {
+          method: "GET",
+          headers: {
+            Cookie: `sessionid=${decodedSession}`,
+            "User-Agent": "Instagram 267.0.0.19.301 Android",
+            "X-IG-App-ID": "567067343352427",
+          },
+          redirect: "manual",
+        },
+        {
+          logContext: "validateSession",
+          timeoutMs: 15000,
+        }
+      );
+
       if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('location');
-        if (location && (location.includes('/accounts/login') || location.includes('/login'))) {
+        const location = response.headers.get("location");
+        if (location && (location.includes("/accounts/login") || location.includes("/login"))) {
           return false;
         }
       }
 
-      // If we got a valid response (200 or valid redirect), session is likely valid
       return response.ok || (response.status >= 300 && response.status < 400);
     } catch (error) {
-      console.error('[SESSION] Error validating session:', error);
+      console.error("[SESSION] Error validating session:", error);
       return false;
     }
   }

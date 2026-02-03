@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "undici": "^6.21.0",
     "@aws-sdk/client-ses": "^3.975.0",
     "@playwright/test": "^1.58.0",
     "@react-google-maps/api": "^2.20.8",

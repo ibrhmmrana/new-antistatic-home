@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchInstagram, type FetchInstagramOptions } from "@/lib/net/instagramFetch";
 
 export const runtime = "nodejs";
 
@@ -120,16 +121,32 @@ function getInstagramHeaders(sessionId: string, authHeader?: string | null): Rec
     'Origin': 'https://www.instagram.com',
     'Referer': 'https://www.instagram.com/',
     
-    // Cookie - CRITICAL: format exactly as PowerShell (sessionid=VALUE)
-    'Cookie': `sessionid=${sessionId}`,
+    // Cookie: sessionid required; csrftoken and ds_user_id optional for better acceptance
+    'Cookie': buildCookieHeader(sessionId),
   };
-  
-  // Add authorization header if available
+
+  const csrftoken = process.env.INSTAGRAM_CSRF_TOKEN;
+  if (csrftoken) {
+    headers['X-CSRFToken'] = csrftoken;
+  }
+
   if (authHeader) {
     headers['Authorization'] = authHeader;
   }
-  
+
   return headers;
+}
+
+/**
+ * Builds Cookie header with sessionid; adds csrftoken and ds_user_id when set in env.
+ */
+function buildCookieHeader(sessionId: string): string {
+  const parts = [`sessionid=${sessionId}`];
+  const csrftoken = process.env.INSTAGRAM_CSRF_TOKEN;
+  const dsUserId = process.env.INSTAGRAM_DS_USER_ID;
+  if (csrftoken) parts.push(`csrftoken=${csrftoken}`);
+  if (dsUserId) parts.push(`ds_user_id=${dsUserId}`);
+  return parts.join('; ');
 }
 
 /**
@@ -140,79 +157,88 @@ function getInstagramHeaders(sessionId: string, authHeader?: string | null): Rec
  * 
  * Returns null if header not found - this is OK, we can continue with just session cookie
  */
-async function getAuthorizationHeader(sessionId: string, username: string): Promise<string | null> {
-  // Make request to the actual username endpoint (like PowerShell does)
+async function getAuthorizationHeader(
+  sessionId: string,
+  username: string,
+  fetchOpts?: FetchInstagramOptions
+): Promise<string | null> {
   const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
-  
+
+  const instagramOpts: FetchInstagramOptions = {
+    stickyKey: fetchOpts?.stickyKey ?? username,
+    rotationMode: fetchOpts?.rotationMode,
+    logContext: "getAuthHeader",
+    timeoutMs: fetchOpts?.timeoutMs ?? 30000,
+  };
+
   try {
-    // Use helper function to get all required headers (including Sec-Fetch headers)
     const headers = getInstagramHeaders(sessionId);
 
     console.log(`[API] Making request to: ${url}`);
     console.log(`[API] Session ID length: ${sessionId.length} (decoded from encoded)`);
     console.log(`[API] Headers include Sec-Fetch-* to bypass SecFetch Policy`);
-    
-    // Add timeout and better error handling
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
     let response: Response;
     try {
-      response = await fetch(url, {
-        method: "GET",
-        headers,
-        redirect: "manual", // Handle redirects manually to avoid "redirect count exceeded"
-        signal: controller.signal,
-      });
+      response = await fetchInstagram(
+        url,
+        {
+          method: "GET",
+          headers,
+          redirect: "manual",
+          signal: controller.signal,
+        },
+        instagramOpts
+      );
       clearTimeout(timeoutId);
-      
-      // CRITICAL: Check for authorization header FIRST, even in redirect responses!
-      // Instagram sends ig-set-authorization in 302 redirect responses
+
       const authHeaderVariations = [
         "ig-set-authorization",
-        "Ig-Set-Authorization", 
+        "Ig-Set-Authorization",
         "IG-Set-Authorization",
       ];
-      
+
       for (const headerName of authHeaderVariations) {
         const authHeader = response.headers.get(headerName);
         if (authHeader) {
           console.log(`[API] ✅ Found authorization header in response: ${headerName}`);
           console.log(`[API] ✅ Auth header value: ${authHeader.substring(0, 50)}...`);
-          return authHeader; // Return immediately if we found it
+          return authHeader;
         }
       }
-      
-      // Handle redirects manually (only follow once to avoid loops)
+
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get("location");
         console.log(`[API] ⚠️ Got redirect (${response.status}) to: ${location}`);
-        
-        // If redirecting to login, session is invalid
+
         if (location && (location.includes("/accounts/login") || location.includes("/login"))) {
           console.error(`[API] ❌ Redirected to login page - session is invalid or expired`);
           return null;
         }
-        
-        // If redirecting to the same URL, it's likely a redirect loop
+
         if (location && location === url) {
           console.warn(`[API] ⚠️ Redirecting to same URL - possible redirect loop`);
           console.warn(`[API] ⚠️ Auth header not found, returning null`);
           return null;
         }
-        
-        // Follow redirect manually (only once to avoid loops)
+
         if (location) {
           console.log(`[API] Following redirect to: ${location}`);
           const redirectUrl = location.startsWith("http") ? location : `https://www.instagram.com${location}`;
-          response = await fetch(redirectUrl, {
-            method: "GET",
-            headers,
-            redirect: "manual",
-            signal: controller.signal,
-          });
-          
-          // Check for auth header in the redirect response too
+          response = await fetchInstagram(
+            redirectUrl,
+            {
+              method: "GET",
+              headers,
+              redirect: "manual",
+              signal: controller.signal,
+            },
+            instagramOpts
+          );
+
           for (const headerName of authHeaderVariations) {
             const authHeader = response.headers.get(headerName);
             if (authHeader) {
@@ -376,63 +402,70 @@ async function getAuthorizationHeader(sessionId: string, username: string): Prom
 async function fetchProfile(
   username: string,
   sessionId: string,
-  authHeader: string | null
+  authHeader: string | null,
+  fetchOpts?: FetchInstagramOptions
 ): Promise<InstagramProfile | null> {
   const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
 
-  // Use helper function to get all required headers (including Sec-Fetch headers)
   const headers = getInstagramHeaders(sessionId, authHeader);
-  
+  const instagramOpts: FetchInstagramOptions = {
+    stickyKey: fetchOpts?.stickyKey ?? username,
+    rotationMode: fetchOpts?.rotationMode,
+    logContext: "fetchProfile",
+    timeoutMs: fetchOpts?.timeoutMs ?? 30000,
+  };
+
   if (authHeader) {
     console.log(`[API] Fetching profile with auth header + session cookie`);
   } else {
     console.log(`[API] Fetching profile with session cookie only`);
   }
 
-  // Add timeout and better error handling
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-  
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: "GET",
-      headers,
-      redirect: "manual", // Handle redirects manually to avoid "redirect count exceeded"
-      signal: controller.signal,
-    });
+    response = await fetchInstagram(
+      url,
+      {
+        method: "GET",
+        headers,
+        redirect: "manual",
+        signal: controller.signal,
+      },
+      instagramOpts
+    );
     clearTimeout(timeoutId);
-    
-    // Handle redirects manually
+
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       console.log(`[API] ⚠️ Profile fetch got redirect (${response.status}) to: ${location}`);
-      
-      // If redirecting to login, session is invalid
+
       if (location && (location.includes("/accounts/login") || location.includes("/login"))) {
         console.error(`[API] ❌ Redirected to login page - session is invalid or expired`);
         return null;
       }
-      
-      // If redirecting to the same URL, it might be Instagram's way of setting cookies/headers
-      // Try to follow it once, but if it redirects again to the same URL, treat it as the final response
+
       if (location) {
         const redirectUrl = location.startsWith("http") ? location : `https://www.instagram.com${location}`;
-        
-        // If redirecting to the same URL, check if we should just use the current response
+
         if (redirectUrl === url) {
           console.warn(`[API] ⚠️ Redirecting to same URL - Instagram may be setting headers/cookies`);
           console.warn(`[API] ⚠️ Will try following redirect once more...`);
         }
-        
-        const redirectResponse = await fetch(redirectUrl, {
-          method: "GET",
-          headers,
-          redirect: "manual", // Don't follow further redirects
-          signal: controller.signal,
-        });
-        
-        // If the redirect response is also a redirect to the same URL, use it as the final response
+
+        const redirectResponse = await fetchInstagram(
+          redirectUrl,
+          {
+            method: "GET",
+            headers,
+            redirect: "manual",
+            signal: controller.signal,
+          },
+          instagramOpts
+        );
+
         if (redirectResponse.status >= 300 && redirectResponse.status < 400) {
           const redirectLocation = redirectResponse.headers.get("location");
           if (redirectLocation && (redirectLocation === url || redirectLocation === redirectUrl)) {
@@ -526,37 +559,39 @@ async function fetchUserFeed(
   userId: string,
   sessionId: string,
   authHeader: string | null,
-  count: number = 24
+  count: number = 24,
+  fetchOpts?: FetchInstagramOptions
 ): Promise<InstagramPost[]> {
   const url = `https://www.instagram.com/api/v1/feed/user/${userId}/?count=${count}`;
 
-  // Use helper function to get all required headers (including Sec-Fetch headers)
   const headers = getInstagramHeaders(sessionId, authHeader);
+  const instagramOpts: FetchInstagramOptions = {
+    ...fetchOpts,
+    logContext: fetchOpts?.logContext ?? "fetchUserFeed",
+    timeoutMs: fetchOpts?.timeoutMs ?? 30000,
+  };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
-  
+
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: "GET",
-      headers,
-      redirect: "manual", // Handle redirects manually to avoid "redirect count exceeded"
-      signal: controller.signal,
-    });
+    response = await fetchInstagram(
+      url,
+      { method: "GET", headers, redirect: "manual", signal: controller.signal },
+      instagramOpts
+    );
     clearTimeout(timeoutId);
-    
-    // Handle redirects manually
+
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (location) {
         const redirectUrl = location.startsWith("http") ? location : `https://www.instagram.com${location}`;
-        response = await fetch(redirectUrl, {
-          method: "GET",
-          headers,
-          redirect: "manual",
-          signal: controller.signal,
-        });
+        response = await fetchInstagram(
+          redirectUrl,
+          { method: "GET", headers, redirect: "manual", signal: controller.signal },
+          instagramOpts
+        );
       }
     }
   } catch (fetchError: any) {
@@ -607,37 +642,39 @@ async function fetchUserFeed(
 async function fetchPostByShortcode(
   shortcode: string,
   sessionId: string,
-  authHeader: string | null
+  authHeader: string | null,
+  fetchOpts?: FetchInstagramOptions
 ): Promise<any | null> {
   const url = `https://www.instagram.com/api/v1/media/shortcode/${shortcode}/`;
 
-  // Use helper function to get all required headers (including Sec-Fetch headers)
   const headers = getInstagramHeaders(sessionId, authHeader);
+  const instagramOpts: FetchInstagramOptions = {
+    ...fetchOpts,
+    logContext: fetchOpts?.logContext ?? "fetchPostByShortcode",
+    timeoutMs: fetchOpts?.timeoutMs ?? 30000,
+  };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
-  
+
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: "GET",
-      headers,
-      redirect: "manual", // Handle redirects manually to avoid "redirect count exceeded"
-      signal: controller.signal,
-    });
+    response = await fetchInstagram(
+      url,
+      { method: "GET", headers, redirect: "manual", signal: controller.signal },
+      instagramOpts
+    );
     clearTimeout(timeoutId);
-    
-    // Handle redirects manually
+
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (location) {
         const redirectUrl = location.startsWith("http") ? location : `https://www.instagram.com${location}`;
-        response = await fetch(redirectUrl, {
-          method: "GET",
-          headers,
-          redirect: "manual",
-          signal: controller.signal,
-        });
+        response = await fetchInstagram(
+          redirectUrl,
+          { method: "GET", headers, redirect: "manual", signal: controller.signal },
+          instagramOpts
+        );
       }
     }
   } catch (fetchError: any) {
@@ -672,37 +709,39 @@ async function fetchCommentsREST(
   postPk: string,
   sessionId: string,
   authHeader: string | null,
-  count: number = 30
+  count: number = 30,
+  fetchOpts?: FetchInstagramOptions
 ): Promise<InstagramComment[]> {
   const url = `https://www.instagram.com/api/v1/media/${postPk}/comments/?can_support_threading=true&permalink_enabled=false&count=${count}`;
 
-  // Use helper function to get all required headers (including Sec-Fetch headers)
   const headers = getInstagramHeaders(sessionId, authHeader);
+  const instagramOpts: FetchInstagramOptions = {
+    ...fetchOpts,
+    logContext: fetchOpts?.logContext ?? "fetchCommentsREST",
+    timeoutMs: fetchOpts?.timeoutMs ?? 30000,
+  };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
-  
+
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: "GET",
-      headers,
-      redirect: "manual", // Handle redirects manually to avoid "redirect count exceeded"
-      signal: controller.signal,
-    });
+    response = await fetchInstagram(
+      url,
+      { method: "GET", headers, redirect: "manual", signal: controller.signal },
+      instagramOpts
+    );
     clearTimeout(timeoutId);
-    
-    // Handle redirects manually
+
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (location) {
         const redirectUrl = location.startsWith("http") ? location : `https://www.instagram.com${location}`;
-        response = await fetch(redirectUrl, {
-          method: "GET",
-          headers,
-          redirect: "manual",
-          signal: controller.signal,
-        });
+        response = await fetchInstagram(
+          redirectUrl,
+          { method: "GET", headers, redirect: "manual", signal: controller.signal },
+          instagramOpts
+        );
       }
     }
   } catch (fetchError: any) {
@@ -752,44 +791,41 @@ async function fetchCommentsGraphQL(
   shortcode: string,
   sessionId: string,
   authHeader: string | null,
-  first: number = 30
+  first: number = 30,
+  fetchOpts?: FetchInstagramOptions
 ): Promise<InstagramComment[]> {
-  // GraphQL query hash for comments
   const queryHash = "bc3296d1ce80a24b1b6e40b1e72903f5";
-  const variables = {
-    shortcode,
-    first,
-  };
-
+  const variables = { shortcode, first };
   const url = `https://www.instagram.com/graphql/query/?query_hash=${queryHash}&variables=${encodeURIComponent(JSON.stringify(variables))}`;
 
-  // Use helper function to get all required headers (including Sec-Fetch headers)
   const headers = getInstagramHeaders(sessionId, authHeader);
+  const instagramOpts: FetchInstagramOptions = {
+    ...fetchOpts,
+    logContext: fetchOpts?.logContext ?? "fetchCommentsGraphQL",
+    timeoutMs: fetchOpts?.timeoutMs ?? 30000,
+  };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
-  
+
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: "GET",
-      headers,
-      redirect: "manual", // Handle redirects manually to avoid "redirect count exceeded"
-      signal: controller.signal,
-    });
+    response = await fetchInstagram(
+      url,
+      { method: "GET", headers, redirect: "manual", signal: controller.signal },
+      instagramOpts
+    );
     clearTimeout(timeoutId);
-    
-    // Handle redirects manually
+
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (location) {
         const redirectUrl = location.startsWith("http") ? location : `https://www.instagram.com${location}`;
-        response = await fetch(redirectUrl, {
-          method: "GET",
-          headers,
-          redirect: "manual",
-          signal: controller.signal,
-        });
+        response = await fetchInstagram(
+          redirectUrl,
+          { method: "GET", headers, redirect: "manual", signal: controller.signal },
+          instagramOpts
+        );
       }
     }
   } catch (fetchError: any) {
@@ -895,21 +931,22 @@ async function scrapeInstagramAPI(username: string): Promise<{
     console.warn(`[API] ⚠️ Expected format: userId:token:version:signature`);
   }
 
-  // Get authorization header by making a request to the actual username endpoint
-  // Note: This may return null if header is not accessible via fetch() API
-  // That's OK - we'll continue with just the session cookie
-  // IMPORTANT: If the initial request gets 400, we'll skip auth header extraction and go straight to data fetching
+  const defaultFetchOpts: FetchInstagramOptions = {
+    stickyKey: username,
+    rotationMode: (process.env.DECODO_ROTATION_MODE as "request" | "profile") ?? "profile",
+    timeoutMs: 30000,
+  };
+
   console.log(`[API] Attempting to get authorization header for @${username}...`);
   let authHeader: string | null = null;
-  
+
   try {
-    authHeader = await getAuthorizationHeader(sessionId, username);
+    authHeader = await getAuthorizationHeader(sessionId, username, defaultFetchOpts);
   } catch (error) {
     console.warn(`[API] ⚠️ Auth header extraction failed, will skip and try direct data fetch`);
     authHeader = null;
   }
-  
-  // Log auth header status
+
   if (authHeader) {
     console.log(`[API] ✅ Authorization header obtained (length: ${authHeader.length})`);
     console.log(`[API] Will use both session cookie and auth header for requests`);
@@ -919,9 +956,8 @@ async function scrapeInstagramAPI(username: string): Promise<{
     console.log(`[API] Note: In PowerShell, auth header is extracted from response body, not headers`);
   }
 
-  // Fetch profile (works with or without auth header)
   console.log(`[API] Fetching profile for @${username}...`);
-  const profile = await fetchProfile(username, sessionId, authHeader);
+  const profile = await fetchProfile(username, sessionId, authHeader, defaultFetchOpts);
   if (!profile) {
     // Provide more helpful error message
     throw new Error(
@@ -933,9 +969,8 @@ async function scrapeInstagramAPI(username: string): Promise<{
   }
   console.log(`[API] ✅ Profile fetched: ${profile.fullName} (${profile.followerCount} followers)`);
 
-  // Fetch user feed
   console.log(`[API] Fetching posts for user ${profile.userId}...`);
-  const posts = await fetchUserFeed(profile.userId, sessionId, authHeader, 24);
+  const posts = await fetchUserFeed(profile.userId, sessionId, authHeader, 24, defaultFetchOpts);
   console.log(`[API] Fetched ${posts.length} posts`);
 
   return { profile, posts };
@@ -965,10 +1000,15 @@ export async function POST(request: NextRequest) {
       const encodedSession = process.env.INSTAGRAM_SESSION_ID;
       if (encodedSession) {
         const sessionId = decodeSessionId(encodedSession);
-        
-        // Try to get auth header (may be null, that's OK)
-        const commentsAuthHeader = await getAuthorizationHeader(sessionId, cleanUsername);
-        
+
+        const commentsFetchOpts: FetchInstagramOptions = {
+          stickyKey: cleanUsername,
+          rotationMode: (process.env.DECODO_ROTATION_MODE as "request" | "profile") ?? "profile",
+          timeoutMs: 30000,
+        };
+
+        const commentsAuthHeader = await getAuthorizationHeader(sessionId, cleanUsername, commentsFetchOpts);
+
         if (commentsAuthHeader) {
           console.log(`[API] ✅ Auth header available for comments - will use it`);
         } else {
@@ -980,35 +1020,27 @@ export async function POST(request: NextRequest) {
           const post = posts[i];
           if (post.shortcode) {
             try {
-              // First, get post details to get the PK
-              const postDetails = await fetchPostByShortcode(post.shortcode, sessionId, commentsAuthHeader);
+              const postDetails = await fetchPostByShortcode(post.shortcode, sessionId, commentsAuthHeader, commentsFetchOpts);
               const postPk = postDetails?.pk?.toString() || post.id;
 
-              // Try REST API first (more reliable)
               let comments: InstagramComment[] = [];
               if (postPk) {
                 try {
-                  comments = await fetchCommentsREST(postPk, sessionId, commentsAuthHeader, 30);
+                  comments = await fetchCommentsREST(postPk, sessionId, commentsAuthHeader, 30, commentsFetchOpts);
                   console.log(`[API] ✅ Fetched ${comments.length} comments via REST for post ${post.shortcode}`);
                 } catch (restError) {
                   console.log(`[API] ⚠️ REST comments failed, trying GraphQL...`);
-                  // Fallback to GraphQL
-                  comments = await fetchCommentsGraphQL(post.shortcode, sessionId, commentsAuthHeader, 30);
+                  comments = await fetchCommentsGraphQL(post.shortcode, sessionId, commentsAuthHeader, 30, commentsFetchOpts);
                   console.log(`[API] ✅ Fetched ${comments.length} comments via GraphQL for post ${post.shortcode}`);
                 }
               } else {
-                // Fallback to GraphQL if no PK
-                comments = await fetchCommentsGraphQL(post.shortcode, sessionId, commentsAuthHeader, 30);
+                comments = await fetchCommentsGraphQL(post.shortcode, sessionId, commentsAuthHeader, 30, commentsFetchOpts);
                 console.log(`[API] ✅ Fetched ${comments.length} comments via GraphQL for post ${post.shortcode}`);
               }
 
-              postsWithComments[i] = {
-                ...post,
-                comments,
-              };
+              postsWithComments[i] = { ...post, comments };
             } catch (error) {
               console.error(`[API] ❌ Failed to fetch comments for ${post.shortcode}:`, error);
-              // Continue with other posts even if one fails
             }
           }
         }
