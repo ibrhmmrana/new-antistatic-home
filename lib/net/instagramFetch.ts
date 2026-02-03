@@ -61,7 +61,7 @@ export async function fetchInstagram(
   const proxyManager = DecodoProxyManager.getInstance();
   const useProxy = isProxyEnabled() && proxyManager.isConfigured();
 
-  let lastResponse: Response | null = null;
+  let lastResponse: Awaited<ReturnType<typeof undiciFetch>> | null = null;
   let lastError: unknown = null;
   let proxyUrlUsed: string | null = null;
 
@@ -104,7 +104,7 @@ export async function fetchInstagram(
       clearTimeout(timeoutId);
 
       if (res.ok) {
-        return res;
+        return res as unknown as Response;
       }
 
       lastResponse = res;
@@ -122,7 +122,7 @@ export async function fetchInstagram(
         continue;
       }
 
-      return res;
+      return res as unknown as Response;
     } catch (err) {
       clearTimeout(timeoutId);
       lastError = err;
@@ -144,6 +144,6 @@ export async function fetchInstagram(
     }
   }
 
-  if (lastResponse) return lastResponse;
+  if (lastResponse) return lastResponse as unknown as Response;
   throw lastError;
 }
