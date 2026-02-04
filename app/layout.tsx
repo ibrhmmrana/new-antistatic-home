@@ -53,6 +53,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={productSans.variable} style={{ scrollBehavior: 'smooth' }}>
       <body className={`${productSans.className} antialiased`}>
+        <Script
+          src="https://cdn.snipform.io/api/analytics/beta.signals.js?site=6983927d79a626061c00aff2"
+          strategy="beforeInteractive"
+        />
         {children}
         <Script
           src="https://cdn.snipform.io/wrap/sf.iife.js"
