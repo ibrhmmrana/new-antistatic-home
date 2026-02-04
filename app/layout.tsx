@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import localFont from "next/font/local";
 import "./globals.css";
 
@@ -53,6 +54,10 @@ export default function RootLayout({
     <html lang="en" className={productSans.variable} style={{ scrollBehavior: 'smooth' }}>
       <body className={`${productSans.className} antialiased`}>
         {children}
+        <Script
+          src="https://cdn.snipform.io/wrap/sf.iife.js"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );
