@@ -1,20 +1,65 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { GlitchLogo } from "@/components/GlitchLogo";
 import ScrollReveal from "@/components/landing/ScrollReveal";
 
+const CONTACT_WEBHOOK_URL = "https://ai.intakt.co.za/webhook/contact-form";
+
 export default function Footer() {
   const [messageFieldVisible, setMessageFieldVisible] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const messageContainerRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const snipFormRef = useRef<HTMLElement>(null);
+  const isSyntheticSubmit = useRef(false);
   const showMessageField = useCallback(() => setMessageFieldVisible(true), []);
 
-  const expandMessageOnSubmit = useCallback(() => {
-    setMessageFieldVisible(true);
+  useEffect(() => {
+    const el = snipFormRef.current;
+    if (el) el.setAttribute("key", "a28c1236-0ca3-49eb-b355-172bde12ec42");
   }, []);
+
+  const expandMessageOnSubmit = useCallback(() => setMessageFieldVisible(true), []);
+
+  const handleSubmit = useCallback(
+    (e: React.FormEvent<HTMLFormElement>) => {
+      if (isSyntheticSubmit.current) {
+        isSyntheticSubmit.current = false;
+        return;
+      }
+      e.preventDefault();
+      expandMessageOnSubmit();
+      const form = formRef.current;
+      if (form) {
+        const data = new FormData(form);
+        const payload = {
+          name: (data.get("your_name") as string)?.trim() ?? "",
+          email: (data.get("your_email") as string)?.trim() ?? "",
+          message: (data.get("your_message") as string)?.trim() ?? "",
+        };
+        fetch(CONTACT_WEBHOOK_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then((res) => {
+            if (res.ok) setShowSuccess(true);
+          })
+          .catch(() => {});
+        isSyntheticSubmit.current = true;
+        requestAnimationFrame(() => {
+          form.dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true })
+          );
+        });
+      }
+    },
+    [expandMessageOnSubmit]
+  );
 
   const hideMessageFieldIfEmpty = useCallback(
     (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -59,14 +104,19 @@ export default function Footer() {
                 </p>
 
                 <snip-form
+                  ref={snipFormRef}
                   data-key="a28c1236-0ca3-49eb-b355-172bde12ec42"
+                  mode="live"
                   shorthand="false"
                 >
+                  {showSuccess ? (
+                    <p className="text-lg md:text-xl text-white font-medium">
+                      Thanks for reaching out. We&apos;ll be in touch soon.
+                    </p>
+                  ) : (
                   <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      expandMessageOnSubmit();
-                    }}
+                    ref={formRef}
+                    onSubmit={handleSubmit}
                     className="flex flex-col items-center gap-1 text-left w-full max-w-md mx-auto"
                   >
                     <div className="w-full flex flex-col sm:flex-row gap-1 sm:gap-4">
@@ -134,6 +184,7 @@ export default function Footer() {
                     </div>
                     <button
                       type="submit"
+                      onClick={showMessageField}
                       className="relative bg-gradient-to-r from-blue-500 to-blue-600 text-white pl-8 pr-16 py-3.5 md:pl-10 md:pr-20 md:py-4 font-medium hover:from-blue-600 hover:to-blue-700 transition-all flex items-center justify-start disabled:opacity-60 disabled:cursor-not-allowed"
                       style={{ borderRadius: "50px" }}
                       {...{
@@ -156,6 +207,7 @@ export default function Footer() {
                       </div>
                     </button>
                   </form>
+                  )}
                   <sf-result style={{ display: "none" }}>
                     <p className="text-lg md:text-xl text-white font-medium">
                       Thanks for reaching out. We&apos;ll be in touch soon.
