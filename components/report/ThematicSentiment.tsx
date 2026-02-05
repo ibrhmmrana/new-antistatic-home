@@ -1,16 +1,10 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Cell,
-} from "recharts";
-import type { ThematicSentimentSnapshot } from "@/lib/report/snapshotTypes";
+import type {
+  ThematicSentimentSnapshot,
+  ThematicSentimentCategory,
+} from "@/lib/report/snapshotTypes";
 
 const THEMATIC_COLORS: Record<string, string> = {
   Service: "#2563eb",
@@ -18,6 +12,8 @@ const THEMATIC_COLORS: Record<string, string> = {
   Atmosphere: "#60a5fa",
   Value: "#93c5fd",
 };
+
+const DYNAMIC_PALETTE = ["#2563eb", "#3b82f6", "#60a5fa", "#93c5fd"];
 
 const CATEGORY_KEYS = ["service", "food", "atmosphere", "value"] as const;
 const LABELS: Record<(typeof CATEGORY_KEYS)[number], string> = {
@@ -27,13 +23,20 @@ const LABELS: Record<(typeof CATEGORY_KEYS)[number], string> = {
   value: "Value",
 };
 
+interface BarEntry {
+  key: string;
+  score: number;
+  categoryKey: string;
+  fill: string;
+}
+
 interface ThematicSentimentProps {
   thematicSentiment?: ThematicSentimentSnapshot | null;
   /** When true, render without outer card (for use inside a single block) */
   embedded?: boolean;
 }
 
-function barData(thematic: ThematicSentimentSnapshot) {
+function barDataLegacy(thematic: ThematicSentimentSnapshot): BarEntry[] {
   return CATEGORY_KEYS.map((key) => ({
     key: LABELS[key],
     score: thematic[key],
@@ -42,24 +45,40 @@ function barData(thematic: ThematicSentimentSnapshot) {
   }));
 }
 
+function barDataFromCategories(categories: ThematicSentimentCategory[]): BarEntry[] {
+  return categories.map((c, i) => ({
+    key: c.label,
+    score: c.score,
+    categoryKey: c.key,
+    fill: DYNAMIC_PALETTE[i % DYNAMIC_PALETTE.length] ?? "#64748b",
+  }));
+}
+
+function getBarData(thematic: ThematicSentimentSnapshot): BarEntry[] {
+  if (thematic.categories && thematic.categories.length >= 4) {
+    return barDataFromCategories(thematic.categories);
+  }
+  return barDataLegacy(thematic);
+}
+
 export default function ThematicSentiment({
   thematicSentiment,
   embedded = false,
 }: ThematicSentimentProps) {
   const [modal, setModal] = useState<{
     theme: string;
-    categoryKey: (typeof CATEGORY_KEYS)[number];
+    categoryKey: string;
     justification: string;
     supportingQuotes: string[];
   } | null>(null);
 
-  const data = thematicSentiment ? barData(thematicSentiment) : [];
-  const handleBarClick = useCallback(
-    (payload: { key: string; categoryKey: (typeof CATEGORY_KEYS)[number] }) => {
-      if (!thematicSentiment?.categoryDetails?.[payload.categoryKey]) {
-        return;
-      }
-      const detail = thematicSentiment.categoryDetails[payload.categoryKey];
+  const data = thematicSentiment ? getBarData(thematicSentiment) : [];
+  const openDetail = useCallback(
+    (payload: { key: string; categoryKey: string }) => {
+      const detail =
+        thematicSentiment?.categories?.find((c) => c.key === payload.categoryKey)?.detail ??
+        thematicSentiment?.categoryDetails?.[payload.categoryKey as (typeof CATEGORY_KEYS)[number]];
+      if (!detail) return;
       setModal({
         theme: payload.key,
         categoryKey: payload.categoryKey,
@@ -73,52 +92,57 @@ export default function ThematicSentiment({
   const content = (
     <div className="flex flex-col items-stretch text-left max-w-full min-w-0">
       <h3 className="text-sm font-semibold text-gray-800 mb-1 w-full">
-        Thematic sentiment (reviews &amp; comments)
+        Thematic Sentiment (across Google and social media)
       </h3>
       <p className="text-xs text-gray-500 mb-3 w-full">
-        Click a bar to see why it scored that way and supporting quotes.
+        See why each theme scored the way it did and read supporting quotes.
       </p>
       {data.length > 0 ? (
-        <div className="h-[200px] w-full max-w-full min-w-0 cursor-pointer">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              layout="vertical"
-              data={data}
-              margin={{ top: 4, right: 24, left: 72, bottom: 4 }}
-            >
-              <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="key" width={68} tick={{ fontSize: 12 }} />
-              <Tooltip
-                formatter={(value: number) => [`${value}/100`, "Score"]}
-                contentStyle={{
-                  fontSize: "12px",
-                  borderRadius: "8px",
-                  border: "1px solid #e2e8f0",
-                }}
-              />
-              <Bar
-                dataKey="score"
-                name="Score"
-                radius={[0, 4, 4, 0]}
-                maxBarSize={28}
-                onClick={(data: { key?: string; categoryKey?: (typeof CATEGORY_KEYS)[number] }) => {
-                  if (data?.categoryKey) handleBarClick({ key: data.key ?? "", categoryKey: data.categoryKey });
-                }}
+        <div className="space-y-3 w-full max-w-full min-w-0">
+          {data.map((entry) => {
+            const hasDetail =
+              thematicSentiment?.categories?.find((c) => c.key === entry.categoryKey)?.detail ??
+              thematicSentiment?.categoryDetails?.[entry.categoryKey as (typeof CATEGORY_KEYS)[number]];
+            return (
+              <div
+                key={entry.categoryKey}
+                className="flex items-center gap-3 min-w-0"
               >
-                {data.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={entry.fill}
-                    cursor={
-                      thematicSentiment?.categoryDetails?.[entry.categoryKey]
-                        ? "pointer"
-                        : "default"
-                    }
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+                <span className="text-sm text-gray-700 shrink-0 w-[5.5rem] truncate" title={entry.key}>
+                  {entry.key}
+                </span>
+                <div className="flex-1 min-w-0 h-7 rounded bg-gray-100 overflow-hidden flex items-stretch">
+                  <div
+                    className="h-full rounded-r flex items-center justify-end pr-1.5 transition-[width] duration-300"
+                    style={{
+                      width: `${Math.max(0, Math.min(100, entry.score))}%`,
+                      backgroundColor: entry.fill,
+                    }}
+                  >
+                    {entry.score >= 20 && (
+                      <span className="text-xs font-medium text-white drop-shadow-sm">
+                        {entry.score}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {entry.score < 20 && (
+                  <span className="text-xs font-medium text-gray-500 w-6 shrink-0">{entry.score}</span>
+                )}
+                {hasDetail ? (
+                  <button
+                    type="button"
+                    onClick={() => openDetail({ key: entry.key, categoryKey: entry.categoryKey })}
+                    className="shrink-0 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded px-2 py-1"
+                  >
+                    Why?
+                  </button>
+                ) : (
+                  <span className="w-10 shrink-0" aria-hidden />
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="h-[120px] flex items-center justify-center text-gray-400 text-sm text-center w-full">
@@ -147,7 +171,7 @@ export default function ThematicSentiment({
       {/* Evidence modal */}
       {modal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-white/5"
           onClick={() => setModal(null)}
           role="dialog"
           aria-modal="true"

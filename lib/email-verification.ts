@@ -19,10 +19,10 @@ export function verifyCode(code: string, hash: string): boolean {
 }
 
 /**
- * Generate a random 6-digit code
+ * Generate a random 4-digit code
  */
 export function generateCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
 /**

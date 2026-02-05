@@ -29,7 +29,7 @@ export default function EmailVerificationModal({
   const [email, setEmail] = useState("");
   const [instagramUsername, setInstagramUsername] = useState(prefilledUsernames?.instagram || "");
   const [facebookUsername, setFacebookUsername] = useState(prefilledUsernames?.facebook || "");
-  const [code, setCode] = useState(["", "", "", "", "", ""]);
+  const [code, setCode] = useState(["", "", "", ""]);
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,12 +123,12 @@ export default function EmailVerificationModal({
     setError(null);
 
     // Auto-advance to next input
-    if (value && index < 5) {
+    if (value && index < 3) {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Auto-submit when all 6 digits are entered
-    if (newCode.every((digit) => digit !== "") && newCode.join("").length === 6) {
+    // Auto-submit when all 4 digits are entered
+    if (newCode.every((digit) => digit !== "") && newCode.join("").length === 4) {
       handleVerifyCode(newCode.join(""));
     }
   };
@@ -141,11 +141,11 @@ export default function EmailVerificationModal({
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData("text").slice(0, 6).replace(/\D/g, "");
-    if (pasted.length === 6) {
+    const pasted = e.clipboardData.getData("text").slice(0, 4).replace(/\D/g, "");
+    if (pasted.length === 4) {
       const newCode = pasted.split("");
       setCode(newCode);
-      inputRefs.current[5]?.focus();
+      inputRefs.current[3]?.focus();
       handleVerifyCode(pasted);
     }
   };
@@ -153,8 +153,8 @@ export default function EmailVerificationModal({
   const handleVerifyCode = async (codeToVerify?: string) => {
     const codeString = codeToVerify || code.join("");
     
-    if (codeString.length !== 6) {
-      setError("Please enter a 6-digit code");
+    if (codeString.length !== 4) {
+      setError("Please enter a 4-digit code");
       return;
     }
 
@@ -480,7 +480,7 @@ export default function EmailVerificationModal({
                 <button
                   onClick={() => {
                     setStage("email");
-                    setCode(["", "", "", "", "", ""]);
+                    setCode(["", "", "", ""]);
                     setError(null);
                   }}
                   className="text-gray-600 hover:text-gray-700 transition-colors"

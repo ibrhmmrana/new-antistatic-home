@@ -994,10 +994,10 @@ export function assembleReport(input: AssembleReportInput): ReportSchema {
   const socialPresenceSection = buildSocialPresenceSection(socials, instagram, facebook);
   
   const sections = [
-    searchResultsSection,
+    localListingsSection,   // Google Business Profile (and its pill) first
+    socialPresenceSection,  // Build your social media presence second
+    searchResultsSection,   // Get your website to the top of Google
     websiteExperienceSection,
-    localListingsSection,
-    socialPresenceSection,
   ];
   
   // Calculate scores

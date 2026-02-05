@@ -6,6 +6,7 @@ import { getOpenAIClient, AnalysisResult, ConsistencyResult, ReviewAnalysisResul
 import type {
   SentimentAnalysisSnapshot,
   ThematicSentimentSnapshot,
+  ThematicSentimentCategory,
   CompetitiveBenchmarkSnapshot,
 } from '@/lib/report/snapshotTypes';
 import type { WebsiteSummary, GbpSummary } from '@/lib/report/aiDataSummaries';
@@ -484,7 +485,8 @@ Respond with ONLY valid JSON in this exact shape (no markdown, no extra text):
 }
 
 /**
- * Thematic sentiment: Service, Food, Atmosphere, Value (0-100 each)
+ * Thematic sentiment: industry-dependent categories (y-axis) + scores 0-100.
+ * AI chooses 4 thematic categories relevant to the business type, then scores each from feedback.
  */
 export async function analyzeThematicSentiment(
   businessName: string,
@@ -516,21 +518,25 @@ ${hasReviews && hasComments ? '\n' : ''}
 ${hasComments ? `Instagram Comments:\n${commentLines}` : ''}
 
 Tasks:
-1. Score sentiment by theme from 0-100 (0=very negative, 100=very positive). Categories: Service (staff, wait times, booking, responsiveness), Food (quality, taste, menu; or product quality if not food), Atmosphere (ambiance, cleanliness, location, vibe), Value (price vs quality, worth the money).
-2. For EACH category, provide: (a) "justification": a 2-sentence explanation of why that score was given; (b) "supportingQuotes": an array of 2-3 exact short quotes from the reviews or comments above that justify the score (use verbatim phrases in quotes).
+1. Choose exactly 4 thematic sentiment categories that are relevant to this business type (industry). The y-axis of the sentiment chart will show these. Examples by industry:
+   - Restaurants/cafes: Service, Food, Atmosphere, Value
+   - Home services (plumber, electrician): Responsiveness, Quality of Work, Cleanliness, Value
+   - Health/medical: Care Quality, Staff, Communication, Value
+   - Retail: Product Quality, Staff, Selection, Value
+   - Beauty/salons: Service, Results, Ambiance, Value
+   - Gyms/fitness: Equipment, Staff, Cleanliness, Value
+   Pick 4 short, clear labels that customers in this industry actually talk about in reviews. Use a "key" that is a lowercase slug (e.g. service, food, responsiveness, quality).
+2. Score each category from 0-100 (0=very negative, 100=very positive) based on the feedback above.
+3. For EACH category provide: "justification" (2-sentence explanation) and "supportingQuotes" (2-3 exact short verbatim quotes from the reviews/comments).
 
 Respond with ONLY valid JSON (no markdown). Use this exact shape:
 {
-  "service": <0-100>,
-  "food": <0-100>,
-  "atmosphere": <0-100>,
-  "value": <0-100>,
-  "categoryDetails": {
-    "service": { "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] },
-    "food": { "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] },
-    "atmosphere": { "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] },
-    "value": { "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] }
-  }
+  "categories": [
+    { "key": "<slug>", "label": "<Display Label>", "score": <0-100>, "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] },
+    { "key": "<slug>", "label": "<Display Label>", "score": <0-100>, "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] },
+    { "key": "<slug>", "label": "<Display Label>", "score": <0-100>, "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] },
+    { "key": "<slug>", "label": "<Display Label>", "score": <0-100>, "justification": "<2 sentences>", "supportingQuotes": ["<quote 1>", "<quote 2>"] }
+  ]
 }`;
 
   try {
@@ -539,7 +545,7 @@ Respond with ONLY valid JSON (no markdown). Use this exact shape:
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
       temperature: 0.3,
-      max_tokens: 1200,
+      max_tokens: 1400,
     });
 
     const content = response.choices[0]?.message?.content;
@@ -547,19 +553,39 @@ Respond with ONLY valid JSON (no markdown). Use this exact shape:
 
     const parsed = JSON.parse(content);
     const clamp = (n: number) => Math.min(100, Math.max(0, typeof n === 'number' ? n : 50));
+
+    const rawCategories = Array.isArray(parsed.categories) ? parsed.categories : [];
+    const categories: ThematicSentimentCategory[] = rawCategories.slice(0, 4).map((c: Record<string, unknown>) => {
+      const key = typeof c.key === 'string' ? c.key.replace(/\s+/g, '_').toLowerCase() : `cat_${c.key}`;
+      const label = typeof c.label === 'string' ? c.label : key;
+      const score = clamp(Number(c.score));
+      const justification = typeof c.justification === 'string' ? c.justification : '';
+      const supportingQuotes = Array.isArray(c.supportingQuotes)
+        ? (c.supportingQuotes as unknown[]).filter((q): q is string => typeof q === 'string').slice(0, 3)
+        : [];
+      return {
+        key,
+        label,
+        score,
+        detail: { justification, supportingQuotes },
+      };
+    });
+
+    const [s0 = 50, s1 = 50, s2 = 50, s3 = 50] = categories.map((c) => c.score);
     const result: ThematicSentimentSnapshot = {
-      service: clamp(parsed.service),
-      food: clamp(parsed.food),
-      atmosphere: clamp(parsed.atmosphere),
-      value: clamp(parsed.value),
+      service: s0,
+      food: s1,
+      atmosphere: s2,
+      value: s3,
+      categories: categories.length >= 4 ? categories : undefined,
     };
-    if (parsed.categoryDetails && typeof parsed.categoryDetails === 'object') {
-      const d = parsed.categoryDetails;
-      const mk = (k: 'service' | 'food' | 'atmosphere' | 'value') => ({
-        justification: typeof d[k]?.justification === 'string' ? d[k].justification : '',
-        supportingQuotes: Array.isArray(d[k]?.supportingQuotes) ? d[k].supportingQuotes.filter((q: unknown) => typeof q === 'string').slice(0, 3) : [],
-      });
-      result.categoryDetails = { service: mk('service'), food: mk('food'), atmosphere: mk('atmosphere'), value: mk('value') };
+    if (categories.length >= 4) {
+      result.categoryDetails = {
+        service: categories[0]?.detail ?? { justification: '', supportingQuotes: [] },
+        food: categories[1]?.detail ?? { justification: '', supportingQuotes: [] },
+        atmosphere: categories[2]?.detail ?? { justification: '', supportingQuotes: [] },
+        value: categories[3]?.detail ?? { justification: '', supportingQuotes: [] },
+      };
     }
     return result;
   } catch (error) {

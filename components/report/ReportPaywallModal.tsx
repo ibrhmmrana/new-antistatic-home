@@ -28,6 +28,7 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
   const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [countryCode, setCountryCode] = useState<string>("XX");
+  const [geoLoading, setGeoLoading] = useState(true);
 
   useEffect(() => {
     if (!open) return;
@@ -40,10 +41,12 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
 
   useEffect(() => {
     if (!open) return;
+    setGeoLoading(true);
     fetch("/api/geo/country")
       .then((r) => r.json())
       .then((data: { country?: string }) => setCountryCode(data?.country ?? "XX"))
-      .catch(() => setCountryCode("XX"));
+      .catch(() => setCountryCode("XX"))
+      .finally(() => setGeoLoading(false));
   }, [open]);
 
   const za = isZA(countryCode);
@@ -128,8 +131,17 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
               </h3>
               <p className="text-sm text-gray-600 mb-4">Basic features</p>
               <div className="mb-4">
-                <span className="text-3xl md:text-4xl font-bold text-gray-900">{essentialPrice}</span>
-                <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+                {geoLoading ? (
+                  <div className="flex items-baseline gap-2">
+                    <span className="inline-block h-9 md:h-10 w-20 rounded bg-gray-200 animate-pulse" aria-hidden />
+                    <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-3xl md:text-4xl font-bold text-gray-900">{essentialPrice}</span>
+                    <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+                  </>
+                )}
               </div>
               <div className="mb-4">
                 <Image src="/images/seperator.svg" alt="" width={400} height={20} className="w-full h-auto" />
@@ -176,8 +188,17 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
               </h3>
               <p className="text-sm text-gray-600 mb-4">Everything in Essential, plus more</p>
               <div className="mb-4">
-                <span className="text-3xl md:text-4xl font-bold text-gray-900">{fullEnginePrice}</span>
-                <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+                {geoLoading ? (
+                  <div className="flex items-baseline gap-2">
+                    <span className="inline-block h-9 md:h-10 w-20 rounded bg-gray-200 animate-pulse" aria-hidden />
+                    <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-3xl md:text-4xl font-bold text-gray-900">{fullEnginePrice}</span>
+                    <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+                  </>
+                )}
               </div>
               <div className="mb-4">
                 <Image src="/images/seperator.svg" alt="" width={400} height={20} className="w-full h-auto" />

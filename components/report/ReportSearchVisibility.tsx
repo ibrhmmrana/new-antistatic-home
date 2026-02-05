@@ -7,6 +7,7 @@ import type { SearchVisibility } from "@/lib/report/types";
 import { getFaviconUrl } from "@/lib/seo/favicon";
 import { fetchWithTimeoutClient } from "@/lib/net/clientFetchWithTimeout";
 import type { MarkerLocation } from "@/lib/report/snapshotTypes";
+import SectionWithExpand from "./SectionWithExpand";
 
 interface ReportSearchVisibilityProps {
   searchVisibility: SearchVisibility;
@@ -208,8 +209,10 @@ export default function ReportSearchVisibility({
           <p className="text-xs md:text-sm mt-2">Map and Google Search rankings are based on your Google Business Profile and do not require a website. Data may still be loading.</p>
         </div>
       ) : (
-        <div className="space-y-2 md:space-y-4">
-          {searchVisibility.queries.map((query, idx) => {
+        <SectionWithExpand
+          items={searchVisibility.queries}
+          className="space-y-2 md:space-y-4"
+          renderRow={(query, idx) => {
             const isExpanded = expandedQueries.has(query.query);
             const topMapCompetitor = query.mapPack.results[0];
             const isRankedMap = query.mapPack.rank !== null;
@@ -218,7 +221,6 @@ export default function ReportSearchVisibility({
 
             return (
               <div
-                key={idx}
                 className="border-b border-gray-200 last:border-b-0"
               >
                 {/* Query Header (Collapsed) - mobile: two rows (query+chevron / badges); desktop: single row */}
@@ -465,8 +467,8 @@ export default function ReportSearchVisibility({
                 )}
               </div>
             );
-          })}
-        </div>
+          }}
+        />
       )}
     </div>
   );

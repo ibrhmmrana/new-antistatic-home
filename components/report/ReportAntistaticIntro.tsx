@@ -84,22 +84,18 @@ export default function ReportAntistaticIntro() {
             Antistatic monitors your reputation 24/7, spots threats and opportunities, and tells you exactly what to do next.
           </p>
 
-          {/* Outcome callout — blue CTA, clickable → https://antistatic.ai (new tab) */}
-          <Link
-            href="https://antistatic.ai"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-xl py-2.5 px-4 border-l-4 cursor-pointer transition-all duration-200 ease-out bg-[rgba(37,99,235,0.1)] hover:bg-[rgba(37,99,235,0.22)] hover:shadow-md active:scale-[0.98] active:bg-[rgba(37,99,235,0.28)] focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-[#5b8df9]"
+          {/* Outcome callout — visual badge only (no link) */}
+          <div
+            className="inline-flex items-center gap-2 rounded-xl py-2.5 px-4 border-l-4 bg-[rgba(37,99,235,0.1)]"
             style={{
               borderLeftColor: DARK_BLUE,
             }}
-            aria-label="Go to Antistatic homepage (opens in new tab)"
           >
             <span className="text-sm md:text-base font-medium text-gray-800">
               Turn a <span className="font-semibold" style={{ color: DARK }}>3.9-star</span> perception into a{" "}
               <span className="font-semibold" style={{ color: DARK }}>4.6-star</span> reality, fast.
             </span>
-          </Link>
+          </div>
         </div>
       </section>
 

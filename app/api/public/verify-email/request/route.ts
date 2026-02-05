@@ -52,20 +52,112 @@ async function sendEmailViaSES(email: string, code: string): Promise<void> {
   });
 
   const fromEmail = process.env.SES_FROM_EMAIL || "noreply@antistatic.ai";
+  const supportEmail = process.env.SUPPORT_EMAIL || "hello@antistatic.ai";
+  const logoUrl = "https://bmkdwnfrldoqvduhpgsu.supabase.co/storage/v1/object/public/Storage/antistatic-logo-on-white%20(1).png";
   const fromEmailWithName = `Antistatic <${fromEmail}>`;
   const subject = "Your Antistatic Verification Code";
-  const htmlBody = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #2563eb;">Verify Your Email</h2>
-      <p>Your verification code is:</p>
-      <div style="background: #f3f4f6; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 20px 0; border-radius: 8px;">
-        ${code}
-      </div>
-      <p style="color: #6b7280; font-size: 14px;">This code will expire in 10 minutes.</p>
-      <p style="color: #6b7280; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
-    </div>
-  `;
-  const textBody = `Your verification code is: ${code}\n\nThis code will expire in 10 minutes.\n\nIf you didn't request this code, please ignore this email.`;
+  const htmlBody = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Verify your email</title>
+  <style>
+    @media (prefers-color-scheme: dark) {
+      body, .bg { background:#0b0f19 !important; }
+      .card { background:#111827 !important; border-color:#1f2937 !important; }
+      .text { color:#f9fafb !important; }
+      .muted { color:#9ca3af !important; }
+      .rule { border-top-color:#1f2937 !important; }
+      .codebox { background:#0b1220 !important; }
+      .link { color:#93c5fd !important; }
+    }
+  </style>
+</head>
+
+<body style="margin:0;padding:0;background:#ffffff;">
+  <!-- Preheader -->
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+    Your Antistatic verification code is ${code}
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg" style="background:#ffffff;">
+    <tr>
+      <td align="center" style="padding:32px 12px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+               class="card"
+               style="width:600px;max-width:600px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;">
+          <tr>
+            <td align="center" style="padding:34px 34px 26px 34px;">
+              <!-- Logo -->
+              <div style="text-align:center;margin-bottom:18px;">
+                <img src="${logoUrl}"
+                     width="200" height="33" alt="Antistatic"
+                     style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;width:200px;height:33px;object-fit:contain;" />
+              </div>
+
+              <!-- Heading -->
+              <h1 class="text"
+                  style="margin:0 0 22px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+                         font-size:24px;line-height:1.3;font-weight:600;color:#111827;text-align:center;">
+                Verify your email to generate your business report
+              </h1>
+
+              <!-- Body copy -->
+              <p class="text"
+                 style="margin:0 0 12px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+                        font-size:14px;line-height:1.6;color:#111827;text-align:center;">
+                Use the 4-digit code below to confirm your email and start generating your analysis report.
+              </p>
+
+              <p class="text"
+                 style="margin:0 0 18px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+                        font-size:14px;line-height:1.6;color:#111827;text-align:center;">
+                Enter this code in the original browser window:
+              </p>
+
+              <!-- Code box -->
+              <div class="codebox"
+                   style="background:#f3f4f6;border-radius:10px;padding:18px 16px;text-align:center;margin:0 auto 8px auto;">
+                <span class="text"
+                      style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+                             font-size:24px;font-weight:600;letter-spacing:10px;color:#111827;display:inline-block;">
+                  ${code}
+                </span>
+              </div>
+
+              <p class="muted"
+                 style="margin:12px 0 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+                        font-size:12px;line-height:1.6;color:#6b7280;text-align:center;">
+                This code will expire in 10 minutes.
+              </p>
+
+              <!-- Divider -->
+              <div class="rule" style="border-top:1px solid #e5e7eb;margin:28px 0 18px 0;"></div>
+
+              <!-- Footer -->
+              <p class="muted"
+                 style="margin:0 0 10px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+                        font-size:12px;line-height:1.6;color:#6b7280;text-align:center;">
+                If you didn't request a business report, you can safely ignore this email.
+                Don't share or forward this code to anyone.
+              </p>
+
+              <p class="muted"
+                 style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+                        font-size:12px;line-height:1.6;color:#6b7280;text-align:center;">
+                Need help? Contact support at
+                <a class="link" href="mailto:${supportEmail}" style="color:#2563eb;text-decoration:underline;">${supportEmail}</a>.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+  const textBody = `Your Antistatic verification code is: ${code}\n\nEnter this code in the original browser window. This code will expire in 10 minutes.\n\nIf you didn't request a business report, you can safely ignore this email. Need help? Contact ${supportEmail}.`;
 
   const command = new SendEmailCommand({
     Source: fromEmailWithName,

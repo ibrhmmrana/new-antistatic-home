@@ -115,7 +115,19 @@ export interface ThematicSentimentCategoryDetail {
 }
 
 /**
- * Category-specific sentiment (0-100) + optional evidence for modal
+ * One thematic category when using industry-dependent (dynamic) axes
+ */
+export interface ThematicSentimentCategory {
+  key: string;
+  label: string;
+  score: number;
+  detail?: ThematicSentimentCategoryDetail;
+}
+
+/**
+ * Category-specific sentiment (0-100) + optional evidence for modal.
+ * Legacy: service, food, atmosphere, value (restaurant-oriented).
+ * When categories is present, the chart uses industry-dependent axes; otherwise the fixed four are used.
  */
 export interface ThematicSentimentSnapshot {
   service: number;
@@ -129,6 +141,11 @@ export interface ThematicSentimentSnapshot {
     atmosphere: ThematicSentimentCategoryDetail;
     value: ThematicSentimentCategoryDetail;
   };
+  /**
+   * When set, the thematic sentiment chart uses these industry-appropriate categories
+   * (y-axis labels and scores) instead of the fixed Service/Food/Atmosphere/Value.
+   */
+  categories?: ThematicSentimentCategory[];
 }
 
 /**

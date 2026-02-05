@@ -80,7 +80,7 @@ export default function ReportAIAnalysisRest({ analysis }: ReportAIAnalysisRestP
           <h3 className="text-lg font-semibold text-gray-900 mb-1">
             Review Analysis
             <span className="text-sm font-normal text-gray-500 ml-2">
-              ({analysis.reviews.totalReviews} reviews, {analysis.reviews.sentimentScore}/100 sentiment)
+              ({analysis.reviews.sentimentScore}/100 sentiment)
             </span>
           </h3>
           <div className="mt-2 space-y-4">

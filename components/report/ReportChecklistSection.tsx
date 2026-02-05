@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Check, X, AlertCircle } from "lucide-react";
 import type { ChecklistSection } from "@/lib/report/types";
+import SectionWithExpand from "./SectionWithExpand";
 
 /** Friendly labels for GBP/local-listings checks (so snapshots and any legacy data show correct headings) */
 const LOCAL_LISTINGS_LABEL_MAP: Record<string, string> = {
@@ -93,13 +94,15 @@ export default function ReportChecklistSection({ section, blurContent = false }:
           No checklist items available for this section.
         </div>
       ) : (
-        <div className="space-y-1">
-          {section.checks.map((check) => {
+        <SectionWithExpand
+          items={section.checks}
+          className="space-y-1"
+          renderRow={(check) => {
             const isExpanded = expandedItems.has(check.key);
             const faulty = isFaulty(check.status);
 
             return (
-              <div key={check.key} className="overflow-hidden">
+              <div className="overflow-hidden">
                 <button
                   onClick={() => toggleItem(check.key)}
                   className="w-full py-3 flex items-start gap-3 hover:bg-gray-50 transition-colors text-left rounded"
@@ -141,8 +144,8 @@ export default function ReportChecklistSection({ section, blurContent = false }:
                 )}
               </div>
             );
-          })}
-        </div>
+          }}
+        />
       )}
     </div>
   );

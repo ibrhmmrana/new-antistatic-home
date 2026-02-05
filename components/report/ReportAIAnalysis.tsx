@@ -276,7 +276,7 @@ export default function ReportAIAnalysis({ analysis, isLoading, onlyTopPrioritie
             <div className="flex items-center gap-3">
               <h3 className="text-lg font-semibold text-gray-900">Review Analysis</h3>
               <span className="text-sm text-gray-500">
-                ({analysis.reviews.totalReviews} reviews, {analysis.reviews.sentimentScore}/100 sentiment)
+                ({analysis.reviews.sentimentScore}/100 sentiment)
               </span>
             </div>
             {expandedSections.has('reviews') ? (
