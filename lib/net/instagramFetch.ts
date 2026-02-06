@@ -18,9 +18,9 @@ function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function backoffWithJitter(attempt: number): number {
-  const base = 500 * Math.pow(2, attempt);
-  const jitter = Math.random() * 500;
+function backoffWithJitter(attempt: number, delayBaseMs: number): number {
+  const base = delayBaseMs * Math.pow(2, attempt);
+  const jitter = Math.random() * Math.min(500, delayBaseMs);
   return base + jitter;
 }
 
@@ -35,6 +35,8 @@ export interface FetchInstagramOptions {
   logContext?: string;
   /** Max retries (excluding first attempt). Default 3. */
   maxRetries?: number;
+  /** Base delay in ms for retry backoff. Default 500. Use 2000 for 429-heavy flows. */
+  retryDelayBaseMs?: number;
 }
 
 function isProxyEnabled(): boolean {
@@ -54,6 +56,7 @@ export async function fetchInstagram(
 ): Promise<Response> {
   const timeoutMs = options?.timeoutMs ?? 30000;
   const maxRetries = Math.max(0, options?.maxRetries ?? 3);
+  const retryDelayBaseMs = Math.max(100, options?.retryDelayBaseMs ?? 500);
   const logContext = options?.logContext ?? "instagram";
   const rotationMode = (options?.rotationMode ?? (process.env.DECODO_ROTATION_MODE as RotationMode) ?? "request") as RotationMode;
   const stickyKey = options?.stickyKey;
@@ -63,7 +66,21 @@ export async function fetchInstagram(
 
   let lastResponse: Awaited<ReturnType<typeof undiciFetch>> | null = null;
   let lastError: unknown = null;
+
+  // Get proxy URL ONCE and reuse for all retries (don't switch endpoints mid-request)
   let proxyUrlUsed: string | null = null;
+  let dispatcher: ProxyAgent | undefined;
+  if (useProxy) {
+    proxyUrlUsed = proxyManager.getProxyForRequest(stickyKey, rotationMode);
+    if (proxyUrlUsed) {
+      dispatcher = new ProxyAgent(proxyUrlUsed);
+    }
+  }
+  const redacted = proxyUrlUsed ? DecodoProxyManager.redactProxyUrl(proxyUrlUsed) : "direct";
+  const sessionLabel = proxyUrlUsed ? proxyManager.getLastSessionLabel() : null;
+  console.log(
+    `[PROXY] ${logContext} → ${rotationMode} mode${stickyKey ? ` (sticky: ${stickyKey})` : ""} endpoint: ${redacted}${sessionLabel ? ` session: ${sessionLabel}` : ""}`
+  );
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
@@ -75,20 +92,6 @@ export async function fetchInstagram(
     }
 
     try {
-      let dispatcher: ProxyAgent | undefined;
-      if (useProxy) {
-        proxyUrlUsed = proxyManager.getProxyForRequest(stickyKey, rotationMode);
-        if (proxyUrlUsed) {
-          dispatcher = new ProxyAgent(proxyUrlUsed);
-        }
-      }
-
-      const redacted = proxyUrlUsed ? DecodoProxyManager.redactProxyUrl(proxyUrlUsed) : "direct";
-      if (attempt === 0) {
-        console.log(
-          `[PROXY] ${logContext} → ${rotationMode} mode${stickyKey ? ` (sticky: ${stickyKey})` : ""} endpoint: ${redacted}`
-        );
-      }
 
       // Pass only method/headers/redirect/signal to avoid DOM vs undici RequestInit type conflict (e.g. BodyInit)
       const { method, headers, redirect, cache } = init ?? {};
@@ -110,11 +113,9 @@ export async function fetchInstagram(
       lastResponse = res;
 
       if (attempt < maxRetries && isRetryable(res.status)) {
-        if (res.status === 429 && proxyUrlUsed) {
-          proxyManager.markProxyFailed(proxyUrlUsed);
-        }
+        // Don't mark proxy failed yet - only after all retries exhausted
         await consumeBody(res);
-        const backoff = backoffWithJitter(attempt);
+        const backoff = backoffWithJitter(attempt, retryDelayBaseMs);
         console.log(
           `[PROXY] ${logContext} ${res.status} retry ${attempt + 1}/${maxRetries} in ${Math.round(backoff)}ms`
         );
@@ -122,28 +123,40 @@ export async function fetchInstagram(
         continue;
       }
 
+      // All retries exhausted or non-retryable status - mark proxy failed on 429/5xx
+      if (isRetryable(res.status) && proxyUrlUsed) {
+        proxyManager.markProxyFailed(proxyUrlUsed);
+      }
       return res as unknown as Response;
     } catch (err) {
       clearTimeout(timeoutId);
       lastError = err;
-      if (proxyUrlUsed) {
-        proxyManager.markProxyFailed(proxyUrlUsed);
-      }
       const isAbort = err instanceof Error && (err.name === "AbortError" || err.message?.includes("aborted"));
       const isNetwork =
-        err instanceof TypeError && (err.message === "Failed to fetch" || err.message === "Load failed");
-      if (attempt < maxRetries && (isAbort || isNetwork)) {
-        const backoff = backoffWithJitter(attempt);
+        err instanceof TypeError &&
+        (err.message === "Failed to fetch" || err.message === "Load failed" || err.message === "fetch failed");
+      const isProxyTunnel = err instanceof Error && err.cause instanceof Error && /proxy.*(502|503|tunnel)/i.test(String(err.cause.message));
+      if (attempt < maxRetries && (isAbort || isNetwork || isProxyTunnel)) {
+        // Don't mark proxy failed yet - only after all retries exhausted
+        const backoff = backoffWithJitter(attempt, retryDelayBaseMs);
         console.log(
           `[PROXY] ${logContext} error ${err instanceof Error ? err.message : String(err)} retry ${attempt + 1}/${maxRetries} in ${Math.round(backoff)}ms`
         );
         await delay(backoff);
         continue;
       }
+      // All retries exhausted - mark proxy failed
+      if (proxyUrlUsed) {
+        proxyManager.markProxyFailed(proxyUrlUsed);
+      }
       throw err;
     }
   }
 
+  // Should not reach here, but if we do, mark proxy failed
+  if (proxyUrlUsed && lastResponse && isRetryable(lastResponse.status)) {
+    proxyManager.markProxyFailed(proxyUrlUsed);
+  }
   if (lastResponse) return lastResponse as unknown as Response;
   throw lastError;
 }

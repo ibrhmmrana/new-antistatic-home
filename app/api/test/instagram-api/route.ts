@@ -79,49 +79,43 @@ function generateAndroidId(): string {
 }
 
 /**
- * Gets Instagram-compatible headers with all required browser-like headers
- * This bypasses Instagram's SecFetch Policy by making requests look like they come from a browser
+ * Gets Instagram-compatible headers using a consistent browser identity.
+ *
+ * IMPORTANT: We're hitting web endpoints (web_profile_info, etc.) so headers must look
+ * like a real Chrome browser session, NOT an Android app.
+ * Previously we mixed Android UA + browser Sec-Ch-Ua + random device IDs, which Instagram
+ * easily detects as a bot (→ 429).
  */
 function getInstagramHeaders(sessionId: string, authHeader?: string | null): Record<string, string> {
-  // Generate device IDs (can be reused for a session, but generating fresh for each request)
-  const deviceId = generateAndroidId();
-  const androidId = generateAndroidId();
-  
   const headers: Record<string, string> = {
-    // Core Instagram headers
-    'User-Agent': 'Instagram 267.0.0.19.301 Android',
-    'X-IG-App-ID': '567067343352427',
-    
-    // Standard HTTP headers
-    'Accept': 'application/json, text/plain, */*',
+    // Browser User-Agent matching the Sec-Ch-Ua below (Chrome 120 on Windows)
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+
+    // Instagram web app ID (NOT the Android/embed one 567067343352427)
+    'X-IG-App-ID': '936619743392459',
+
+    // Standard browser request headers
+    'Accept': '*/*',
     'Accept-Language': 'en-US,en;q=0.9',
     'Accept-Encoding': 'gzip, deflate, br',
     'Connection': 'keep-alive',
     'X-Requested-With': 'XMLHttpRequest',
-    
-    // CRITICAL: Sec-Fetch headers to bypass SecFetch Policy violation
+
+    // Sec-Fetch headers (natural for a same-origin XHR from a browser)
     'Sec-Fetch-Dest': 'empty',
     'Sec-Fetch-Mode': 'cors',
     'Sec-Fetch-Site': 'same-origin',
-    
-    // Browser identification headers
-    'Sec-Ch-Ua': '"Not/A)Brand";v="99", "Google Chrome";v="115", "Chromium";v="115"',
+
+    // Client-Hints matching the User-Agent
+    'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
     'Sec-Ch-Ua-Mobile': '?0',
     'Sec-Ch-Ua-Platform': '"Windows"',
-    
-    // Instagram device headers (from PowerShell example)
-    'X-IG-Device-ID': deviceId,
-    'X-IG-Android-ID': androidId,
-    'X-IG-Device-Locale': 'en_US',
-    'X-IG-Mapped-Locale': 'en_US',
-    'X-IG-Connection-Type': 'WIFI',
-    'X-IG-Capabilities': '3brTvw==',
-    
-    // Origin and Referer (must match Instagram domain)
+
+    // Origin and Referer (browser browsing instagram.com)
     'Origin': 'https://www.instagram.com',
     'Referer': 'https://www.instagram.com/',
-    
-    // Cookie: sessionid required; csrftoken and ds_user_id optional for better acceptance
+
+    // Cookie: sessionid required; csrftoken and ds_user_id improve acceptance
     'Cookie': buildCookieHeader(sessionId),
   };
 
@@ -165,10 +159,9 @@ async function getAuthorizationHeader(
   const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
 
   const instagramOpts: FetchInstagramOptions = {
+    ...fetchOpts,
     stickyKey: fetchOpts?.stickyKey ?? username,
-    rotationMode: fetchOpts?.rotationMode,
     logContext: "getAuthHeader",
-    timeoutMs: fetchOpts?.timeoutMs ?? 30000,
   };
 
   try {
@@ -409,10 +402,9 @@ async function fetchProfile(
 
   const headers = getInstagramHeaders(sessionId, authHeader);
   const instagramOpts: FetchInstagramOptions = {
+    ...fetchOpts,
     stickyKey: fetchOpts?.stickyKey ?? username,
-    rotationMode: fetchOpts?.rotationMode,
     logContext: "fetchProfile",
-    timeoutMs: fetchOpts?.timeoutMs ?? 30000,
   };
 
   if (authHeader) {
@@ -931,35 +923,107 @@ async function scrapeInstagramAPI(username: string): Promise<{
     console.warn(`[API] ⚠️ Expected format: userId:token:version:signature`);
   }
 
+  // Diagnostic disabled in production — each test burns 1-2 requests against the session rate limit.
+  // Set INSTAGRAM_DIAG=true to re-enable for debugging.
+  if (process.env.INSTAGRAM_DIAG === "true") {
+    try {
+      const diagUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
+      const diagHeaders = getInstagramHeaders(sessionId);
+      console.log(`[DIAG] Node.js native fetch (no proxy)...`);
+      const diagRes = await fetch(diagUrl, { method: "GET", headers: diagHeaders, redirect: "manual", signal: AbortSignal.timeout(15000) });
+      console.log(`[DIAG] Node.js fetch: ${diagRes.status}`);
+    } catch (e) { console.log(`[DIAG] error: ${e instanceof Error ? e.message : e}`); }
+  }
+
+  // Always use profile mode for this flow so auth + profile + feed use the same proxy endpoint (reduces 429)
   const defaultFetchOpts: FetchInstagramOptions = {
     stickyKey: username,
-    rotationMode: (process.env.DECODO_ROTATION_MODE as "request" | "profile") ?? "profile",
+    rotationMode: "profile",
     timeoutMs: 30000,
+    maxRetries: 4,           // More retries since Instagram 429s are transient via proxy
+    retryDelayBaseMs: 3000,  // Longer backoff to let rate limit reset
   };
 
-  console.log(`[API] Attempting to get authorization header for @${username}...`);
+  // ── COMBINED FETCH: one request for auth header + profile data ──
+  // Previously we called getAuthorizationHeader() then fetchProfile(), both hitting
+  // the SAME endpoint (web_profile_info). The first call would burn rate-limit budget
+  // and the second would get 429'd. Now we make ONE call and extract both.
+  console.log(`[API] Fetching profile + auth header in single request for @${username}...`);
   let authHeader: string | null = null;
+  let profile: InstagramProfile | null = null;
+
+  const profileUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
+  const profileHeaders = getInstagramHeaders(sessionId);
+  const profileOpts: FetchInstagramOptions = {
+    ...defaultFetchOpts,
+    logContext: "fetchProfileCombined",
+  };
 
   try {
-    authHeader = await getAuthorizationHeader(sessionId, username, defaultFetchOpts);
-  } catch (error) {
-    console.warn(`[API] ⚠️ Auth header extraction failed, will skip and try direct data fetch`);
-    authHeader = null;
+    const response = await fetchInstagram(
+      profileUrl,
+      { method: "GET", headers: profileHeaders, redirect: "manual" },
+      profileOpts
+    );
+
+    // Check for auth header in response (rarely exposed via fetch, but try)
+    for (const name of ["ig-set-authorization", "Ig-Set-Authorization", "IG-Set-Authorization"]) {
+      const val = response.headers.get(name);
+      if (val) {
+        authHeader = val;
+        console.log(`[API] ✅ Found auth header: ${name}`);
+        break;
+      }
+    }
+    if (!authHeader) {
+      console.log(`[API] ℹ️ No auth header in response (expected) - proceeding with session cookie only`);
+    }
+
+    // Parse profile from the same response
+    if (response.ok) {
+      const data = await response.json();
+      const user =
+        data?.data?.user ||
+        data?.user ||
+        data?.data?.xdt_api__v1__fb_user__profile_home__web?.user ||
+        null;
+
+      if (user) {
+        const biography = user.biography ?? user.bio ?? "";
+        profile = {
+          username: user.username || username,
+          fullName: user.full_name || "",
+          biography: typeof biography === "string" ? biography : "",
+          profilePicUrl: user.profile_pic_url || "",
+          profilePicUrlHd: user.profile_pic_url_hd || "",
+          followerCount: user.edge_followed_by?.count || 0,
+          followingCount: user.edge_follow?.count || 0,
+          postCount: user.edge_owner_to_timeline_media?.count || 0,
+          isVerified: user.is_verified || false,
+          isBusinessAccount: user.is_business_account || false,
+          category: user.category_name || null,
+          website: user.external_url || null,
+          userId: user.id || "",
+        };
+        console.log(`[API] ✅ Profile parsed from combined response: ${profile.fullName} (${profile.followerCount} followers)`);
+      } else {
+        console.warn(`[API] ⚠️ Got 200 but no user data in response`);
+      }
+    } else {
+      console.warn(`[API] ⚠️ Combined fetch returned ${response.status} ${response.statusText}`);
+    }
+  } catch (err) {
+    console.warn(`[API] ⚠️ Combined fetch failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  if (authHeader) {
-    console.log(`[API] ✅ Authorization header obtained (length: ${authHeader.length})`);
-    console.log(`[API] Will use both session cookie and auth header for requests`);
-  } else {
-    console.log(`[API] ℹ️ No explicit authorization header available`);
-    console.log(`[API] Will proceed with session cookie only - this should work if session is valid`);
-    console.log(`[API] Note: In PowerShell, auth header is extracted from response body, not headers`);
-  }
-
-  console.log(`[API] Fetching profile for @${username}...`);
-  const profile = await fetchProfile(username, sessionId, authHeader, defaultFetchOpts);
+  // Fallback: if combined fetch didn't get profile, try dedicated fetchProfile with a delay
   if (!profile) {
-    // Provide more helpful error message
+    console.log(`[API] Fallback: trying dedicated fetchProfile after 5s delay...`);
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    profile = await fetchProfile(username, sessionId, authHeader, defaultFetchOpts);
+  }
+
+  if (!profile) {
     throw new Error(
       `Failed to fetch profile for @${username}. ` +
       `This could mean: (1) Session expired/invalid, (2) Username doesn't exist, ` +
@@ -968,6 +1032,9 @@ async function scrapeInstagramAPI(username: string): Promise<{
     );
   }
   console.log(`[API] ✅ Profile fetched: ${profile.fullName} (${profile.followerCount} followers)`);
+
+  // Pace: wait 3s between profile and feed to let rate limit recover
+  await new Promise((resolve) => setTimeout(resolve, 3000));
 
   console.log(`[API] Fetching posts for user ${profile.userId}...`);
   const posts = await fetchUserFeed(profile.userId, sessionId, authHeader, 24, defaultFetchOpts);
@@ -1003,17 +1070,21 @@ export async function POST(request: NextRequest) {
 
         const commentsFetchOpts: FetchInstagramOptions = {
           stickyKey: cleanUsername,
-          rotationMode: (process.env.DECODO_ROTATION_MODE as "request" | "profile") ?? "profile",
+          rotationMode: "profile",
           timeoutMs: 30000,
+          maxRetries: 3,
+          retryDelayBaseMs: 3000,
         };
 
-        const commentsAuthHeader = await getAuthorizationHeader(sessionId, cleanUsername, commentsFetchOpts);
+        // Skip getAuthorizationHeader for comments — it hits the same web_profile_info endpoint
+        // and never actually returns an auth header (Instagram doesn't expose it via fetch).
+        // This saves 1-4 requests worth of rate-limit budget.
+        const commentsAuthHeader: string | null = null;
+        console.log(`[API] ℹ️ Using session cookie only for comments (auth header skipped to save rate limit)`);
 
-        if (commentsAuthHeader) {
-          console.log(`[API] ✅ Auth header available for comments - will use it`);
-        } else {
-          console.log(`[API] ℹ️ No auth header for comments - will try with session cookie only`);
-        }
+        // Wait before fetching comments to let rate limit recover
+        console.log(`[API] Waiting 5s before comments to let rate limit recover...`);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
 
         console.log(`[API] Fetching comments for all ${posts.length} posts...`);
         for (let i = 0; i < posts.length; i++) {
