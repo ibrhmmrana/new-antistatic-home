@@ -36,7 +36,7 @@ const productSans = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Antistatic — AI Visibility Grader",
+  title: "Antistatic - AI Visibility Grader",
   description: "Get a free AI report on your Google presence, reviews, and website experience",
   icons: {
     icon: "/images/favicon.svg",
@@ -52,21 +52,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={productSans.variable} style={{ scrollBehavior: 'smooth' }}>
+      <head>
+        {/* SnipForm Signals: must be in <head> with async per SnipForm docs for cookieless analytics */}
+        <script
+          async
+          src="https://cdn.snipform.io/api/analytics/beta.signals.js?site=6983927d79a626061c00aff2"
+        />
+      </head>
       <body className={`${productSans.className} antialiased`}>
         {children}
-
-        {/* SnipForm wrap: form UI. Load first. */}
         <Script
           src="https://cdn.snipform.io/wrap/sf.iife.js"
           strategy="afterInteractive"
-        />
-
-        {/* SnipForm Signals: analytics. lazyOnload = after page interactive, avoids React 19 script hoisting breaking document.currentScript on homepage. */}
-        <Script
-          src="https://cdn.snipform.io/api/analytics/beta.signals.js?site=6983927d79a626061c00aff2"
-          strategy="lazyOnload"
         />
       </body>
     </html>
   );
 }
+
