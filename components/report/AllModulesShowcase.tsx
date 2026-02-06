@@ -62,7 +62,7 @@ export default function AllModulesShowcase() {
           {/* Four images, spread out; pop-out on hover — scaled up, almost full width on desktop */}
           <div className="px-5 sm:px-0">
             <div className="relative flex items-center justify-center min-h-[240px] sm:min-h-[300px] md:min-h-[360px] lg:min-h-[420px] py-0">
-              <div className="relative w-full max-w-5xl lg:max-w-none mx-auto h-[220px] sm:h-[280px] md:h-[340px] lg:h-[400px]">
+              <div className="relative w-full max-w-5xl lg:max-w-none mx-auto h-[220px] sm:h-[280px] md:h-[340px] lg:h-[400px] px-6 sm:px-0">
               {MODULE_ORDER.map((moduleId, index) => {
                 const imgSrc = MODULE_IMAGE[moduleId];
                 const rotation = IMAGE_ROTATION[index];

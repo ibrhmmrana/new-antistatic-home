@@ -7,9 +7,11 @@ import ShareButton from "./ShareButton";
 interface ReportLeftRailProps {
   scores: ReportScores;
   reportId?: string | null;
+  businessName?: string | null;
+  businessPhotoUrl?: string | null;
 }
 
-export default function ReportLeftRail({ scores, reportId }: ReportLeftRailProps) {
+export default function ReportLeftRail({ scores, reportId, businessName, businessPhotoUrl }: ReportLeftRailProps) {
   const { overall, searchResults, websiteExperience, localListings } = scores;
   
   // Calculate percentage for circular gauge
@@ -86,7 +88,7 @@ export default function ReportLeftRail({ scores, reportId }: ReportLeftRailProps
   const fixButton = (
     <button className="w-full bg-blue-600 text-white py-2.5 px-3 rounded-lg font-medium flex items-center justify-center gap-1.5 hover:bg-blue-700 transition-colors text-sm">
       <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
-      <span>Fix in 35 seconds</span>
+      <span>Start fixing on a free trial</span>
     </button>
   );
 
@@ -105,6 +107,26 @@ export default function ReportLeftRail({ scores, reportId }: ReportLeftRailProps
         <div className="flex flex-col flex-1 min-h-0 w-full items-center gap-0">
           {/* Spacer where logo was (logo moved to intro section) */}
           <div className="flex-shrink-0 w-full h-4 mb-2" aria-hidden />
+          {/* Business photo (first GBP image) + name above score */}
+          {(businessPhotoUrl || businessName) && (
+            <div className="flex-shrink-0 w-full flex flex-col items-center gap-1.5 mb-3">
+              {businessPhotoUrl && (
+                <div className="relative w-full max-w-64 h-36 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={businessPhotoUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+              {businessName && (
+                <span className="text-center text-[min(1rem,2.5vh)] font-medium text-gray-900 line-clamp-2 px-1">
+                  {businessName}
+                </span>
+              )}
+            </div>
+          )}
           {/* Circular Gauge - viewport-relative so it scales on short windows */}
           <div
             className="relative flex-shrink-0"
@@ -183,7 +205,7 @@ export default function ReportLeftRail({ scores, reportId }: ReportLeftRailProps
           )}
           <button className="flex-1 min-w-0 bg-blue-600 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors text-sm">
             <Sparkles className="w-4 h-4 flex-shrink-0" />
-            <span>Fix in 35 seconds</span>
+            <span className="text-center">Start fixing on a<br />free trial</span>
           </button>
         </div>
       </div>

@@ -61,23 +61,29 @@ export default function ReportAntistaticIntro() {
               className="order-2 md:order-1 text-xl md:text-2xl font-semibold leading-snug"
               style={{ color: DARK }}
             >
-              Your customers decide in public, every day.
+              Your customers decide your reputation in public, every day.
             </h2>
-            <Link
-              href="https://antistatic.ai"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="order-1 md:order-2 flex-shrink-0 flex justify-center md:justify-end focus:outline-none focus:ring-2 focus:ring-gray-400 rounded-lg"
-              aria-label="Antistatic"
-            >
-              <Image
-                src="/images/antistatic logo on white.svg"
-                alt="Antistatic"
-                width={130}
-                height={30}
-                className="h-7 w-auto object-contain opacity-90 hover:opacity-100 transition-opacity"
-              />
-            </Link>
+            <div className="order-1 md:order-2 flex-shrink-0 flex flex-col items-center md:items-end gap-1.5">
+              <Link
+                href="https://antistatic.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="focus:outline-none focus:ring-2 focus:ring-gray-400 rounded-lg"
+                aria-label="Antistatic"
+              >
+                <Image
+                  src="/images/antistatic logo on white.svg"
+                  alt="Antistatic"
+                  width={130}
+                  height={30}
+                  className="h-7 w-auto object-contain opacity-90 hover:opacity-100 transition-opacity"
+                />
+              </Link>
+              <span className="text-[11px] md:text-xs text-gray-500 leading-snug text-center md:text-right max-w-[140px] md:max-w-none">
+                Analyze your business at{" "}
+                <span className="font-medium" style={{ color: DARK_BLUE }}>antistatic.ai</span>
+              </span>
+            </div>
           </div>
 
           <p className="text-sm md:text-base text-gray-600 leading-relaxed max-w-2xl mb-5">

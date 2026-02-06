@@ -80,7 +80,12 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
   return (
     <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex overflow-x-hidden">
       {/* Left Rail - hidden on mobile */}
-      <ReportLeftRail scores={report.scores} reportId={reportId} />
+      <ReportLeftRail
+        scores={report.scores}
+        reportId={reportId}
+        businessName={report.meta.businessName}
+        businessPhotoUrl={place.businessPhotoUrl || report.summaryCards.impact.businessAvatar}
+      />
 
       {/* Main Content - left margin on desktop so content doesn't sit under fixed sidebar */}
       <div className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 pb-24 md:pb-8 md:ml-[21rem]">
