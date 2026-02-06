@@ -53,18 +53,20 @@ export default function RootLayout({
   return (
     <html lang="en" className={productSans.variable} style={{ scrollBehavior: 'smooth' }}>
       <body className={`${productSans.className} antialiased`}>
-        {/* SnipForm Signals: use next/script beforeInteractive so it runs on streamed pages (e.g. homepage). Raw script in head can fail with dynamic/streaming. */}
-        <Script
-          src="https://cdn.snipform.io/api/analytics/beta.signals.js?site=6983927d79a626061c00aff2"
-          strategy="beforeInteractive"
-        />
         {children}
+
+        {/* SnipForm wrap: form UI. Load first. */}
         <Script
           src="https://cdn.snipform.io/wrap/sf.iife.js"
           strategy="afterInteractive"
+        />
+
+        {/* SnipForm Signals: analytics. lazyOnload = after page interactive, avoids React 19 script hoisting breaking document.currentScript on homepage. */}
+        <Script
+          src="https://cdn.snipform.io/api/analytics/beta.signals.js?site=6983927d79a626061c00aff2"
+          strategy="lazyOnload"
         />
       </body>
     </html>
   );
 }
-
