@@ -15,9 +15,7 @@ import PrescriptionDrawer from "./PrescriptionDrawer";
 import RecommendedFixStrip from "./RecommendedFixStrip";
 import AllModulesShowcase from "./AllModulesShowcase";
 import {
-  TOP_CARDS_MODULES,
-  VISUAL_INSIGHTS_MODULES,
-  AI_ANALYSIS_MODULES,
+  SEARCH_VISIBILITY_MODULES,
   CHECKLIST_SECTION_MODULES,
 } from "@/lib/diagnosis/sectionModuleMappings";
 
@@ -79,22 +77,6 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
     0
   );
 
-  // Fault flags for fix strips (outside blocks)
-  const hasTopCardsFault =
-    (report.summaryCards.impact.topProblems?.length ?? 0) > 0 ||
-    report.sections.some((s) => s.checks.some((c) => c.status === "bad" || c.status === "warn")) ||
-    (report.summaryCards.competitors.list.some((c) => c.isTargetBusiness) &&
-      (report.summaryCards.competitors.list.find((c) => c.isTargetBusiness)?.rank ?? 1) > 1);
-  const competitiveBenchmark = snapshot.competitiveBenchmark;
-  const hasVisualFault =
-    !!competitiveBenchmark && !!(competitiveBenchmark.potentialImpact || competitiveBenchmark.urgentGap);
-  const hasAIFault =
-    (aiAnalysis?.topPriorities?.length ?? 0) > 0 ||
-    (aiAnalysis?.reviews?.painPoints?.length ?? 0) > 0 ||
-    (aiAnalysis?.consistency?.inconsistencies?.length ?? 0) > 0 ||
-    (aiAnalysis?.instagram?.issues?.length ?? 0) > 0 ||
-    (aiAnalysis?.facebook?.issues?.length ?? 0) > 0;
-
   return (
     <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex overflow-x-hidden">
       {/* Left Rail - hidden on mobile */}
@@ -114,23 +96,12 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             competitiveBenchmark={snapshot.competitiveBenchmark}
             aiAnalysis={aiAnalysis ?? null}
           />
-          {competitiveBenchmark && (
-            <RecommendedFixStrip
-              modules={VISUAL_INSIGHTS_MODULES}
-              hasAnyFault={hasVisualFault}
-              onOpenPrescription={handleOpenPrescription}
-            />
-          )}
+
+          {/* How Antistatic can help - same position as live report */}
+          <AllModulesShowcase />
 
           {/* AI-Powered Analysis - above Top Cards */}
           <ReportAIAnalysis analysis={aiAnalysis} isLoading={false} onlyTopPriorities />
-          {aiAnalysis && (
-            <RecommendedFixStrip
-              modules={AI_ANALYSIS_MODULES}
-              hasAnyFault={hasAIFault}
-              onOpenPrescription={handleOpenPrescription}
-            />
-          )}
 
           {/* Top Cards - "We found N issues affecting your visibility" */}
           <ReportTopCards
@@ -146,11 +117,6 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             snapshotMode={true}
             snapshotPhotoUrl={place.businessPhotoUrl}
           />
-          <RecommendedFixStrip
-            modules={TOP_CARDS_MODULES}
-            hasAnyFault={hasTopCardsFault}
-            onOpenPrescription={handleOpenPrescription}
-          />
 
           {/* Search Visibility Table - snapshot mode: pass marker data directly */}
           <ReportSearchVisibility
@@ -159,6 +125,11 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             targetDomain={report.meta.websiteUrl || null}
             snapshotMode={true}
             snapshotMarkerLocations={supporting.markerLocations}
+          />
+          <RecommendedFixStrip
+            modules={SEARCH_VISIBILITY_MODULES}
+            hasAnyFault={false}
+            onOpenPrescription={handleOpenPrescription}
           />
 
           {/* Summary Header — main heading unblurred */}
@@ -186,9 +157,6 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
               </div>
             );
           })}
-
-          {/* How Antistatic can help - all 4 modules (pushes Creator Hub) */}
-          <AllModulesShowcase />
 
           {/* Google Reviews - hidden */}
           {/* <ReportGoogleReviews reviews={reviews} /> */}

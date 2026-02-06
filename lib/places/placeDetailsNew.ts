@@ -6,9 +6,15 @@
 
 import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
 import { consumeBody } from "@/lib/net/consumeBody";
+import { ApiCache } from "@/lib/net/apiCache";
 
 const PLACE_DETAILS_TIMEOUT_MS = 10000;
 const PLACE_DETAILS_RETRIES = 2;
+
+/** Cache place details for 5 min / max 500 entries to avoid redundant Google API calls. */
+const placeDetailsCache = new ApiCache<LegacyShapedPlace>(500, 5 * 60 * 1000);
+/** Cache photo URIs for 10 min (they rarely change). */
+const photoUriCache = new ApiCache<string | null>(300, 10 * 60 * 1000);
 
 export type PlaceDetailsFieldMask =
   | "id"
@@ -100,8 +106,14 @@ export async function fetchPlaceDetailsNew(
   fieldMask: PlaceDetailsFieldMask[],
   apiKey: string
 ): Promise<LegacyShapedPlace | null> {
-  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
   const mask = fieldMask.join(",");
+  const cacheKey = `${placeId}:${mask}`;
+
+  // Return cached result if available (avoids redundant Google API calls)
+  const cached = placeDetailsCache.get(cacheKey);
+  if (cached) return cached;
+
+  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
 
   try {
     const response = await fetchWithTimeout(url, {
@@ -121,7 +133,9 @@ export async function fetchPlaceDetailsNew(
     }
 
     const place: PlaceNew = await response.json();
-    return mapPlaceNewToLegacy(place, placeId);
+    const result = mapPlaceNewToLegacy(place, placeId);
+    if (result) placeDetailsCache.set(cacheKey, result);
+    return result;
   } catch (e) {
     console.error("[places/placeDetailsNew] fetch error:", e);
     return null;
@@ -199,6 +213,10 @@ export async function fetchFirstPhotoUri(
   apiKey: string,
   maxWidthPx: number = 900
 ): Promise<string | null> {
+  const cacheKey = `${photoName}:${maxWidthPx}`;
+  const cached = photoUriCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const url = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=${maxWidthPx}&skipHttpRedirect=true`;
   try {
     const response = await fetchWithTimeout(url, {
@@ -212,7 +230,9 @@ export async function fetchFirstPhotoUri(
       return null;
     }
     const data = (await response.json()) as { photoUri?: string };
-    return (data.photoUri ?? "").trim() || null;
+    const uri = (data.photoUri ?? "").trim() || null;
+    photoUriCache.set(cacheKey, uri);
+    return uri;
   } catch {
     return null;
   }

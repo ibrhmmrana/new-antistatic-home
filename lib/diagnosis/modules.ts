@@ -13,6 +13,14 @@ export interface ModuleDef {
   ctaHref: string;
 }
 
+/** Short lead phrase for solution pills (e.g. "Track your competitors with" → Competitor Radar). */
+export const MODULE_PILL_LEAD: Record<ModuleId, string> = {
+  reputation_hub: 'Generate more reviews with',
+  social_studio: 'Create content with',
+  competitor_radar: 'Track your competitors with',
+  creator_hub: 'Work with local influencers in',
+};
+
 export const MODULES: Record<ModuleId, ModuleDef> = {
   reputation_hub: {
     id: 'reputation_hub',

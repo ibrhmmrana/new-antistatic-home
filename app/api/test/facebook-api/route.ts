@@ -1629,6 +1629,9 @@ async function scrapeFacebookPage(
 }
 
 export async function POST(request: NextRequest) {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_TEST_API !== "true") {
+    return NextResponse.json({ error: "Not Found" }, { status: 404 });
+  }
   try {
     const { pageName, maxPosts = 10 } = await request.json();
     

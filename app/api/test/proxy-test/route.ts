@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { fetchInstagram } from "@/lib/net/instagramFetch";
 import { DecodoProxyManager } from "@/lib/services/decodo-proxy-manager";
 
@@ -10,7 +10,10 @@ export const runtime = "nodejs";
  * When DECODO_ENABLED=true, the request goes through the proxy; otherwise direct.
  * Never returns or logs credentials.
  */
-export async function GET() {
+export async function GET(_request: NextRequest) {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_TEST_API !== "true") {
+    return NextResponse.json({ error: "Not Found" }, { status: 404 });
+  }
   const proxyManager = DecodoProxyManager.getInstance();
   const proxyUsed = proxyManager.isConfigured() && (process.env.DECODO_ENABLED === "true" || process.env.USE_DECODO_PROXY === "true");
 

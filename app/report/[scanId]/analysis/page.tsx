@@ -21,9 +21,7 @@ import PrescriptionDrawer from "@/components/report/PrescriptionDrawer";
 import RecommendedFixStrip from "@/components/report/RecommendedFixStrip";
 import AllModulesShowcase from "@/components/report/AllModulesShowcase";
 import {
-  TOP_CARDS_MODULES,
-  VISUAL_INSIGHTS_MODULES,
-  AI_ANALYSIS_MODULES,
+  SEARCH_VISIBILITY_MODULES,
   CHECKLIST_SECTION_MODULES,
 } from "@/lib/diagnosis/sectionModuleMappings";
 
@@ -747,22 +745,6 @@ export default function AnalysisPage() {
     0
   );
 
-  // Fault flags for fix strips (outside blocks)
-  const hasTopCardsFault =
-    (report.summaryCards.impact.topProblems?.length ?? 0) > 0 ||
-    report.sections.some((s) => s.checks.some((c) => c.status === "bad" || c.status === "warn")) ||
-    (report.summaryCards.competitors.list.some((c) => c.isTargetBusiness) &&
-      (report.summaryCards.competitors.list.find((c) => c.isTargetBusiness)?.rank ?? 1) > 1);
-  const competitiveBenchmark = aiAnalysis?.competitiveBenchmark;
-  const hasVisualFault =
-    !!competitiveBenchmark && !!(competitiveBenchmark.potentialImpact || competitiveBenchmark.urgentGap);
-  const hasAIFault =
-    (aiAnalysis?.topPriorities?.length ?? 0) > 0 ||
-    (aiAnalysis?.reviews?.painPoints?.length ?? 0) > 0 ||
-    (aiAnalysis?.consistency?.inconsistencies?.length ?? 0) > 0 ||
-    (aiAnalysis?.instagram?.issues?.length ?? 0) > 0 ||
-    (aiAnalysis?.facebook?.issues?.length ?? 0) > 0;
-
   return (
     <div className="min-h-screen bg-white md:bg-[#f6f7f8] flex overflow-x-hidden">
       {/* Left Rail - hidden on mobile; score content shown in main flow via ReportTopCards etc. */}
@@ -806,23 +788,12 @@ export default function AnalysisPage() {
             aiAnalysis={aiAnalysis ?? null}
             isLoading={aiAnalysisLoading}
           />
-          {competitiveBenchmark && (
-            <RecommendedFixStrip
-              modules={VISUAL_INSIGHTS_MODULES}
-              hasAnyFault={hasVisualFault}
-              onOpenPrescription={handleOpenPrescription}
-            />
-          )}
+
+          {/* How Antistatic can help - all 4 modules (moved up from below checklist) */}
+          <AllModulesShowcase />
 
           {/* AI-Powered Analysis - above Top Cards */}
           <ReportAIAnalysis analysis={aiAnalysis} isLoading={aiAnalysisLoading} onlyTopPriorities />
-          {aiAnalysis && (
-            <RecommendedFixStrip
-              modules={AI_ANALYSIS_MODULES}
-              hasAnyFault={hasAIFault}
-              onOpenPrescription={handleOpenPrescription}
-            />
-          )}
 
           {/* Top Cards - "We found N issues affecting your visibility" */}
           <ReportTopCards
@@ -836,11 +807,6 @@ export default function AnalysisPage() {
             overallGrade={report.scores.overall.label}
             aiAnalysis={aiAnalysis}
           />
-          <RecommendedFixStrip
-            modules={TOP_CARDS_MODULES}
-            hasAnyFault={hasTopCardsFault}
-            onOpenPrescription={handleOpenPrescription}
-          />
 
           {/* Search Visibility Table */}
           <ReportSearchVisibility
@@ -848,7 +814,12 @@ export default function AnalysisPage() {
             targetPlaceId={report.meta.placeId}
             targetDomain={report.meta.websiteUrl || null}
           />
-          
+          <RecommendedFixStrip
+            modules={SEARCH_VISIBILITY_MODULES}
+            hasAnyFault={false}
+            onOpenPrescription={handleOpenPrescription}
+          />
+
           {/* Summary Header */}
           <div className="mb-6">
             <h2 className="text-2xl font-semibold text-gray-900 mb-1">
@@ -874,9 +845,6 @@ export default function AnalysisPage() {
               </div>
             );
           })}
-
-          {/* How Antistatic can help - all 4 modules (pushes Creator Hub) */}
-          <AllModulesShowcase />
 
           {/* Google Reviews Section - hidden */}
           {/* <ReportGoogleReviews reviews={reviews} /> */}

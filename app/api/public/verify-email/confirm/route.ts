@@ -17,6 +17,31 @@ function getSupabaseClient() {
 
 const EMAIL_PROOF_SECRET = process.env.EMAIL_PROOF_SECRET || "change-this-secret-in-production";
 
+// Rate limiting: max confirm attempts per IP per minute (reduces code brute-force)
+const confirmRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const CONFIRM_RATE_WINDOW_MS = 60 * 1000;
+const CONFIRM_RATE_MAX = 10;
+
+function getClientIp(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown"
+  );
+}
+
+function checkConfirmRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const record = confirmRateLimitMap.get(ip);
+  if (!record || now > record.resetAt) {
+    confirmRateLimitMap.set(ip, { count: 1, resetAt: now + CONFIRM_RATE_WINDOW_MS });
+    return true;
+  }
+  if (record.count >= CONFIRM_RATE_MAX) return false;
+  record.count++;
+  return true;
+}
+
 async function createProofToken(email: string, challengeId: string, placeId?: string): Promise<string> {
   const secret = new TextEncoder().encode(EMAIL_PROOF_SECRET);
   
@@ -35,13 +60,20 @@ async function createProofToken(email: string, challengeId: string, placeId?: st
 }
 
 export async function POST(request: NextRequest) {
+  const ip = getClientIp(request);
+  if (!checkConfirmRateLimit(ip)) {
+    return NextResponse.json(
+      { error: "Too many attempts. Please try again in a minute." },
+      { status: 429 }
+    );
+  }
   try {
     const body = await request.json();
     const { challengeId, code } = body;
 
-    if (!challengeId || !code || code.length !== 6) {
+    if (!challengeId || !code || code.length !== 4) {
       return NextResponse.json(
-        { error: "Valid challengeId and 6-digit code are required" },
+        { error: "Valid challengeId and 4-digit code are required" },
         { status: 400 }
       );
     }

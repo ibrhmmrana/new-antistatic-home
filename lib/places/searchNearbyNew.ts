@@ -4,7 +4,12 @@
  * Returns legacy-shaped places for drop-in use in routes.
  */
 
+import { ApiCache } from "@/lib/net/apiCache";
+
 const SEARCH_NEARBY_TIMEOUT_MS = 15000;
+
+/** Cache nearby search results for 5 min / max 200 entries. */
+const nearbyCache = new ApiCache<NearbyPlaceLegacy[]>(200, 5 * 60 * 1000);
 
 /** New API Place (partial – only fields we request via FieldMask) */
 interface PlaceNew {
@@ -78,6 +83,11 @@ export async function searchNearbyNew(
     rankPreference = "DISTANCE",
   } = options;
 
+  // Check cache (key = rounded coords + radius + types + rank)
+  const cacheKey = `${lat.toFixed(5)},${lng.toFixed(5)}:${radiusMeters}:${(includedTypes ?? []).sort().join(",")}:${rankPreference}:${maxResultCount}`;
+  const cached = nearbyCache.get(cacheKey);
+  if (cached) return cached;
+
   const body: Record<string, unknown> = {
     locationRestriction: {
       circle: {
@@ -122,6 +132,7 @@ export async function searchNearbyNew(
       const mapped = mapPlaceToLegacy(p);
       if (mapped) result.push(mapped);
     }
+    if (result.length > 0) nearbyCache.set(cacheKey, result);
     return result;
   } catch (e) {
     clearTimeout(timeoutId);
