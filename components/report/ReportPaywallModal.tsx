@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import { X } from "lucide-react";
 
@@ -25,13 +25,23 @@ interface ReportPaywallModalProps {
 
 /**
  * Paywall modal: pricing plans; Get started creates Stripe Checkout and redirects to payment page.
- * Fetches country from /api/geo/country for country-specific pricing (ZA vs USD).
+ * If user is not email-verified (401), shows inline email + OTP verification so they can proceed.
  */
 export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId, reportId }: ReportPaywallModalProps) {
   const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [countryCode, setCountryCode] = useState<string>("XX");
   const [geoLoading, setGeoLoading] = useState(true);
+
+  // Inline email verification when checkout returns EMAIL_NOT_VERIFIED
+  const [showVerification, setShowVerification] = useState(false);
+  const pendingPlanRef = useRef<PlanId | null>(null);
+  const [verifyEmail, setVerifyEmail] = useState("");
+  const [verifyStage, setVerifyStage] = useState<"email" | "code">("email");
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -43,7 +53,16 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
   }, [open, onOpenChange]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setShowVerification(false);
+      setVerifyStage("email");
+      setChallengeId(null);
+      setVerifyEmail("");
+      setVerifyCode("");
+      setVerifyError(null);
+      pendingPlanRef.current = null;
+      return;
+    }
     setGeoLoading(true);
     fetch("/api/geo/country")
       .then((r) => r.json())
@@ -56,7 +75,7 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
   const essentialPrice = za ? "R499" : "$29";
   const fullEnginePrice = za ? "R999" : "$99";
 
-  const handleGetStarted = async (plan: PlanId) => {
+  const runCheckout = async (plan: PlanId) => {
     setError(null);
     setLoadingPlan(plan);
     try {
@@ -68,11 +87,13 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const message =
-          res.status === 401 && data.error === "EMAIL_NOT_VERIFIED"
-            ? "Please verify your email to start the trial."
-            : data.error || "Something went wrong. Please try again.";
-        setError(message);
+        if (res.status === 401 && data.error === "EMAIL_NOT_VERIFIED") {
+          pendingPlanRef.current = plan;
+          setShowVerification(true);
+          setError(null);
+        } else {
+          setError(data.error || "Something went wrong. Please try again.");
+        }
         setLoadingPlan(null);
         return;
       }
@@ -85,6 +106,75 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
       setError("Network error. Please try again.");
     } finally {
       setLoadingPlan(null);
+    }
+  };
+
+  const handleGetStarted = (plan: PlanId) => {
+    pendingPlanRef.current = plan;
+    runCheckout(plan);
+  };
+
+  const handleSendCode = async () => {
+    const email = verifyEmail.trim();
+    if (!email || !email.includes("@")) {
+      setVerifyError("Please enter a valid email address.");
+      return;
+    }
+    setVerifyError(null);
+    setVerifyLoading(true);
+    try {
+      const res = await fetch("/api/public/verify-email/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, placeId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setVerifyError(data.error || "Failed to send code. Please try again.");
+        return;
+      }
+      setChallengeId(data.challengeId);
+      setVerifyStage("code");
+      setVerifyCode("");
+    } catch {
+      setVerifyError("Something went wrong. Please try again.");
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleConfirmCode = async () => {
+    const code = verifyCode.trim();
+    if (!challengeId || code.length !== 4) {
+      setVerifyError("Please enter the 4-digit code from your email.");
+      return;
+    }
+    setVerifyError(null);
+    setVerifyLoading(true);
+    try {
+      const res = await fetch("/api/public/verify-email/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ challengeId, code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setVerifyError(data.error || "Invalid code. Please try again.");
+        return;
+      }
+      setShowVerification(false);
+      setVerifyStage("email");
+      setChallengeId(null);
+      setVerifyEmail("");
+      setVerifyCode("");
+      const plan = pendingPlanRef.current;
+      pendingPlanRef.current = null;
+      if (plan) runCheckout(plan);
+    } catch {
+      setVerifyError("Something went wrong. Please try again.");
+    } finally {
+      setVerifyLoading(false);
     }
   };
 
@@ -120,6 +210,71 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
 
         {/* Pricing cards — same structure as homepage Pricing */}
         <div className="flex-1 overflow-y-auto p-5 md:p-6">
+          {showVerification ? (
+            <div className="max-w-sm mx-auto mb-6 p-5 rounded-xl border border-gray-200 bg-gray-50">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">Verify your email to continue</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                {verifyStage === "email"
+                  ? "Enter your email and we'll send you a one-time code."
+                  : "Enter the 4-digit code we sent to your email."}
+              </p>
+              {verifyError && (
+                <p className="text-sm text-red-600 mb-3" role="alert">
+                  {verifyError}
+                </p>
+              )}
+              {verifyStage === "email" ? (
+                <div className="space-y-3">
+                  <input
+                    type="email"
+                    value={verifyEmail}
+                    onChange={(e) => setVerifyEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={verifyLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendCode}
+                    disabled={verifyLoading}
+                    className="w-full py-2.5 px-4 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {verifyLoading ? "Sending…" : "Send verification code"}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={verifyCode}
+                    onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="0000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={verifyLoading}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setVerifyStage("email"); setVerifyError(null); setVerifyCode(""); setChallengeId(null); }}
+                      className="flex-1 py-2.5 px-4 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmCode}
+                      disabled={verifyLoading || verifyCode.length !== 4}
+                      className="flex-1 py-2.5 px-4 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      {verifyLoading ? "Verifying…" : "Verify"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
           <p className="text-sm text-gray-600 mb-6 text-center">
             Get the full picture with Antistatic. Choose a plan and get started.
           </p>

@@ -104,9 +104,13 @@ export default function Nav() {
                 <span>Sign In</span>
               </Link>
               <Link
-                href="#"
+                href="#pricing"
                 className="text-sm bg-blue-500 text-white px-4 py-2 rounded-full hover:bg-blue-600 transition-colors button-roll-text text-center min-w-[7.5rem]"
                 data-text="Get Started"
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
+                }}
               >
                 <span>Get Started</span>
               </Link>
@@ -159,9 +163,13 @@ export default function Nav() {
                 Sign In
               </Link>
               <Link
-                href="#"
+                href="#pricing"
                 className="text-center text-sm bg-blue-500 text-white px-4 py-3 rounded-full hover:bg-blue-600 transition-colors"
-                onClick={closeMenu}
+                onClick={(e) => {
+                  e.preventDefault();
+                  closeMenu();
+                  document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
+                }}
               >
                 Get Started
               </Link>

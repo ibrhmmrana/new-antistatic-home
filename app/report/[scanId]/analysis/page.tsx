@@ -754,6 +754,8 @@ export default function AnalysisPage() {
         reportId={reportId}
         businessName={report.meta.businessName}
         businessPhotoUrl={report.summaryCards.impact.businessAvatar}
+        scanId={scanId}
+        placeId={placeId}
       />
       
       {/* Main Content - left margin on desktop so content doesn't sit under fixed sidebar */}

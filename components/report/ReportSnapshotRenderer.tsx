@@ -85,6 +85,8 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
         reportId={reportId}
         businessName={report.meta.businessName}
         businessPhotoUrl={place.businessPhotoUrl || report.summaryCards.impact.businessAvatar}
+        scanId={snapshot.scanId}
+        placeId={place.placeId}
       />
 
       {/* Main Content - left margin on desktop so content doesn't sit under fixed sidebar */}

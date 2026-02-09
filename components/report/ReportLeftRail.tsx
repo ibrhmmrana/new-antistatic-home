@@ -1,17 +1,22 @@
 "use client";
 
+import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import type { ReportScores } from "@/lib/report/types";
 import ShareButton from "./ShareButton";
+import ReportPaywallModal from "./ReportPaywallModal";
 
 interface ReportLeftRailProps {
   scores: ReportScores;
   reportId?: string | null;
   businessName?: string | null;
   businessPhotoUrl?: string | null;
+  scanId?: string | null;
+  placeId?: string | null;
 }
 
-export default function ReportLeftRail({ scores, reportId, businessName, businessPhotoUrl }: ReportLeftRailProps) {
+export default function ReportLeftRail({ scores, reportId, businessName, businessPhotoUrl, scanId, placeId }: ReportLeftRailProps) {
+  const [paywallOpen, setPaywallOpen] = useState(false);
   const { overall, searchResults, websiteExperience, localListings } = scores;
   
   // Calculate percentage for circular gauge
@@ -86,7 +91,11 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
   };
   
   const fixButton = (
-    <button className="w-full bg-blue-600 text-white py-2.5 px-3 rounded-lg font-medium flex items-center justify-center gap-1.5 hover:bg-blue-700 transition-colors text-sm">
+    <button
+      type="button"
+      onClick={() => setPaywallOpen(true)}
+      className="w-full bg-blue-600 text-white py-2.5 px-3 rounded-lg font-medium flex items-center justify-center gap-1.5 hover:bg-blue-700 transition-colors text-sm"
+    >
       <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
       <span>Start fixing on a free trial</span>
     </button>
@@ -203,12 +212,24 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
           {reportId && (
             <ShareButton reportId={reportId} className="flex-1 min-w-0 py-3 rounded-xl text-sm" />
           )}
-          <button className="flex-1 min-w-0 bg-blue-600 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors text-sm">
+          <button
+            type="button"
+            onClick={() => setPaywallOpen(true)}
+            className="flex-1 min-w-0 bg-blue-600 text-white py-3 px-4 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors text-sm"
+          >
             <Sparkles className="w-4 h-4 flex-shrink-0" />
             <span className="text-center">Start fixing on a<br />free trial</span>
           </button>
         </div>
       </div>
+
+      <ReportPaywallModal
+        open={paywallOpen}
+        onOpenChange={setPaywallOpen}
+        scanId={scanId ?? undefined}
+        placeId={placeId ?? undefined}
+        reportId={reportId ?? undefined}
+      />
     </>
   );
 }
