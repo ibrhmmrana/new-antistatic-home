@@ -22,7 +22,7 @@ const testimonials: Testimonial[] = [
   {
     quote:
       "The competitor radar showed me exactly when my rival was struggling. I deployed two reels that same day and stole half their weekend traffic. Worth every cent.",
-    name: "David Chen",
+    name: "David Pretorius",
     title: "Owner, Wok This Way",
     avatarSrc: "/images/second founder.svg",
   },

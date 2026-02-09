@@ -13,6 +13,7 @@ import ScanLineOverlay from "./ScanLineOverlay";
 import AIAgentLoadingScreen from "./AIAgentLoadingScreen";
 import AIAgentModal from "./AIAgentModal";
 import EmailVerificationModal from "./EmailVerificationModal";
+import AnalysisNotificationBar from "./AnalysisNotificationBar";
 
 interface ReportScanClientProps {
   scanId: string;
@@ -1476,6 +1477,13 @@ export default function ReportScanClient({
           )}
         </div>
       </div>
+
+      {/* Closable notification during analysis stages: we'll email the report; user can also wait to watch */}
+      <AnalysisNotificationBar
+        visible={emailVerified}
+        scanId={scanId}
+        aboveStickyFooter
+      />
 
       {/* Email Verification Modal */}
       <EmailVerificationModal

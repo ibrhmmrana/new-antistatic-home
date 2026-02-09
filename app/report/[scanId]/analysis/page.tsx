@@ -20,6 +20,7 @@ import ReportInstagramComments from "@/components/report/ReportInstagramComments
 import PrescriptionDrawer from "@/components/report/PrescriptionDrawer";
 import RecommendedFixStrip from "@/components/report/RecommendedFixStrip";
 import AllModulesShowcase from "@/components/report/AllModulesShowcase";
+import AnalysisNotificationBar from "@/components/report/AnalysisNotificationBar";
 import {
   SEARCH_VISIBILITY_MODULES,
   CHECKLIST_SECTION_MODULES,
@@ -868,6 +869,12 @@ export default function AnalysisPage() {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         prescription={activePrescription}
+      />
+
+      {/* Closable notification: we'll email the report; user can also wait to watch */}
+      <AnalysisNotificationBar
+        visible={!reportId}
+        scanId={scanId}
       />
     </div>
   );

@@ -3,6 +3,7 @@ import { verifyEmailProof, proofErrorResponse } from "@/lib/auth/verifyEmailProo
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sanitizeForDb, isPayloadSizeAcceptable } from "@/lib/report/sanitizePayload";
 import { isReportSnapshotV1 } from "@/lib/report/snapshotTypes";
+import { sendReportReadyEmail } from "@/lib/ses/sendReportReadyEmail";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.antistatic.ai";
 
@@ -14,6 +15,7 @@ export async function POST(request: NextRequest) {
     const proof = await verifyEmailProof(request);
     const errResp = proofErrorResponse(proof);
     if (errResp) return errResp;
+    const email = proof.payload?.email;
 
     const body = await request.json();
     
@@ -142,6 +144,19 @@ export async function POST(request: NextRequest) {
     }
 
     const shareUrl = `${BASE_URL.replace(/\/$/, "")}/r/${reportId}`;
+
+    if (email && email.includes("@")) {
+      try {
+        await sendReportReadyEmail({
+          to: email,
+          reportUrl: shareUrl,
+          businessName: name,
+        });
+      } catch (emailErr) {
+        console.error("[REPORTS PERSIST] Report-ready email failed:", emailErr);
+      }
+    }
+
     return NextResponse.json({ reportId, shareUrl });
   } catch (error: unknown) {
     console.error("Reports persist error:", error);
