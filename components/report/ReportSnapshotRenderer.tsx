@@ -91,7 +91,11 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
       <div className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 pb-24 md:pb-8 md:ml-[21rem]">
         <div className="max-w-6xl mx-auto w-full max-w-full">
           {/* Antistatic intro - top of report */}
-          <ReportAntistaticIntro />
+          <ReportAntistaticIntro
+            reportId={reportId}
+            scanId={snapshot.scanId}
+            placeId={place.placeId}
+          />
 
           {/* Competitive Edge - above Top Cards */}
           <ReportVisualInsights

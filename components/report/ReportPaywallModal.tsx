@@ -18,13 +18,16 @@ type PlanId = "essential" | "full_engine";
 interface ReportPaywallModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  scanId?: string;
+  placeId?: string;
+  reportId?: string;
 }
 
 /**
  * Paywall modal: pricing plans; Get started creates Stripe Checkout and redirects to payment page.
  * Fetches country from /api/geo/country for country-specific pricing (ZA vs USD).
  */
-export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywallModalProps) {
+export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId, reportId }: ReportPaywallModalProps) {
   const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [countryCode, setCountryCode] = useState<string>("XX");
@@ -60,11 +63,16 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan, country: countryCode }),
+        credentials: "include",
+        body: JSON.stringify({ plan, country: countryCode, scanId, placeId, reportId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Something went wrong. Please try again.");
+        const message =
+          res.status === 401 && data.error === "EMAIL_NOT_VERIFIED"
+            ? "Please verify your email to start the trial."
+            : data.error || "Something went wrong. Please try again.";
+        setError(message);
         setLoadingPlan(null);
         return;
       }
@@ -166,9 +174,9 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
                 disabled={!!loadingPlan}
                 className="relative w-full inline-flex items-center justify-start bg-gradient-to-r from-blue-500 to-blue-600 text-white pl-6 pr-12 py-2.5 font-medium hover:from-blue-600 hover:to-blue-700 transition-all text-sm button-roll-text button-roll-text-justify-start strip-cta-left disabled:opacity-70 disabled:cursor-not-allowed"
                 style={{ borderRadius: "50px" }}
-                data-text="Get started"
+                data-text="Start 14 day free trial"
               >
-                <span>{loadingPlan === "essential" ? "Redirecting…" : "Get started"}</span>
+                <span>{loadingPlan === "essential" ? "Redirecting…" : "Start 14 day free trial"}</span>
                 <div
                   className="absolute right-[1px] top-[1px] bottom-[1px] aspect-square flex items-center justify-center button-icon-rotate"
                   style={{ borderRadius: "9999px" }}
@@ -223,9 +231,9 @@ export default function ReportPaywallModal({ open, onOpenChange }: ReportPaywall
                 disabled={!!loadingPlan}
                 className="relative w-full inline-flex items-center justify-start bg-gradient-to-r from-blue-500 to-blue-600 text-white pl-6 pr-12 py-2.5 font-medium hover:from-blue-600 hover:to-blue-700 transition-all text-sm button-roll-text button-roll-text-justify-start strip-cta-left disabled:opacity-70 disabled:cursor-not-allowed"
                 style={{ borderRadius: "50px" }}
-                data-text="Get started"
+                data-text="Start 14 day free trial"
               >
-                <span>{loadingPlan === "full_engine" ? "Redirecting…" : "Get started"}</span>
+                <span>{loadingPlan === "full_engine" ? "Redirecting…" : "Start 14 day free trial"}</span>
                 <div
                   className="absolute right-[1px] top-[1px] bottom-[1px] aspect-square flex items-center justify-center button-icon-rotate"
                   style={{ borderRadius: "9999px" }}

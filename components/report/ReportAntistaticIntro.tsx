@@ -11,7 +11,13 @@ const DARK = "#060315";
 const DARK_PINK = "#c41a75";   // darker #ff48aa
 const DARK_BLUE = "#2563eb";   // darker #5b8df9
 
-export default function ReportAntistaticIntro() {
+interface ReportAntistaticIntroProps {
+  scanId?: string;
+  placeId?: string;
+  reportId?: string;
+}
+
+export default function ReportAntistaticIntro({ scanId, placeId, reportId }: ReportAntistaticIntroProps = {}) {
   const introRef = useRef<HTMLElement>(null);
   const [showPill, setShowPill] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
@@ -139,7 +145,13 @@ export default function ReportAntistaticIntro() {
         </button>
       </div>
 
-      <ReportPaywallModal open={paywallOpen} onOpenChange={setPaywallOpen} />
+      <ReportPaywallModal
+        open={paywallOpen}
+        onOpenChange={setPaywallOpen}
+        scanId={scanId}
+        placeId={placeId}
+        reportId={reportId}
+      />
     </>
   );
 }

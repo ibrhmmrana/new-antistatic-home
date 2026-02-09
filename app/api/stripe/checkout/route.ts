@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
+import { verifyEmailProof } from "@/lib/auth/verifyEmailProof";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-01-28.clover",
@@ -20,9 +21,9 @@ type PlanId = keyof typeof PLANS_ZA;
 
 /**
  * POST /api/stripe/checkout
- * Body: { plan: "essential" | "full_engine", country?: string, email?: string }
+ * Requires verified email (email_proof cookie). Creates subscription with 14-day trial, card collected up front.
+ * Body: { plan: "essential" | "full_engine", country?: string, scanId?: string, placeId?: string, reportId?: string, email?: string }
  * Returns: { url: string } — Stripe Checkout URL to redirect the user to.
- * Uses ZA price IDs when country is "ZA", otherwise USD price IDs.
  */
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -32,7 +33,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { plan?: string; country?: string; email?: string };
+  const proof = await verifyEmailProof(request);
+  if (!proof.valid || !proof.payload?.email) {
+    return NextResponse.json(
+      { error: "EMAIL_NOT_VERIFIED" },
+      { status: 401 }
+    );
+  }
+  if (proof.payload.purpose !== "unlock_report") {
+    return NextResponse.json(
+      { error: "EMAIL_NOT_VERIFIED" },
+      { status: 401 }
+    );
+  }
+
+  const verifiedEmail = proof.payload.email;
+
+  let body: {
+    plan?: string;
+    country?: string;
+    scanId?: string;
+    placeId?: string;
+    reportId?: string;
+    email?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -40,6 +64,15 @@ export async function POST(request: NextRequest) {
       { error: "Invalid JSON body." },
       { status: 400 }
     );
+  }
+
+  if (typeof body.email === "string" && body.email.trim()) {
+    if (body.email.trim().toLowerCase() !== verifiedEmail.toLowerCase()) {
+      return NextResponse.json(
+        { error: "EMAIL_MISMATCH" },
+        { status: 400 }
+      );
+    }
   }
 
   const plan = body.plan as PlanId | undefined;
@@ -50,8 +83,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  /** Optional: prefill Stripe Checkout with email; also used as client_reference_id for app.antistatic.ai to find/link user */
-  const customerEmail = typeof body.email === "string" && body.email.trim() ? body.email.trim() : undefined;
+  const scanId = typeof body.scanId === "string" ? body.scanId.trim() || undefined : undefined;
+  const placeId = typeof body.placeId === "string" ? body.placeId.trim() || undefined : undefined;
+  const reportId = typeof body.reportId === "string" ? body.reportId.trim() || undefined : undefined;
 
   const isZA = (body.country ?? "").toUpperCase() === "ZA";
   const priceId = isZA ? PLANS_ZA[plan] : PLANS_USD[plan];
@@ -68,29 +102,55 @@ export async function POST(request: NextRequest) {
     process.env.NEXT_PUBLIC_APP_URL ||
     (forwardedProto && forwardedHost ? `${forwardedProto}://${forwardedHost}` : request.nextUrl.origin);
 
-  /** After payment, send user to app.antistatic.ai so they get an account and plan assigned (see STRIPE_APP_ONBOARDING.md) */
   const appBaseUrl = process.env.STRIPE_SUCCESS_BASE_URL || "https://app.antistatic.ai";
-  const successUrl = `${appBaseUrl}/onboarding?session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = `${origin}/report`;
+  const appBase = appBaseUrl.replace(/\/$/, "");
+
+  const successUrl =
+    `${appBase}/onboarding?session_id={CHECKOUT_SESSION_ID}&plan=${encodeURIComponent(plan)}&source=landing` +
+    (scanId ? `&scanId=${encodeURIComponent(scanId)}` : "") +
+    (placeId ? `&placeId=${encodeURIComponent(placeId)}` : "") +
+    (reportId ? `&reportId=${encodeURIComponent(reportId)}` : "");
+
+  const cancelUrl = scanId
+    ? `${origin}/report/${scanId}/analysis${placeId ? `?placeId=${encodeURIComponent(placeId)}` : ""}`
+    : `${origin}/report`;
+
+  const sessionMetadata: Record<string, string> = {
+    plan,
+    source: "landing",
+  };
+  if (scanId) sessionMetadata.scanId = scanId;
+  if (placeId) sessionMetadata.placeId = placeId;
+  if (reportId) sessionMetadata.reportId = reportId;
+
+  const subscriptionMetadata: Record<string, string> = {
+    plan,
+    source: "landing",
+  };
+  if (scanId) subscriptionMetadata.scanId = scanId;
+  if (placeId) subscriptionMetadata.placeId = placeId;
+  if (reportId) subscriptionMetadata.reportId = reportId;
 
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
+      payment_method_collection: "always",
       line_items: [
         {
           price: priceId,
           quantity: 1,
         },
       ],
+      subscription_data: {
+        trial_period_days: 14,
+        metadata: subscriptionMetadata,
+      },
       success_url: successUrl,
       cancel_url: cancelUrl,
       allow_promotion_codes: true,
-      /** So app.antistatic.ai can assign the correct plan when handling webhook or onboarding page */
-      metadata: { plan },
-      /** Optional: prefill email in Checkout; app can use this to create/find user */
-      ...(customerEmail && { customer_email: customerEmail }),
-      /** So app.antistatic.ai can link this payment to a user (e.g. email or internal user id) */
-      ...(customerEmail && { client_reference_id: customerEmail }),
+      metadata: sessionMetadata,
+      customer_email: verifiedEmail,
+      client_reference_id: verifiedEmail,
     });
 
     if (!session.url) {

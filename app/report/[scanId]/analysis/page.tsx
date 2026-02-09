@@ -782,7 +782,11 @@ export default function AnalysisPage() {
           </div>
 
           {/* Antistatic intro - top of report */}
-          <ReportAntistaticIntro />
+          <ReportAntistaticIntro
+            scanId={scanId}
+            placeId={placeId}
+            reportId={reportId ?? undefined}
+          />
 
           {/* Competitive Edge - above Top Cards */}
           <ReportVisualInsights
