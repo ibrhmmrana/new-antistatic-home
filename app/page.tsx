@@ -20,20 +20,20 @@ export default async function Home() {
       {/* Sticky Nav - outside hero container to stay sticky throughout */}
       <Nav />
       
-      {/* Hero Section with Background */}
-      <div className="relative -mt-20 md:-mt-24 lg:-mt-28">
-        {/* Background Gradient - only for hero */}
-        <div className="absolute inset-0 z-0">
-        <Image
+      {/* Hero Section with Background - min-height so background fills viewport; wrapper grows when preview extends content */}
+      <div className="relative -mt-20 md:-mt-24 lg:-mt-28 min-h-[calc(100vh-5rem)] overflow-visible">
+        {/* Background Gradient - only for hero; fills wrapper so it expands with content */}
+        <div className="absolute inset-0 z-0 min-h-full">
+          <Image
             src="/images/background color.svg"
-          alt="Background"
-          fill
-          priority
-          className="object-cover"
-          quality={90}
+            alt="Background"
+            fill
+            priority
+            className="object-cover object-top"
+            quality={90}
           />
         </div>
-        <div className="relative z-10 pt-20 md:pt-24 lg:pt-28">
+        <div className="relative z-10 pt-20 md:pt-24 lg:pt-28 pb-16 md:pb-24 min-h-[calc(100vh-5rem)]">
           <Hero />
         </div>
       </div>
