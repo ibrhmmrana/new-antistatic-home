@@ -3,13 +3,45 @@
 import Image from "next/image";
 import ScrollReveal from "@/components/landing/ScrollReveal";
 
-/** ZA = South Africa (R499/R999); rest of world = $29/$99 */
+/** ZA = South Africa (R499/R999); rest of world = $29/$99. Compare = before discount. */
 const isZA = (countryCode: string) => countryCode === "ZA";
+
+function PriceBlock({ compare, current, save }: { compare: string; current: string; save: string }) {
+  return (
+    <div className="mb-6">
+      {/* Compare row: strikethrough + save badge */}
+      <div className="flex items-center gap-2.5 mb-1">
+        <span className="text-base md:text-lg text-gray-400 line-through decoration-gray-400/70">
+          {compare}
+        </span>
+        <span
+          className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium tracking-wide uppercase text-gray-600"
+          style={{
+            backgroundColor: "#E8EDFA",
+            border: "1px solid #C5D4F0",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.6)",
+          }}
+        >
+          Save {save}
+        </span>
+      </div>
+      {/* Current price */}
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-4xl md:text-5xl font-bold text-gray-900">{current}</span>
+        <span className="text-sm text-gray-500">/month</span>
+      </div>
+    </div>
+  );
+}
 
 export default function Pricing({ countryCode = "XX" }: { countryCode?: string }) {
   const za = isZA(countryCode);
   const essentialPrice = za ? "R499" : "$29";
   const fullEnginePrice = za ? "R999" : "$99";
+  const essentialCompare = za ? "R999" : "$49";
+  const fullEngineCompare = za ? "R1,499" : "$149";
+  const essentialSave = za ? "50%" : "41%";
+  const fullEngineSave = za ? "33%" : "34%";
 
   return (
     <section className="relative w-full pt-4 md:pt-6 lg:pt-8 pb-12 md:pb-16 lg:pb-20 bg-white">
@@ -63,11 +95,7 @@ export default function Pricing({ countryCode = "XX" }: { countryCode?: string }
               Basic features
             </p>
             
-            {/* Price — ZA: R499, rest: $29/m */}
-            <div className="mb-6">
-              <span className="text-4xl md:text-5xl font-bold text-gray-900">{essentialPrice}</span>
-              <span className="text-sm text-gray-500 ml-2">/month</span>
-            </div>
+            <PriceBlock compare={essentialCompare} current={essentialPrice} save={essentialSave} />
 
             {/* Separator */}
             <div className="mb-6">
@@ -136,17 +164,13 @@ export default function Pricing({ countryCode = "XX" }: { countryCode?: string }
             }}
           >
             <h3 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: '#3b82f6' }}>
-              Full engine
+              Full Engine
             </h3>
             <p className="text-sm md:text-base text-gray-600 mb-6">
               Everything in Essential, plus more
             </p>
             
-            {/* Price — ZA: R999, rest: $99/m */}
-            <div className="mb-6">
-              <span className="text-4xl md:text-5xl font-bold text-gray-900">{fullEnginePrice}</span>
-              <span className="text-sm text-gray-500 ml-2">/month</span>
-            </div>
+            <PriceBlock compare={fullEngineCompare} current={fullEnginePrice} save={fullEngineSave} />
 
             {/* Separator */}
             <div className="mb-6">

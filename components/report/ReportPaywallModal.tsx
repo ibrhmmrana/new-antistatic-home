@@ -341,13 +341,13 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
               </button>
             </div>
 
-            {/* Full engine */}
+            {/* Full Engine */}
             <div
               className="rounded-2xl p-6 md:p-8 flex flex-col"
               style={CARD_STYLE}
             >
               <h3 className="text-xl md:text-2xl font-bold mb-1" style={{ color: "#3b82f6" }}>
-                Full engine
+                Full Engine
               </h3>
               <p className="text-sm text-gray-600 mb-4">Everything in Essential, plus more</p>
               <div className="mb-4">

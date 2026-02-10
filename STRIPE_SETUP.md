@@ -1,6 +1,6 @@
 # Stripe integration (paywall → Checkout)
 
-When a user clicks **Get started** on the paywall (Essential Monitoring or Full engine), the app creates a Stripe Checkout Session and redirects them to Stripe’s payment page. After payment, Stripe redirects back to your site.
+When a user clicks **Get started** on the paywall (Essential Monitoring or Full Engine), the app creates a Stripe Checkout Session and redirects them to Stripe’s payment page. After payment, Stripe redirects back to your site.
 
 ---
 
@@ -27,15 +27,15 @@ Pricing is **country-specific**: South Africa (ZA) sees ZAR prices; the rest of 
 | Plan               | Region | Amount | Env variable                |
 |--------------------|--------|--------|-----------------------------|
 | Essential Monitoring | ZA (ZAR) | R499/m | `STRIPE_PRICE_ESSENTIAL`   |
-| Full engine        | ZA (ZAR) | R999/m | `STRIPE_PRICE_FULL_ENGINE` |
+| Full Engine        | ZA (ZAR) | R999/m | `STRIPE_PRICE_FULL_ENGINE` |
 | Essential Monitoring | USD   | $29/m  | `STRIPE_PRICE_ESSENTIAL_USD` |
-| Full engine        | USD   | $99/m  | `STRIPE_PRICE_FULL_ENGINE_USD` |
+| Full Engine        | USD   | $99/m  | `STRIPE_PRICE_FULL_ENGINE_USD` |
 
 **In Stripe Dashboard:**
 
 1. Go to **Product catalog → Products**.
 2. For **Essential Monitoring**: create two prices (one ZAR R499/month, one USD $29/month). Copy both Price IDs.
-3. For **Full engine**: create two prices (one ZAR R999/month, one USD $99/month). Copy both Price IDs.
+3. For **Full Engine**: create two prices (one ZAR R999/month, one USD $99/month). Copy both Price IDs.
 
 ### 4. Add environment variables
 
@@ -87,7 +87,7 @@ npm run dev
 ### 6. Test the flow
 
 1. Open a report page and open the paywall (e.g. **Unlock full report** in the pill).
-2. Click **Get started** on **Essential Monitoring** or **Full engine**.
+2. Click **Get started** on **Essential Monitoring** or **Full Engine**.
 3. You should be redirected to Stripe Checkout.
 4. In **test mode**, use Stripe’s test card: `4242 4242 4242 4242` (any future expiry, any CVC).
 

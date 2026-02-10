@@ -31,7 +31,7 @@ const testimonials: Testimonial[] = [
       "I used to panic every time I got a bad review. Now I just hit the fix-it-now button and Antistatic handles it. Three days later, it's buried. Game-changer.",
     name: "Thandiwe Dlamini",
     title: "Manager, Fourways Fitness",
-    avatarSrc: "/images/third founder.svg",
+    avatarSrc: "/images/thandi.svg",
   },
 ];
 

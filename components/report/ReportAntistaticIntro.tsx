@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Unlock } from "lucide-react";
 import ReportPaywallModal from "./ReportPaywallModal";
+import ShareButton from "./ShareButton";
 
 // Palette: #060315, #ff48aa, #5b8df9 — using darker variants for UI
 const DARK = "#060315";
@@ -96,53 +97,71 @@ export default function ReportAntistaticIntro({ scanId, placeId, reportId }: Rep
             Antistatic monitors your reputation 24/7, spots threats and opportunities, and tells you exactly what to do next.
           </p>
 
-          {/* Outcome callout — visual badge only (no link) */}
-          <div
-            className="inline-flex items-center gap-2 rounded-xl py-2.5 px-4 border-l-4 bg-[rgba(37,99,235,0.1)]"
-            style={{
-              borderLeftColor: DARK_BLUE,
-            }}
-          >
-            <span className="text-sm md:text-base font-medium text-gray-800">
-              Turn a <span className="font-semibold" style={{ color: DARK }}>3.9-star</span> perception into a{" "}
-              <span className="font-semibold" style={{ color: DARK }}>4.6-star</span> reality, fast.
-            </span>
+          {/* Outcome callout + Share (when report is persisted) */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div
+              className="inline-flex items-center gap-2 rounded-xl py-2.5 px-4 border-l-4 bg-[rgba(37,99,235,0.1)]"
+              style={{
+                borderLeftColor: DARK_BLUE,
+              }}
+            >
+              <span className="text-sm md:text-base font-medium text-gray-800">
+                Turn a <span className="font-semibold" style={{ color: DARK }}>3.9-star</span> perception into a{" "}
+                <span className="font-semibold" style={{ color: DARK }}>4.6-star</span> reality, fast.
+              </span>
+            </div>
+            {reportId && (
+              <ShareButton
+                reportId={reportId}
+                className="shrink-0 py-2.5 px-4 rounded-xl text-sm font-medium border border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400"
+              />
+            )}
           </div>
         </div>
       </section>
 
-      {/* Fixed pill — logo + compact Unlock full report (link style with icon) */}
+      {/* Floating bar — appears on scroll: logo | actions (Share + Unlock) */}
       <div
-        className={`fixed top-4 right-4 md:top-6 md:right-6 z-50 flex items-center gap-3 rounded-full pl-3 pr-1 py-1 bg-white/95 backdrop-blur-sm border border-gray-200/80 shadow-lg transition-all duration-300 ease-out ${
+        className={`fixed top-4 right-4 md:top-5 md:right-6 z-50 flex items-center rounded-2xl bg-white border border-gray-200 shadow-sm transition-all duration-300 ease-out ${
           showPill
-            ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
-            : "opacity-0 translate-y-2 scale-95 pointer-events-none"
+            ? "opacity-100 translate-y-0 pointer-events-auto"
+            : "opacity-0 translate-y-2 pointer-events-none"
         }`}
       >
         <Link
           href="https://antistatic.ai"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center shrink-0 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#5b8df9] rounded-lg py-1"
+          className="flex items-center shrink-0 pl-4 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#5b8df9] rounded-l-2xl rounded-r-md"
           aria-label="Go to Antistatic (opens in new tab)"
         >
           <Image
             src="/images/antistatic logo on white.svg"
             alt="Antistatic"
-            width={90}
-            height={22}
+            width={96}
+            height={24}
             className="h-5 w-auto object-contain"
           />
         </Link>
-        <button
-          type="button"
-          onClick={() => setPaywallOpen(true)}
-          className="flex items-center gap-1.5 shrink-0 rounded-full bg-blue-600 text-white pl-3 pr-3 py-2 text-xs font-medium hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          aria-label="Unlock full report"
-        >
-          <Unlock className="w-3.5 h-3.5" aria-hidden />
-          <span>Unlock full report</span>
-        </button>
+        <div className="flex items-center gap-1.5 pr-2 py-1.5 pl-1">
+          {reportId && (
+            <ShareButton
+              reportId={reportId}
+              shortLabel
+              variant="pill"
+              className="flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-medium text-gray-700 bg-gray-100/90 border border-gray-200 hover:bg-gray-200/80 hover:border-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-gray-300"
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => setPaywallOpen(true)}
+            className="flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-blue-500"
+            aria-label="Unlock full report"
+          >
+            <Unlock className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            <span>Unlock full report</span>
+          </button>
+        </div>
       </div>
 
       <ReportPaywallModal

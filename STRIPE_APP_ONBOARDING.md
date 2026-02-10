@@ -1,6 +1,6 @@
 # Assigning plan and account on app.antistatic.ai after Stripe payment
 
-After a user starts a trial or pays on Stripe (from this landing/report app), they should land on **app.antistatic.ai** with an account and the correct plan (Essential or Full engine) assigned in their dashboard. This doc describes what **app.antistatic.ai** (the other webapp) needs to implement.
+After a user starts a trial or pays on Stripe (from this landing/report app), they should land on **app.antistatic.ai** with an account and the correct plan (Essential or Full Engine) assigned in their dashboard. This doc describes what **app.antistatic.ai** (the other webapp) needs to implement.
 
 ---
 
@@ -127,7 +127,7 @@ If you use both webhook and success page, make the logic **idempotent**: “crea
 - **Database**: Store at least:
   - User: email, password (or “magic link” style), and **plan** (`essential` | `full_engine`).
   - Optionally: `stripe_customer_id`, `stripe_subscription_id` for future billing (portal, renewals).
-- **Dashboard**: When the user is logged in, read their `plan` from the DB and show the correct features (Essential vs Full engine).
+- **Dashboard**: When the user is logged in, read their `plan` from the DB and show the correct features (Essential vs Full Engine).
 
 ---
 

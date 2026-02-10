@@ -1,57 +1,45 @@
 "use client";
 
 import { useState } from "react";
-import { Share2, Check, Copy, Link2 } from "lucide-react";
+import { Share2, Link2 } from "lucide-react";
+import ShareReportModal from "./ShareReportModal";
 
 interface ShareButtonProps {
   reportId: string;
   className?: string;
+  /** When true, shows "Share" instead of "Share Report" */
+  shortLabel?: boolean;
+  /** When "pill", no default size/padding is applied; use className for full control */
+  variant?: "default" | "pill";
 }
 
-/**
- * Share/Copy link button for report pages
- */
-export default function ShareButton({ reportId, className }: ShareButtonProps) {
-  const [copied, setCopied] = useState(false);
+const defaultClass =
+  "flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors";
 
-  const handleCopy = async () => {
-    const url = `${window.location.origin}/r/${reportId}`;
-    
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Failed to copy:", err);
-      // Fallback: select and copy
-      const input = document.createElement("input");
-      input.value = url;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand("copy");
-      document.body.removeChild(input);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
+/**
+ * Share button that opens a modal to email the report link.
+ */
+export default function ShareButton({ reportId, className, shortLabel, variant = "default" }: ShareButtonProps) {
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const buttonClass = variant === "pill" ? (className ?? "") : `${defaultClass} ${className ?? ""}`;
 
   return (
-    <button
-      onClick={handleCopy}
-      className={`flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors ${className ?? ''}`}
-      title="Copy shareable link"
-    >
-      {copied ? (
-        <>
-          <Check className="w-4 h-4 text-green-600" />
-          <span className="text-green-600">Link copied!</span>
-        </>
-      ) : (
-        <>
-          <Link2 className="w-4 h-4" />
-          <span>Share Report</span>
-        </>
-      )}
-    </button>
+    <>
+      <button
+        onClick={() => setModalOpen(true)}
+        className={buttonClass}
+        title="Share report"
+      >
+        <Share2 className="w-3.5 h-3.5 shrink-0" />
+        <span>{shortLabel ? "Share" : "Share Report"}</span>
+      </button>
+
+      <ShareReportModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        reportId={reportId}
+      />
+    </>
   );
 }

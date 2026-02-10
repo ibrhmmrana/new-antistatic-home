@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import type { ReportScores } from "@/lib/report/types";
-import ShareButton from "./ShareButton";
 import ReportPaywallModal from "./ReportPaywallModal";
 
 interface ReportLeftRailProps {
@@ -22,30 +21,23 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
   // Calculate percentage for circular gauge
   const overallPercentage = (overall.score / overall.maxScore) * 100;
   
-  // Determine color based on label
+  // Grade label text (light variants for dark rail)
   const getGradeColor = (label: string) => {
-    if (label === 'Good') return 'text-green-600';
-    if (label === 'Okay') return 'text-orange-500';
-    return 'text-orange-600'; // Poor: orangey red
+    if (label === 'Good') return 'text-green-400';
+    if (label === 'Okay') return 'text-amber-400';
+    return 'text-orange-400'; // Poor
   };
-  
+
+  // Progress arc colors (unchanged; visible on dark)
   const getProgressColor = (label: string) => {
-    if (label === 'Good') return '#10b981'; // green
-    if (label === 'Okay') return '#f97316'; // orange
-    return '#ea580c'; // Poor: orange-600 (red a little orangey)
+    if (label === 'Good') return '#34d399'; // green-400
+    if (label === 'Okay') return '#fbbf24'; // amber-400
+    return '#fb923c'; // orange-400
   };
-  
-  const getBackgroundColor = (label: string) => {
-    if (label === 'Good') return '#dcfce7'; // Slightly darker green (green-100)
-    if (label === 'Okay') return '#ffddd2'; // Orange with a slight red tint (coral)
-    return '#f7d7d1'; // Poor
-  };
-  
-  const getBorderColor = (label: string) => {
-    if (label === 'Good') return '#a7f3d0'; // Darker green border (green-200)
-    if (label === 'Okay') return '#fda4a4'; // Orange-red border (slightly reddish)
-    return '#fdba74'; // Poor: orange-300 (red a little orangey)
-  };
+
+  const railBg = '#0C0824';
+  const railBorder = '#1a1535';
+  const trackStroke = 'rgba(255,255,255,0.12)';
   
   // Calculate arc for circular gauge (SVG)
   const radius = 50;
@@ -68,7 +60,7 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
             cx="16"
             cy="16"
             r={miniRadius}
-            stroke="#ecd1cc"
+            stroke={trackStroke}
             strokeWidth="3"
             fill="none"
           />
@@ -108,8 +100,8 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
         className="hidden md:flex flex-shrink-0 w-80 fixed left-4 top-4 p-4 flex-col items-center overflow-hidden rounded-2xl border-2 z-10"
         style={{
           height: 'calc(100vh - 2rem)',
-          backgroundColor: getBackgroundColor(overall.label),
-          borderColor: getBorderColor(overall.label),
+          backgroundColor: railBg,
+          borderColor: railBorder,
         }}
       >
         {/* Inner flex column: fills height, allows middle to shrink */}
@@ -130,7 +122,7 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
                 </div>
               )}
               {businessName && (
-                <span className="text-center text-[min(1rem,2.5vh)] font-medium text-gray-900 line-clamp-2 px-1">
+                <span className="text-center text-[min(1rem,2.5vh)] font-medium text-white line-clamp-2 px-1">
                   {businessName}
                 </span>
               )}
@@ -142,7 +134,7 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
             style={{ width: 'min(10rem, 22vh)', height: 'min(10rem, 22vh)' }}
           >
             <svg className="transform -rotate-90 w-full h-full" viewBox="0 0 160 160" preserveAspectRatio="xMidYMid meet">
-              <circle cx="80" cy="80" r={radius} stroke="#ecd1cc" strokeWidth="14" fill="none" />
+              <circle cx="80" cy="80" r={radius} stroke={trackStroke} strokeWidth="14" fill="none" />
               <circle
                 cx="80"
                 cy="80"
@@ -157,14 +149,14 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-[min(2.25rem,5vh)] font-bold text-gray-900 leading-none">{overall.score}</span>
-              <span className="text-[min(0.875rem,2.5vh)] text-gray-600">/100</span>
+              <span className="text-[min(2.25rem,5vh)] font-bold text-white leading-none">{overall.score}</span>
+              <span className="text-[min(0.875rem,2.5vh)] text-gray-400">/100</span>
             </div>
           </div>
 
           {/* Health Grade Label - compact */}
           <div className="text-center flex-shrink-0 mt-2 mb-2">
-            <div className="text-[min(0.75rem,1.8vh)] text-gray-600">Online health grade</div>
+            <div className="text-[min(0.75rem,1.8vh)] text-gray-400">Online health grade</div>
             <div className={`text-[min(1.5rem,4vh)] font-bold leading-tight ${getGradeColor(overall.label)}`}>
               {overall.label}
             </div>
@@ -175,43 +167,39 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
             <div className="flex items-center gap-2">
               <MiniCircularProgress score={searchResults.score} maxScore={searchResults.maxScore} label={searchResults.label} />
               <div className="flex-1 min-w-0">
-                <div className="text-[min(0.8125rem,1.9vh)] font-medium text-gray-900">Search Results</div>
+                <div className="text-[min(0.8125rem,1.9vh)] font-medium text-white">Search Results</div>
                 <div className={`text-[min(0.8125rem,1.9vh)] font-medium ${getGradeColor(searchResults.label)}`}>{searchResults.label}</div>
               </div>
-              <div className="text-[min(0.8125rem,1.9vh)] text-gray-600 whitespace-nowrap">{searchResults.score}/{searchResults.maxScore}</div>
+              <div className="text-[min(0.8125rem,1.9vh)] text-gray-400 whitespace-nowrap">{searchResults.score}/{searchResults.maxScore}</div>
             </div>
             <div className="flex items-center gap-2">
               <MiniCircularProgress score={websiteExperience.score} maxScore={websiteExperience.maxScore} label={websiteExperience.label} />
               <div className="flex-1 min-w-0">
-                <div className="text-[min(0.8125rem,1.9vh)] font-medium text-gray-900">Website Experience</div>
+                <div className="text-[min(0.8125rem,1.9vh)] font-medium text-white">Website Experience</div>
                 <div className={`text-[min(0.8125rem,1.9vh)] font-medium ${getGradeColor(websiteExperience.label)}`}>{websiteExperience.label}</div>
               </div>
-              <div className="text-[min(0.8125rem,1.9vh)] text-gray-600 whitespace-nowrap">{websiteExperience.score}/{websiteExperience.maxScore}</div>
+              <div className="text-[min(0.8125rem,1.9vh)] text-gray-400 whitespace-nowrap">{websiteExperience.score}/{websiteExperience.maxScore}</div>
             </div>
             <div className="flex items-center gap-2">
               <MiniCircularProgress score={localListings.score} maxScore={localListings.maxScore} label={localListings.label} />
               <div className="flex-1 min-w-0">
-                <div className="text-[min(0.8125rem,1.9vh)] font-medium text-gray-900">Local Listings</div>
+                <div className="text-[min(0.8125rem,1.9vh)] font-medium text-white">Local Listings</div>
                 <div className={`text-[min(0.8125rem,1.9vh)] font-medium ${getGradeColor(localListings.label)}`}>{localListings.label}</div>
               </div>
-              <div className="text-[min(0.8125rem,1.9vh)] text-gray-600 whitespace-nowrap">{localListings.score}/{localListings.maxScore}</div>
+              <div className="text-[min(0.8125rem,1.9vh)] text-gray-400 whitespace-nowrap">{localListings.score}/{localListings.maxScore}</div>
             </div>
           </div>
 
-          {/* Share + CTA - fixed at bottom of sidebar */}
-          <div className="w-full flex-shrink-0 space-y-2 pt-2">
-            {reportId && <ShareButton reportId={reportId} className="w-full py-2.5 rounded-lg text-sm" />}
+          {/* CTA - fixed at bottom of sidebar */}
+          <div className="w-full flex-shrink-0 pt-2">
             {fixButton}
           </div>
         </div>
       </div>
 
-      {/* Mobile: solid white sticky footer with Share + Fix (same rounded corners) */}
+      {/* Mobile: solid white sticky footer with Fix only (Share moved to intro + floating pill) */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] p-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] flex justify-center pointer-events-none">
         <div className="pointer-events-auto w-full max-w-[400px] flex flex-row items-stretch gap-2">
-          {reportId && (
-            <ShareButton reportId={reportId} className="flex-1 min-w-0 py-3 rounded-xl text-sm" />
-          )}
           <button
             type="button"
             onClick={() => setPaywallOpen(true)}
