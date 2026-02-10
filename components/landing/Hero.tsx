@@ -110,7 +110,7 @@ export default function Hero() {
             ref={imageColumnRef}
             className="relative w-full flex items-center justify-center pt-4 md:pt-6 pb-16 md:pb-24 lg:pb-32 pl-6 md:pl-8 lg:pl-10"
           >
-            <div className="relative w-[80%] max-w-full mx-auto">
+            <div className="relative w-full max-w-full mx-auto md:w-[80%]">
               <Image
                 src="/images/hero img.svg"
                 alt="Hero"
