@@ -31,9 +31,17 @@ async function launchBrowserWithRetry(
   isServerless: boolean,
   retries = MAX_RETRIES
 ): Promise<Browser> {
-  // Wait for lock to be released
+  // Wait for lock to be released (max 30 seconds to prevent infinite loop)
+  let lockWaitMs = 0;
+  const MAX_LOCK_WAIT_MS = 30_000;
   while (browserLaunchLock) {
+    if (lockWaitMs >= MAX_LOCK_WAIT_MS) {
+      console.error("[WEBSITE-SCRAPE] Browser launch lock wait timeout, forcing release");
+      browserLaunchLock = false;
+      break;
+    }
     await new Promise(resolve => setTimeout(resolve, 100));
+    lockWaitMs += 100;
   }
 
   for (let attempt = 0; attempt < retries; attempt++) {

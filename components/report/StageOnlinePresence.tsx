@@ -237,8 +237,16 @@ export default function StageOnlinePresence({
 
     fetchData();
     
-    // Optional: poll if not complete
+    // Optional: poll if not complete (max 12 attempts = 60 seconds, then stop)
+    let pollAttempts = 0;
+    const MAX_POLL_ATTEMPTS = 12;
     const interval = setInterval(() => {
+      pollAttempts++;
+      if (pollAttempts >= MAX_POLL_ATTEMPTS) {
+        console.warn('[StageOnlinePresence] Polling max attempts reached, stopping');
+        clearInterval(interval);
+        return;
+      }
       if (loading && !data && !initialData) {
         fetchData();
       }
@@ -355,8 +363,18 @@ export default function StageOnlinePresence({
       }
     };
 
-    // Poll every 3 seconds for screenshot updates
-    const pollInterval = setInterval(pollForUpdates, 3000);
+    // Poll every 3 seconds for screenshot updates (max 20 attempts = 60 seconds)
+    let screenshotPollAttempts = 0;
+    const MAX_SCREENSHOT_POLLS = 20;
+    const pollInterval = setInterval(() => {
+      screenshotPollAttempts++;
+      if (screenshotPollAttempts >= MAX_SCREENSHOT_POLLS) {
+        console.warn('[StageOnlinePresence] Screenshot polling max attempts reached, stopping');
+        clearInterval(pollInterval);
+        return;
+      }
+      pollForUpdates();
+    }, 3000);
     
     // Also run immediately
     pollForUpdates();

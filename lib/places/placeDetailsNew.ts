@@ -7,6 +7,7 @@
 import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
 import { consumeBody } from "@/lib/net/consumeBody";
 import { ApiCache } from "@/lib/net/apiCache";
+import { apiBudget } from "@/lib/net/apiBudget";
 
 const PLACE_DETAILS_TIMEOUT_MS = 10000;
 const PLACE_DETAILS_RETRIES = 2;
@@ -113,6 +114,13 @@ export async function fetchPlaceDetailsNew(
   const cached = placeDetailsCache.get(cacheKey);
   if (cached) return cached;
 
+  // Budget guard: prevent runaway Places API costs
+  if (!apiBudget.canCall("google-places")) {
+    console.error("[places/placeDetailsNew] Budget exceeded, returning null");
+    return null;
+  }
+  apiBudget.record("google-places");
+
   const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
 
   try {
@@ -216,6 +224,13 @@ export async function fetchFirstPhotoUri(
   const cacheKey = `${photoName}:${maxWidthPx}`;
   const cached = photoUriCache.get(cacheKey);
   if (cached !== undefined) return cached;
+
+  // Budget guard
+  if (!apiBudget.canCall("google-places")) {
+    console.error("[places/fetchFirstPhotoUri] Budget exceeded, returning null");
+    return null;
+  }
+  apiBudget.record("google-places");
 
   const url = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=${maxWidthPx}&skipHttpRedirect=true`;
   try {

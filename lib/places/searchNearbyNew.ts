@@ -5,6 +5,7 @@
  */
 
 import { ApiCache } from "@/lib/net/apiCache";
+import { apiBudget } from "@/lib/net/apiBudget";
 
 const SEARCH_NEARBY_TIMEOUT_MS = 15000;
 
@@ -87,6 +88,13 @@ export async function searchNearbyNew(
   const cacheKey = `${lat.toFixed(5)},${lng.toFixed(5)}:${radiusMeters}:${(includedTypes ?? []).sort().join(",")}:${rankPreference}:${maxResultCount}`;
   const cached = nearbyCache.get(cacheKey);
   if (cached) return cached;
+
+  // Budget guard: prevent runaway Places API costs
+  if (!apiBudget.canCall("google-places")) {
+    console.error("[places/searchNearbyNew] Budget exceeded, returning empty");
+    return [];
+  }
+  apiBudget.record("google-places");
 
   const body: Record<string, unknown> = {
     locationRestriction: {

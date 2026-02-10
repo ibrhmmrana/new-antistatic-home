@@ -23,10 +23,28 @@ const ALLOWED_HOSTS = new Set([
   "127.0.0.1",
 ]);
 
-/** Per-IP request limit inside the sliding window. */
+/** Per-IP request limit inside the sliding window (global). */
 const PER_IP_LIMIT = 30;
 /** Sliding window in ms (1 minute). */
 const WINDOW_MS = 60_000;
+
+/**
+ * Per-route tighter rate limits for expensive endpoints.
+ * Key: path prefix. Value: { limit, windowMs }.
+ * These are checked AFTER the global limit passes.
+ */
+const EXPENSIVE_ROUTE_LIMITS: Record<string, { limit: number; windowMs: number }> = {
+  "/api/scan/website":          { limit: 5,  windowMs: 600_000 },  // 5 per 10 min
+  "/api/scan/socials":          { limit: 5,  windowMs: 600_000 },  // 5 per 10 min
+  "/api/scan/socials/screenshot": { limit: 10, windowMs: 600_000 }, // 10 per 10 min
+  "/api/scan/search-visibility":{ limit: 10, windowMs: 600_000 },  // 10 per 10 min
+  "/api/ai/analyze":            { limit: 10, windowMs: 600_000 },  // 10 per 10 min
+  "/api/places/competitors":    { limit: 10, windowMs: 600_000 },  // 10 per 10 min
+  "/api/gbp/extract-socials":   { limit: 5,  windowMs: 600_000 },  // 5 per 10 min
+  "/api/public/reports/share":  { limit: 10, windowMs: 600_000 },  // 10 shares per 10 min
+  "/api/instagram/session/manual":  { limit: 3, windowMs: 600_000 }, // 3 per 10 min
+  "/api/instagram/session/refresh": { limit: 3, windowMs: 600_000 }, // 3 per 10 min
+};
 
 // ─── In-memory per-IP rate limiter (edge-compatible, no imports) ─────────────
 // Edge middleware cannot import from lib/, so we inline a lightweight limiter.
@@ -36,7 +54,25 @@ interface RLEntry {
 }
 
 const rlBuckets = new Map<string, RLEntry>();
+const routeRlBuckets = new Map<string, RLEntry>();
 let rlLastCleanup = Date.now();
+
+/** Check per-route rate limit (separate from global). */
+function routeRlCheck(key: string, limit: number, windowMs: number): { allowed: boolean } {
+  const now = Date.now();
+  const cutoff = now - windowMs;
+  let entry = routeRlBuckets.get(key);
+  if (!entry) {
+    entry = { timestamps: [] };
+    routeRlBuckets.set(key, entry);
+  }
+  entry.timestamps = entry.timestamps.filter((t) => t > cutoff);
+  if (entry.timestamps.length >= limit) {
+    return { allowed: false };
+  }
+  entry.timestamps.push(now);
+  return { allowed: true };
+}
 
 function rlCheck(ip: string): { allowed: boolean; remaining: number } {
   const now = Date.now();
@@ -47,6 +83,12 @@ function rlCheck(ip: string): { allowed: boolean; remaining: number } {
     for (const [key, entry] of rlBuckets) {
       entry.timestamps = entry.timestamps.filter((t) => t > cutoff);
       if (entry.timestamps.length === 0) rlBuckets.delete(key);
+    }
+    // Also clean up route-level buckets (use 10 min window for expensive routes)
+    const routeCutoff = now - 600_000;
+    for (const [key, entry] of routeRlBuckets) {
+      entry.timestamps = entry.timestamps.filter((t) => t > routeCutoff);
+      if (entry.timestamps.length === 0) routeRlBuckets.delete(key);
     }
   }
 
@@ -180,6 +222,27 @@ export function middleware(req: NextRequest) {
         },
       }
     );
+  }
+
+  // Layer 3: Per-route rate limiting for expensive endpoints
+  for (const [routePrefix, routeConfig] of Object.entries(EXPENSIVE_ROUTE_LIMITS)) {
+    if (pathname.startsWith(routePrefix)) {
+      const routeKey = `${ip}:${routePrefix}`;
+      const routeRl = routeRlCheck(routeKey, routeConfig.limit, routeConfig.windowMs);
+      if (!routeRl.allowed) {
+        return NextResponse.json(
+          { error: `Rate limit exceeded for this endpoint. Max ${routeConfig.limit} requests per ${routeConfig.windowMs / 60_000} min.` },
+          {
+            status: 429,
+            headers: {
+              ...corsHeaders(req),
+              "Retry-After": String(Math.ceil(routeConfig.windowMs / 1000)),
+            },
+          }
+        );
+      }
+      break; // Only match the first (most specific) route prefix
+    }
   }
 
   // Attach CORS + rate-limit info to the response

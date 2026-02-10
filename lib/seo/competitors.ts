@@ -7,7 +7,11 @@
 
 import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
 import { consumeBody } from "@/lib/net/consumeBody";
+import { apiBudget } from "@/lib/net/apiBudget";
 import type { BusinessIdentity } from '@/lib/business/resolveBusinessIdentity';
+
+/** Hard cap: max total Google Places API calls per single competitor search invocation. */
+const MAX_PLACES_CALLS_PER_INVOCATION = 60;
 
 // Types
 export interface CompetitorPlace {
@@ -206,13 +210,26 @@ function matchesCategoryFamily(competitorTypes: string[], targetPrimaryType: str
 async function fetchAllNearbyPages(
   baseUrl: string,
   apiKey: string,
-  maxPages: number = STAGE1_MAX_PAGES
+  maxPages: number = STAGE1_MAX_PAGES,
+  callCounter?: { count: number }
 ): Promise<any[]> {
   const allResults: any[] = [];
   let currentUrl = baseUrl;
   let pageCount = 0;
 
   while (pageCount < maxPages) {
+    // Budget guard
+    if (!apiBudget.canCall("google-places")) {
+      console.error("[COMPETITORS] Budget exceeded in fetchAllNearbyPages, stopping");
+      break;
+    }
+    if (callCounter && callCounter.count >= MAX_PLACES_CALLS_PER_INVOCATION) {
+      console.warn("[COMPETITORS] Per-invocation call cap reached in fetchAllNearbyPages");
+      break;
+    }
+    apiBudget.record("google-places");
+    if (callCounter) callCounter.count++;
+
     const response = await fetchWithTimeout(currentUrl, {
       timeoutMs: 10000,
       retries: 2,
@@ -256,7 +273,8 @@ async function fillFromRadiusStage1(
   apiKey: string,
   targetPlaceId: string,
   targetPrimaryType: string | null,
-  targetFamily: string[]
+  targetFamily: string[],
+  callCounter?: { count: number }
 ): Promise<CompetitorPlace[]> {
   const allResults: any[] = [];
   const searchPromises: Promise<any[]>[] = [];
@@ -271,7 +289,7 @@ async function fillFromRadiusStage1(
       key: apiKey,
     });
     const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
-    searchPromises.push(fetchAllNearbyPages(url, apiKey));
+    searchPromises.push(fetchAllNearbyPages(url, apiKey, STAGE1_MAX_PAGES, callCounter));
   }
 
   // Strategy 2: Keyword-based search (always try this if we have keyword)
@@ -283,7 +301,7 @@ async function fillFromRadiusStage1(
       key: apiKey,
     });
     const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
-    searchPromises.push(fetchAllNearbyPages(url, apiKey));
+    searchPromises.push(fetchAllNearbyPages(url, apiKey, STAGE1_MAX_PAGES, callCounter));
   }
 
   // If no type available, do a general nearby search
@@ -294,7 +312,7 @@ async function fillFromRadiusStage1(
       key: apiKey,
     });
     const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`;
-    searchPromises.push(fetchAllNearbyPages(url, apiKey));
+    searchPromises.push(fetchAllNearbyPages(url, apiKey, STAGE1_MAX_PAGES, callCounter));
   }
 
   const searchResults = await Promise.all(searchPromises);
@@ -422,10 +440,17 @@ async function discoverCompetitorsStage1(
   // Step 2: Radius-fill algorithm - fill from closest first
   const finalList: CompetitorPlace[] = [];
   const seenPlaceIds = new Set<string>();
+  const callCounter = { count: 1 }; // 1 for the getPlaceDetails above
 
   for (const radius of STAGE1_RADIUS_STEPS) {
     // Stop if we already have enough
     if (finalList.length >= STAGE1_MAX_COMPETITORS) {
+      break;
+    }
+
+    // Stop if we hit the per-invocation call cap
+    if (callCounter.count >= MAX_PLACES_CALLS_PER_INVOCATION) {
+      console.warn(`[COMPETITORS] Per-invocation call cap reached (${callCounter.count}/${MAX_PLACES_CALLS_PER_INVOCATION}), stopping radius expansion`);
       break;
     }
 
@@ -437,7 +462,8 @@ async function discoverCompetitorsStage1(
       apiKey,
       identity.place_id,
       targetPrimaryType,
-      targetFamily
+      targetFamily,
+      callCounter
     );
 
     // Add candidates in distance order (they're already sorted by distance ASC)
@@ -556,6 +582,13 @@ async function nearbySearch(params: {
   const { lat, lng, radius, type, keyword } = params;
   
   try {
+    // Budget guard
+    if (!apiBudget.canCall("google-places")) {
+      console.error("[COMPETITORS] Budget exceeded in nearbySearch");
+      return [];
+    }
+    apiBudget.record("google-places");
+
     const url = new URL('https://maps.googleapis.com/maps/api/place/nearbysearch/json');
     url.searchParams.set('location', `${lat},${lng}`);
     url.searchParams.set('radius', radius.toString());
@@ -596,6 +629,13 @@ async function textSearch(query: string, locationBias?: string): Promise<any[]> 
   if (!apiKey) return [];
   
   try {
+    // Budget guard
+    if (!apiBudget.canCall("google-places")) {
+      console.error("[COMPETITORS] Budget exceeded in textSearch");
+      return [];
+    }
+    apiBudget.record("google-places");
+
     const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
     url.searchParams.set('query', query);
     if (locationBias) {
@@ -634,6 +674,13 @@ async function getPlaceDetails(placeId: string): Promise<any | null> {
   if (!apiKey) return null;
   
   try {
+    // Budget guard
+    if (!apiBudget.canCall("google-places")) {
+      console.error("[COMPETITORS] Budget exceeded in getPlaceDetails");
+      return null;
+    }
+    apiBudget.record("google-places");
+
     const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
     url.searchParams.set('place_id', placeId);
     url.searchParams.set('fields', 'name,rating,user_ratings_total,website,formatted_phone_number,formatted_address,opening_hours,types,geometry');

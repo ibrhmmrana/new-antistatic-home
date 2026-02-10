@@ -529,8 +529,16 @@ export default function AnalysisPage() {
     const hasAiAnalysis = aiAnalysis && typeof aiAnalysis === 'object' && Object.keys(aiAnalysis).length > 0;
     if (hasAiAnalysis) return; // AI is ready, no need to poll
     
-    // Poll every 2 seconds while waiting for AI
+    // Poll every 2 seconds while waiting for AI (max 30 ticks = 60 seconds)
+    let aiPollTicks = 0;
+    const MAX_AI_POLL_TICKS = 30;
     const timer = setInterval(() => {
+      aiPollTicks++;
+      if (aiPollTicks >= MAX_AI_POLL_TICKS) {
+        console.warn('[Analysis] AI polling max attempts reached, stopping');
+        clearInterval(timer);
+        return;
+      }
       setSnapshotWaitTick(t => t + 1);
     }, 2000);
     

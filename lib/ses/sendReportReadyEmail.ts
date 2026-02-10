@@ -5,6 +5,7 @@
  */
 
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import { apiBudget } from "@/lib/net/apiBudget";
 
 const FROM_EMAIL = process.env.REPORT_EMAIL_FROM || "hello@antistatic.ai";
 const LOGO_URL =
@@ -135,6 +136,9 @@ export async function sendReportReadyEmail({
       },
     },
   });
+
+  // Budget guard: prevent runaway email sends
+  apiBudget.spend("ses");
 
   await ses.send(command);
 }

@@ -5,6 +5,7 @@
  */
 
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import { apiBudget } from "@/lib/net/apiBudget";
 
 const FROM_EMAIL =
   process.env.APP_INVITE_FROM_EMAIL ||
@@ -62,6 +63,9 @@ export async function sendAppInviteEmail({ to, signInLink }: SendAppInviteEmailP
       },
     },
   });
+
+  // Budget guard: prevent runaway email sends
+  apiBudget.spend("ses");
 
   await ses.send(command);
 }
