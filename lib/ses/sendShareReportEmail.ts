@@ -9,7 +9,7 @@ import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const FROM_EMAIL = process.env.REPORT_EMAIL_FROM || "hello@antistatic.ai";
 const LOGO_URL =
-  "https://bmkdwnfrldoqvduhpgsu.supabase.co/storage/v1/object/public/Storage/antistatic-logo-on-black.png";
+  "https://bmkdwnfrldoqvduhpgsu.supabase.co/storage/v1/object/public/Storage/antistatic-logo-on-white%20(1).png";
 
 export interface SendShareReportEmailParams {
   to: string;
@@ -75,9 +75,6 @@ export async function sendShareReportEmail({
   <style>
     :root { color-scheme: light only; }
     html, body { -webkit-color-scheme: light only; color-scheme: light only; }
-    @media (prefers-color-scheme: dark) {
-      .logo-pill { background:#000000; border-radius:9999px; padding:12px 20px; display:inline-block; }
-    }
   </style>
 </head>
 
@@ -98,10 +95,10 @@ export async function sendShareReportEmail({
           <!-- Dark hero banner -->
           <tr>
             <td align="center" style="background:#0C0824;padding:40px 34px 32px 34px;">
-              <div class="logo-pill" style="text-align:center;margin-bottom:28px;">
+              <div style="text-align:center;margin-bottom:28px;">
                 <img src="${LOGO_URL}"
-                     width="160" height="26" alt="Antistatic"
-                     style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;width:160px;height:26px;object-fit:contain;" />
+                     width="280" height="46" alt="Antistatic"
+                     style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;width:280px;height:46px;object-fit:contain;" />
               </div>
               <h1 style="margin:0 0 16px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
                          font-size:26px;line-height:1.25;font-weight:700;color:#ffffff;text-align:center;">
@@ -138,15 +135,15 @@ export async function sendShareReportEmail({
                 Every tool you need to protect your reputation, outpace competitors, and turn online visibility into real revenue.
               </p>
 
-              <!-- Modules: 2x2 grid (backgrounds on outer td for equal height) -->
+              <!-- Modules: 2x2 grid with gap (padding on td, block styles on inner div) -->
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
                 <!-- Row 1 -->
                 <tr>
-                  <td width="49%" valign="top"
-                      style="padding:0 8px 16px 0;background:#f5f3ff;border-radius:12px;border:1px solid #ede9fe;">
-                    <div style="padding:20px 18px;">
+                  <td width="50%" valign="top" style="padding:6px;">
+                    <div style="background:#f5f3ff;border-radius:12px;border:1px solid #ede9fe;padding:22px 20px;">
                       <p style="margin:0 0 10px 0;line-height:1;">
-                        <img src="${ICON_REPUTATION}" width="28" height="28" alt="" style="display:block;width:28px;height:28px;border:0;outline:none;text-decoration:none;object-fit:contain;" />
+                        <img src="${ICON_REPUTATION}" width="28" height="28" alt=""
+                             style="display:block;border:0;outline:none;text-decoration:none;width:28px;height:28px;max-width:28px;max-height:28px;object-fit:contain;" />
                       </p>
                       <p style="margin:0 0 4px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
                               font-size:14px;line-height:1.3;font-weight:700;color:#111827;">
@@ -158,11 +155,11 @@ export async function sendShareReportEmail({
                       </p>
                     </div>
                   </td>
-                  <td width="49%" valign="top"
-                      style="padding:0 0 16px 8px;background:#0C0824;border-radius:12px;">
-                    <div style="padding:20px 18px;">
+                  <td width="50%" valign="top" style="padding:6px;">
+                    <div style="background:#0C0824;border-radius:12px;padding:22px 20px;">
                       <p style="margin:0 0 10px 0;line-height:1;">
-                        <img src="${ICON_RADAR}" width="28" height="28" alt="" style="display:block;width:28px;height:28px;border:0;outline:none;text-decoration:none;object-fit:contain;" />
+                        <img src="${ICON_RADAR}" width="28" height="28" alt=""
+                             style="display:block;border:0;outline:none;text-decoration:none;width:28px;height:28px;max-width:28px;max-height:28px;object-fit:contain;" />
                       </p>
                       <p style="margin:0 0 4px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
                               font-size:14px;line-height:1.3;font-weight:700;color:#ffffff;">
@@ -177,11 +174,11 @@ export async function sendShareReportEmail({
                 </tr>
                 <!-- Row 2 -->
                 <tr>
-                  <td width="49%" valign="top"
-                      style="padding:8px 8px 0 0;background:#2563eb;border-radius:12px;">
-                    <div style="padding:20px 18px;">
+                  <td width="50%" valign="top" style="padding:6px;">
+                    <div style="background:#2563eb;border-radius:12px;padding:22px 20px;">
                       <p style="margin:0 0 10px 0;line-height:1;">
-                        <img src="${ICON_SOCIAL}" width="28" height="28" alt="" style="display:block;width:28px;height:28px;border:0;outline:none;text-decoration:none;object-fit:contain;" />
+                        <img src="${ICON_SOCIAL}" width="28" height="28" alt=""
+                             style="display:block;border:0;outline:none;text-decoration:none;width:28px;height:28px;max-width:28px;max-height:28px;object-fit:contain;" />
                       </p>
                       <p style="margin:0 0 4px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
                               font-size:14px;line-height:1.3;font-weight:700;color:#ffffff;">
@@ -193,11 +190,11 @@ export async function sendShareReportEmail({
                       </p>
                     </div>
                   </td>
-                  <td width="49%" valign="top"
-                      style="padding:8px 0 0 8px;background:#eff6ff;border-radius:12px;border:1px solid #dbeafe;">
-                    <div style="padding:20px 18px;">
+                  <td width="50%" valign="top" style="padding:6px;">
+                    <div style="background:#eff6ff;border-radius:12px;border:1px solid #dbeafe;padding:22px 20px;">
                       <p style="margin:0 0 10px 0;line-height:1;">
-                        <img src="${ICON_CREATOR}" width="28" height="28" alt="" style="display:block;width:28px;height:28px;border:0;outline:none;text-decoration:none;object-fit:contain;" />
+                        <img src="${ICON_CREATOR}" width="28" height="28" alt=""
+                             style="display:block;border:0;outline:none;text-decoration:none;width:28px;height:28px;max-width:28px;max-height:28px;object-fit:contain;" />
                       </p>
                       <p style="margin:0 0 4px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
                               font-size:14px;line-height:1.3;font-weight:700;color:#111827;">
