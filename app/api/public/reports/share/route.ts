@@ -40,10 +40,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "A valid email address is required." }, { status: 400 });
     }
 
-    // Optional: get sharer name from verified email cookie
+    // Optional: get sharer email and display name from verified email cookie
+    let sharerEmail: string | null = null;
     let sharerDisplayName: string | null = null;
     const proof = await verifyEmailProof(request);
     if (proof.valid && proof.payload?.email) {
+      sharerEmail = proof.payload.email;
       sharerDisplayName = sharerDisplayNameFromEmail(proof.payload.email) || null;
     }
 
@@ -70,6 +72,18 @@ export async function POST(request: NextRequest) {
       businessName,
       sharerDisplayName,
     });
+
+    // Log the share for analytics/support (recipient, sharer email, business name)
+    const trimRecipient = recipientEmail.trim();
+    const { error: logError } = await supabase.from("report_share_log").insert({
+      report_id: reportId,
+      recipient_email: trimRecipient,
+      sharer_email: sharerEmail ?? null,
+      business_name: businessName ?? null,
+    });
+    if (logError) {
+      console.error("[REPORTS SHARE] Failed to log share:", logError.message);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
