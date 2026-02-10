@@ -3,6 +3,7 @@
  */
 
 import { getOpenAIClient, AnalysisResult, ConsistencyResult, ReviewAnalysisResult } from './openaiClient';
+import { apiBudget } from '@/lib/net/apiBudget';
 import type {
   SentimentAnalysisSnapshot,
   ThematicSentimentSnapshot,
@@ -89,6 +90,7 @@ Respond in JSON format:
 }`;
 
   try {
+    apiBudget.spend("openai");
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
@@ -166,6 +168,7 @@ Respond in JSON format:
 }`;
 
   try {
+    apiBudget.spend("openai");
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
@@ -254,6 +257,7 @@ Respond in JSON format:
 }`;
 
   try {
+    apiBudget.spend("openai");
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
@@ -339,6 +343,7 @@ Respond in JSON format:
 }`;
 
   try {
+    apiBudget.spend("openai");
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
@@ -451,6 +456,7 @@ Respond with ONLY valid JSON in this exact shape (no markdown, no extra text):
 }`;
 
   try {
+    apiBudget.spend("openai");
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
@@ -540,6 +546,7 @@ Respond with ONLY valid JSON (no markdown). Use this exact shape:
 }`;
 
   try {
+    apiBudget.spend("openai");
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
@@ -660,6 +667,7 @@ Respond with ONLY valid JSON (no markdown):
 }`;
 
   try {
+    apiBudget.spend("openai");
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],

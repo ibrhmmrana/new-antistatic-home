@@ -5,6 +5,7 @@
 
 import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
 import { consumeBody } from "@/lib/net/consumeBody";
+import { apiBudget } from "@/lib/net/apiBudget";
 
 export interface MapPackResult {
   place_id: string;
@@ -39,6 +40,9 @@ async function enrichPlaceDetails(placeId: string): Promise<Partial<MapPackResul
   if (!apiKey) return {};
   
   try {
+    // Budget guard: prevent runaway Google Places API costs
+    apiBudget.spend("google-places");
+
     const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
     url.searchParams.set('place_id', placeId);
     url.searchParams.set('fields', 'name,rating,user_ratings_total,formatted_address,website');
@@ -100,6 +104,9 @@ export async function fetchMapPackForQuery(params: {
   }
   
   try {
+    // Budget guard: prevent runaway Google Places API costs
+    apiBudget.spend("google-places");
+
     // Use Text Search with location bias (matches user's typed query)
     const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
     url.searchParams.set('query', query);

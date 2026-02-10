@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { limit4 } from "@/lib/net/pLimit";
+import { apiBudget } from "@/lib/net/apiBudget";
 
 const MAX_PHOTOS = 18;
 const MEDIA_MAX_WIDTH_PX = 1600;
@@ -29,6 +30,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Budget guard: prevent runaway Google Places API costs
+    apiBudget.spend("google-places");
+
     // New Places API (v1): get place with photos and displayName (with timeout so we don't hang in prod)
     const placeUrl = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
     const placeRes = await fetch(placeUrl, {
@@ -77,6 +81,8 @@ export async function GET(request: NextRequest) {
       slice.map((photo) =>
         limit4(async () => {
           try {
+            // Budget guard per media fetch
+            apiBudget.spend("google-places");
             const mediaUrl = `https://places.googleapis.com/v1/${photo.name}/media?maxWidthPx=${MEDIA_MAX_WIDTH_PX}&skipHttpRedirect=true`;
             const mediaRes = await fetch(mediaUrl, {
               method: "GET",

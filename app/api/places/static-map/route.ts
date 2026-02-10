@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
 import { consumeBody } from "@/lib/net/consumeBody";
 import { getRequestId } from "@/lib/net/requestId";
+import { apiBudget } from "@/lib/net/apiBudget";
+
+const MAX_PLACE_IDS = 20;
 
 export const dynamic = "force-dynamic";
 
@@ -29,12 +32,14 @@ export async function GET(request: NextRequest) {
 
     // If placeIds are provided, fetch their locations
     if (placeIds) {
-      const placeIdArray = placeIds.split(',').filter(Boolean);
-      console.log(`[RID ${rid}] static-map processing ${placeIdArray.length} place IDs`);
+      const placeIdArray = placeIds.split(',').filter(Boolean).slice(0, MAX_PLACE_IDS);
+      console.log(`[RID ${rid}] static-map processing ${placeIdArray.length} place IDs (capped at ${MAX_PLACE_IDS})`);
       const locations: Array<{ lat: number; lng: number }> = [];
 
       for (const placeId of placeIdArray) {
         try {
+          // Budget guard per Place Details call
+          apiBudget.spend("google-places");
           const detailsUrl = new URL('https://maps.googleapis.com/maps/api/place/details/json');
           detailsUrl.searchParams.set('place_id', placeId.trim());
           detailsUrl.searchParams.set('fields', 'geometry');
@@ -103,6 +108,8 @@ export async function GET(request: NextRequest) {
     
     url.searchParams.set("key", apiKey);
 
+    // Budget guard for Static Maps API call
+    apiBudget.spend("google-maps");
     console.log(`[RID ${rid}] static-map fetch image`);
     const response = await fetchWithTimeout(url.toString(), {
       timeoutMs: 10000,

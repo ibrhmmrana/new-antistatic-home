@@ -15,7 +15,13 @@ function getSupabaseClient() {
   return createClient(supabaseUrl, supabaseServiceKey);
 }
 
-const EMAIL_PROOF_SECRET = process.env.EMAIL_PROOF_SECRET || "change-this-secret-in-production";
+function getEmailProofSecret(): string {
+  const secret = process.env.EMAIL_PROOF_SECRET;
+  if (!secret) {
+    throw new Error("[SECURITY] EMAIL_PROOF_SECRET environment variable is not set. Cannot sign tokens.");
+  }
+  return secret;
+}
 
 // Rate limiting: max confirm attempts per IP per minute (reduces code brute-force)
 const confirmRateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -43,7 +49,7 @@ function checkConfirmRateLimit(ip: string): boolean {
 }
 
 async function createProofToken(email: string, challengeId: string, placeId?: string): Promise<string> {
-  const secret = new TextEncoder().encode(EMAIL_PROOF_SECRET);
+  const secret = new TextEncoder().encode(getEmailProofSecret());
   
   const token = await new SignJWT({
     email,

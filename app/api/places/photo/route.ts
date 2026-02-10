@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiBudget } from "@/lib/net/apiBudget";
 
 export const maxDuration = 60;
 
@@ -45,6 +46,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+
+  // Budget guard: prevent runaway Google Places API costs
+  apiBudget.spend("google-places");
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {

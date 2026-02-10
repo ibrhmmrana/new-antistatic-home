@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
-const EMAIL_PROOF_SECRET = process.env.EMAIL_PROOF_SECRET || "change-this-secret-in-production";
+function getEmailProofSecret(): string {
+  const secret = process.env.EMAIL_PROOF_SECRET;
+  if (!secret) {
+    throw new Error("[SECURITY] EMAIL_PROOF_SECRET environment variable is not set. Cannot verify tokens.");
+  }
+  return secret;
+}
 
 interface ProofPayload {
   email: string;
@@ -29,7 +35,7 @@ async function verifyProofToken(request: NextRequest): Promise<ProofPayload | nu
   }
 
   try {
-    const secret = new TextEncoder().encode(EMAIL_PROOF_SECRET);
+    const secret = new TextEncoder().encode(getEmailProofSecret());
     const { payload } = await jwtVerify(token, secret);
     
     // Validate payload structure

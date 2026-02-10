@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { chromium as pwChromium, Browser } from "playwright-core";
 import chromium from "@sparticuz/chromium";
+import { apiBudget } from "@/lib/net/apiBudget";
 
 // Force Node.js runtime (Playwright is not compatible with Edge runtime)
 export const runtime = "nodejs";
@@ -274,6 +275,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Budget guard: prevent runaway Playwright usage
+    apiBudget.spend("playwright");
 
     const usernames = await extractSocialUsernamesFromGBP(businessName, address);
 

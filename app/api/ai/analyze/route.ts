@@ -88,6 +88,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Input size limits to prevent token abuse
+    const MAX_REVIEWS = 50;
+    const MAX_COMMENTS = 100;
+    const MAX_CAPTIONS = 30;
+    const MAX_COMPETITORS = 30;
+
+    if (data.reviews && data.reviews.length > MAX_REVIEWS) {
+      data.reviews = data.reviews.slice(0, MAX_REVIEWS);
+    }
+    if (data.instagramComments && data.instagramComments.length > MAX_COMMENTS) {
+      data.instagramComments = data.instagramComments.slice(0, MAX_COMMENTS);
+    }
+    if (data.facebookComments && data.facebookComments.length > MAX_COMMENTS) {
+      data.facebookComments = data.facebookComments.slice(0, MAX_COMMENTS);
+    }
+    if (data.instagramRecentCaptions && data.instagramRecentCaptions.length > MAX_CAPTIONS) {
+      data.instagramRecentCaptions = data.instagramRecentCaptions.slice(0, MAX_CAPTIONS);
+    }
+    if (data.competitors && data.competitors.length > MAX_COMPETITORS) {
+      data.competitors = data.competitors.slice(0, MAX_COMPETITORS);
+    }
+
     console.log(`[AI Analyze] Starting ${type} analysis for "${businessName}"`);
 
     let result: FullPresenceAnalysis | Record<string, unknown>;
@@ -191,9 +213,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('[AI Analyze] Error:', error);
+    // Don't leak error details to client (could expose internal paths, API keys, etc.)
+    const isbudgetError = error instanceof Error && error.name === 'ApiBudgetExceededError';
     return NextResponse.json(
-      { error: 'Failed to perform analysis', details: String(error) },
-      { status: 500 }
+      { error: isbudgetError ? 'Service temporarily unavailable. Please try again later.' : 'Failed to perform analysis' },
+      { status: isbudgetError ? 503 : 500 }
     );
   }
 }

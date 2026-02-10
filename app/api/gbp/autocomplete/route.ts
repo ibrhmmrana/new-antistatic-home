@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { apiBudget } from '@/lib/net/apiBudget';
 
 interface AutocompletePrediction {
   place_id: string;
@@ -35,6 +36,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Budget guard: prevent runaway Google Places API costs
+    apiBudget.spend("google-places");
+
     const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
     url.searchParams.set('input', input);
     url.searchParams.set('key', apiKey);

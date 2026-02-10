@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCountryFromRequest } from "@/lib/geo";
+import { apiBudget } from "@/lib/net/apiBudget";
 
 /**
  * Places Autocomplete API Route
@@ -48,6 +49,9 @@ async function fetchPlacesAutocomplete(
   if (!GOOGLE_PLACES_API_KEY) {
     throw new Error("GOOGLE_PLACES_API_KEY is not set");
   }
+
+  // Budget guard: prevent runaway Google Places API costs
+  apiBudget.spend("google-places");
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout

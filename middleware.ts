@@ -35,13 +35,20 @@ const WINDOW_MS = 60_000;
  */
 const EXPENSIVE_ROUTE_LIMITS: Record<string, { limit: number; windowMs: number }> = {
   "/api/scan/website":          { limit: 5,  windowMs: 600_000 },  // 5 per 10 min
-  "/api/scan/socials":          { limit: 5,  windowMs: 600_000 },  // 5 per 10 min
   "/api/scan/socials/screenshot": { limit: 10, windowMs: 600_000 }, // 10 per 10 min
+  "/api/scan/socials":          { limit: 5,  windowMs: 600_000 },  // 5 per 10 min
   "/api/scan/search-visibility":{ limit: 10, windowMs: 600_000 },  // 10 per 10 min
   "/api/ai/analyze":            { limit: 10, windowMs: 600_000 },  // 10 per 10 min
   "/api/places/competitors":    { limit: 10, windowMs: 600_000 },  // 10 per 10 min
+  "/api/places/photos":         { limit: 20, windowMs: 600_000 },  // 20 per 10 min
+  "/api/places/static-map":     { limit: 15, windowMs: 600_000 },  // 15 per 10 min
+  "/api/places/autocomplete":   { limit: 60, windowMs: 600_000 },  // 60 per 10 min (typing)
+  "/api/places/photo":          { limit: 30, windowMs: 600_000 },  // 30 per 10 min
   "/api/gbp/extract-socials":   { limit: 5,  windowMs: 600_000 },  // 5 per 10 min
+  "/api/gbp/autocomplete":      { limit: 60, windowMs: 600_000 },  // 60 per 10 min (typing)
+  "/api/gbp/place-details":     { limit: 20, windowMs: 600_000 },  // 20 per 10 min
   "/api/public/reports/share":  { limit: 10, windowMs: 600_000 },  // 10 shares per 10 min
+  "/api/proxy-image":           { limit: 60, windowMs: 600_000 },  // 60 per 10 min
   "/api/instagram/session/manual":  { limit: 3, windowMs: 600_000 }, // 3 per 10 min
   "/api/instagram/session/refresh": { limit: 3, windowMs: 600_000 }, // 3 per 10 min
 };

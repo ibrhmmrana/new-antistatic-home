@@ -15,12 +15,21 @@ function sharerDisplayNameFromEmail(email: string): string {
 
 /**
  * POST /api/public/reports/share
- * Send a report link to a recipient via email. No auth required (sharing is frictionless).
- * If the request includes a valid email_proof cookie, the sharer's name (from email) is used in the email copy.
+ * Send a report link to a recipient via email.
+ * Requires a valid email_proof token to prevent email spam abuse.
  * Body: { reportId: string, recipientEmail: string }
  */
 export async function POST(request: NextRequest) {
   try {
+    // Require email proof to prevent spam/abuse of email sending
+    const proof = await verifyEmailProof(request);
+    if (!proof.valid || !proof.payload?.email) {
+      return NextResponse.json(
+        { error: "Email verification required to share reports." },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { reportId, recipientEmail } = body as {
       reportId?: string;
@@ -40,14 +49,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "A valid email address is required." }, { status: 400 });
     }
 
-    // Optional: get sharer email and display name from verified email cookie
-    let sharerEmail: string | null = null;
-    let sharerDisplayName: string | null = null;
-    const proof = await verifyEmailProof(request);
-    if (proof.valid && proof.payload?.email) {
-      sharerEmail = proof.payload.email;
-      sharerDisplayName = sharerDisplayNameFromEmail(proof.payload.email) || null;
-    }
+    // Get sharer email and display name from verified email proof
+    const sharerEmail: string = proof.payload.email;
+    const sharerDisplayName: string | null = sharerDisplayNameFromEmail(sharerEmail) || null;
 
     // Look up business name from the report
     const supabase = getSupabaseAdmin();
@@ -78,7 +82,7 @@ export async function POST(request: NextRequest) {
     const { error: logError } = await supabase.from("report_share_log").insert({
       report_id: reportId,
       recipient_email: trimRecipient,
-      sharer_email: sharerEmail ?? null,
+      sharer_email: sharerEmail,
       business_name: businessName ?? null,
     });
     if (logError) {

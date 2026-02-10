@@ -7,6 +7,7 @@
 
 import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
 import { consumeBody } from "@/lib/net/consumeBody";
+import { apiBudget } from "@/lib/net/apiBudget";
 import type { BusinessIdentity } from '@/lib/business/resolveBusinessIdentity';
 import { buildOwnerStyleQueries, type OwnerStyleQuery } from './buildOwnerStyleQueries';
 import { fetchMapPackForQuery, type MapPackResult, type MapPackResponse } from '@/lib/maps/fetchMapPackForQuery';
@@ -182,6 +183,9 @@ async function fetchCseResults(query: string): Promise<OrganicResult[]> {
   }
   
   try {
+    // Budget guard: prevent runaway Google CSE costs
+    apiBudget.spend("google-cse");
+
     const url = new URL('https://www.googleapis.com/customsearch/v1');
     url.searchParams.set('key', apiKey);
     url.searchParams.set('cx', cx);

@@ -12,6 +12,16 @@ export const runtime = 'nodejs';
  */
 export async function POST(request: NextRequest) {
   try {
+    // API key check: same protection as /refresh endpoint
+    const apiKey = request.headers.get('x-api-key');
+    const expectedKey = process.env.SESSION_REFRESH_API_KEY;
+    if (!expectedKey || apiKey !== expectedKey) {
+      return NextResponse.json(
+        { error: 'Unauthorized: valid API key required' },
+        { status: 401 }
+      );
+    }
+
     const { username, password } = await request.json();
 
     if (!username || !password) {

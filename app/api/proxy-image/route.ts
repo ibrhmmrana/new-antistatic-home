@@ -2,6 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+/** Allowed origin hostnames for CORS (match middleware config). */
+const PROXY_ALLOWED_HOSTS = new Set([
+  "antistatic.ai",
+  "www.antistatic.ai",
+  "app.antistatic.ai",
+  "localhost",
+  "127.0.0.1",
+]);
+
+function getProxyCorsOrigin(request: NextRequest): string {
+  const origin = request.headers.get("origin") ?? "";
+  try {
+    const host = new URL(origin).hostname;
+    if (PROXY_ALLOWED_HOSTS.has(host) || host.endsWith(".vercel.app")) {
+      return origin;
+    }
+  } catch {
+    // no valid origin
+  }
+  return "https://www.antistatic.ai";
+}
+
 /**
  * Proxy endpoint to fetch and serve Instagram images
  * This bypasses CORS restrictions by fetching images server-side
@@ -81,13 +103,13 @@ export async function GET(request: NextRequest) {
     
     console.log(`[Proxy] Successfully fetched image, size: ${imageBuffer.byteLength} bytes, type: ${contentType}`);
 
-    // Return the image with appropriate headers
+    // Return the image with appropriate headers (restrict CORS to own domains)
     return new NextResponse(imageBuffer, {
       status: 200,
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "public, max-age=31536000, immutable", // Cache for 1 year
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": getProxyCorsOrigin(request),
         "Access-Control-Allow-Methods": "GET",
       },
     });
