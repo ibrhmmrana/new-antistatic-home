@@ -207,8 +207,8 @@ export default function EmailVerificationModal({
       }, 500);
     } catch (err: any) {
       setError(err.message || "Invalid verification code. Please try again.");
-      // Clear code on error
-      setCode(["", "", "", "", "", ""]);
+      // Clear code on error (keep 4-digit input to match email)
+      setCode(["", "", "", ""]);
       inputRefs.current[0]?.focus();
     } finally {
       setLoading(false);
