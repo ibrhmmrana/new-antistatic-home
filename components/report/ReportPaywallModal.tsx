@@ -10,7 +10,7 @@ const CARD_STYLE = {
   boxShadow: "inset 0 -2px 4px rgba(213, 226, 255, 1)",
 };
 
-/** ZA = South Africa (R499/R999); rest of world = $29/$99 */
+/** ZA = South Africa (R499/R999); rest of world = $29/$99. Compare = before discount. */
 const isZA = (countryCode: string) => countryCode === "ZA";
 
 type PlanId = "essential" | "full_engine";
@@ -74,6 +74,10 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
   const za = isZA(countryCode);
   const essentialPrice = za ? "R499" : "$29";
   const fullEnginePrice = za ? "R999" : "$99";
+  const essentialCompare = za ? "R999" : "$49";
+  const fullEngineCompare = za ? "R1,499" : "$149";
+  const essentialSave = za ? "50%" : "41%";
+  const fullEngineSave = za ? "33%" : "34%";
 
   const runCheckout = async (plan: PlanId) => {
     setError(null);
@@ -301,8 +305,19 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
                   </div>
                 ) : (
                   <>
-                    <span className="text-3xl md:text-4xl font-bold text-gray-900">{essentialPrice}</span>
-                    <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm md:text-base text-gray-400 line-through decoration-gray-400/70">{essentialCompare}</span>
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium tracking-wide uppercase text-gray-600"
+                        style={{ backgroundColor: "#E8EDFA", border: "1px solid #C5D4F0", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.6)" }}
+                      >
+                        Save {essentialSave}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-3xl md:text-4xl font-bold text-gray-900">{essentialPrice}</span>
+                      <span className="text-sm text-gray-500">/month</span>
+                    </div>
                   </>
                 )}
               </div>
@@ -358,8 +373,19 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
                   </div>
                 ) : (
                   <>
-                    <span className="text-3xl md:text-4xl font-bold text-gray-900">{fullEnginePrice}</span>
-                    <span className="text-sm text-gray-500 ml-2">billed monthly</span>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm md:text-base text-gray-400 line-through decoration-gray-400/70">{fullEngineCompare}</span>
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium tracking-wide uppercase text-gray-600"
+                        style={{ backgroundColor: "#E8EDFA", border: "1px solid #C5D4F0", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.6)" }}
+                      >
+                        Save {fullEngineSave}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-3xl md:text-4xl font-bold text-gray-900">{fullEnginePrice}</span>
+                      <span className="text-sm text-gray-500">/month</span>
+                    </div>
                   </>
                 )}
               </div>
