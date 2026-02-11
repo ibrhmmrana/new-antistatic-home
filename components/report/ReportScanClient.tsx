@@ -60,9 +60,12 @@ export default function ReportScanClient({
   // Toggle for automatic stage progression
   // Set to true to enable automatic progression, false for manual only
   const AUTO_ADVANCE_STAGES = true;
+  /** Max seconds to spend on each loading stage before forcing advance */
+  const MAX_STAGE_SECONDS = 30;
 
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
+  const stageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null);
   const [onlinePresenceData, setOnlinePresenceData] = useState<OnlinePresenceResult | null>(null);
   const [allAgentsDeployed, setAllAgentsDeployed] = useState(false);
@@ -133,6 +136,32 @@ export default function ReportScanClient({
       return () => clearTimeout(timer);
     }
   }, [currentStep, allAgentsDeployed, showEmailVerification]);
+
+  // Force advance to next stage after MAX_STAGE_SECONDS if stage doesn't complete naturally
+  useEffect(() => {
+    if (stageTimeoutRef.current) {
+      clearTimeout(stageTimeoutRef.current);
+      stageTimeoutRef.current = null;
+    }
+    if (currentStep >= 5) return; // Last stage: no timeout (navigate to analysis when done)
+    const stepWhenScheduled = currentStep;
+    const ms = MAX_STAGE_SECONDS * 1000;
+    stageTimeoutRef.current = setTimeout(() => {
+      stageTimeoutRef.current = null;
+      console.log(`[ONBOARDING] Stage ${stepWhenScheduled} timed out after ${MAX_STAGE_SECONDS}s, advancing to next`);
+      if (stepWhenScheduled === 0) {
+        setAllAgentsDeployed(true);
+        setShowEmailVerification(true);
+      }
+      setCurrentStep((prev) => (prev < 5 ? prev + 1 : prev));
+    }, ms);
+    return () => {
+      if (stageTimeoutRef.current) {
+        clearTimeout(stageTimeoutRef.current);
+        stageTimeoutRef.current = null;
+      }
+    };
+  }, [currentStep]);
 
   // Fetch place details and extract social links using ALL strategies on mount
   useEffect(() => {
