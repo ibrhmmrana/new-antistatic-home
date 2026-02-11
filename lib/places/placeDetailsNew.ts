@@ -151,6 +151,7 @@ export async function fetchPlaceDetailsNew(
 }
 
 function mapPlaceNewToLegacy(place: PlaceNew, placeId: string): LegacyShapedPlace {
+  // Service-area businesses (pureServiceAreaBusiness) have no location; handle missing lat/lng
   const loc = place.location;
   const lat = loc?.latitude;
   const lng = loc?.longitude;

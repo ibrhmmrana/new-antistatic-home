@@ -94,6 +94,7 @@ export async function GET(request: NextRequest) {
         : null;
 
     console.log(`[RID ${rid}] places.details done`, { ms: Date.now() - t0 });
+    // Service-area businesses (pureServiceAreaBusiness) have no physical address; location may be null
     const address = result.formatted_address ?? "";
     const location = result.geometry?.location ?? null;
     const userRatingsTotal = result.user_ratings_total ?? 0;

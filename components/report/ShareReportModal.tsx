@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X, Send, Check } from "lucide-react";
 
 interface ShareReportModalProps {
@@ -19,6 +20,11 @@ export default function ShareReportModal({ open, onOpenChange, reportId }: Share
   const [state, setState] = useState<ModalState>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Escape to close
   useEffect(() => {
@@ -82,20 +88,23 @@ export default function ShareReportModal({ open, onOpenChange, reportId }: Share
     }
   };
 
-  if (!open) return null;
+  const closeOnBackdrop = () => onOpenChange(false);
 
-  return (
+  const modalContent = !open ? null : (
     <>
-      {/* Backdrop */}
+      {/* Backdrop: tap (mobile) or click (desktop) anywhere outside modal to close */}
       <div
-        className="fixed inset-0 z-[60] backdrop-blur-sm bg-black/20 transition-opacity duration-300 ease-out"
+        className="fixed inset-0 z-[60] backdrop-blur-sm bg-black/20 transition-opacity duration-300 ease-out cursor-default"
         aria-hidden
-        onClick={() => onOpenChange(false)}
+        onClick={closeOnBackdrop}
+        onPointerDown={(e) => {
+          if (e.pointerType !== "mouse") closeOnBackdrop();
+        }}
       />
 
-      {/* Modal card */}
+      {/* Modal card: centered in viewport */}
       <div
-        className="fixed left-1/2 top-1/2 z-[61] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col"
+        className="fixed left-1/2 top-1/2 z-[61] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col max-h-[calc(100vh-2rem)]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="share-modal-title"
@@ -178,4 +187,20 @@ export default function ShareReportModal({ open, onOpenChange, reportId }: Share
       </div>
     </>
   );
+
+  // On mobile: portal to body so modal appears above floating pill (z-50) and is centered with blurred background. Desktop: render in place, no change.
+  if (!isMounted) return null;
+  if (!open) return null;
+
+  const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+  if (isMobile) {
+    return createPortal(
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ isolation: "isolate" }}>
+        {modalContent}
+      </div>,
+      document.body
+    );
+  }
+
+  return modalContent;
 }

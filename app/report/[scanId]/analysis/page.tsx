@@ -8,7 +8,7 @@ import { diagnoseSnapshot } from "@/lib/diagnosis/diagnoseReport";
 import type { ReportSchema } from "@/lib/report/types";
 import type { Competitor } from "@/lib/report/types";
 import type { ReportSnapshotV1, Prescription, MarkerLocation } from "@/lib/report/snapshotTypes";
-import ReportLeftRail from "@/components/report/ReportLeftRail";
+import ReportLeftRail, { ReportBusinessScoreBlock } from "@/components/report/ReportLeftRail";
 import ReportAntistaticIntro from "@/components/report/ReportAntistaticIntro";
 import ReportTopCards from "@/components/report/ReportTopCards";
 import ReportVisualInsights from "@/components/report/ReportVisualInsights";
@@ -798,6 +798,17 @@ export default function AnalysisPage() {
             placeId={placeId}
             reportId={reportId ?? undefined}
           />
+
+          {/* Mobile only: same business photo + name + score as desktop left rail */}
+          <div className="md:hidden w-full max-w-sm mx-auto mt-4 pb-8">
+            <ReportBusinessScoreBlock
+              businessName={report.meta.businessName}
+              businessPhotoUrl={report.summaryCards.impact.businessAvatar}
+              scores={report.scores}
+              noBackground
+              className="!border-0 !p-0"
+            />
+          </div>
 
           {/* Competitive Edge - above Top Cards */}
           <ReportVisualInsights

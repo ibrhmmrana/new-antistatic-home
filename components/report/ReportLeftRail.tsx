@@ -14,30 +14,114 @@ interface ReportLeftRailProps {
   placeId?: string | null;
 }
 
+const railBg = '#0C0824';
+const railBorder = '#1a1535';
+const trackStrokeDark = 'rgba(255,255,255,0.12)'; // unfilled arc on dark rail
+const trackStrokeLight = 'rgb(229, 231, 235)';   // gray-200, unfilled arc on light (mobile)
+
+function getGradeColor(label: string) {
+  if (label === 'Good') return 'text-green-400';
+  if (label === 'Okay') return 'text-amber-400';
+  return 'text-orange-400'; // Poor
+}
+
+function getProgressColor(label: string) {
+  if (label === 'Good') return '#34d399'; // green-400
+  if (label === 'Okay') return '#fbbf24'; // amber-400
+  return '#fb923c'; // orange-400
+}
+
+/**
+ * Shared block: business photo, name, and overall score gauge.
+ * Used in the desktop left rail and (mobile-only) under the intro card.
+ * Use noBackground for mobile so text is dark on white.
+ */
+export function ReportBusinessScoreBlock({
+  businessName,
+  businessPhotoUrl,
+  scores,
+  className = "",
+  noBackground = false,
+}: {
+  businessName?: string | null;
+  businessPhotoUrl?: string | null;
+  scores: ReportScores;
+  className?: string;
+  noBackground?: boolean;
+}) {
+  const { overall } = scores;
+  const overallPercentage = (overall.score / overall.maxScore) * 100;
+  const radius = 50;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (overallPercentage / 100) * circumference;
+  const textClass = noBackground ? "text-gray-900" : "text-white";
+  const mutedClass = noBackground ? "text-gray-500" : "text-gray-400";
+  const trackStroke = noBackground ? trackStrokeLight : trackStrokeDark;
+
+  return (
+    <div
+      className={`flex flex-col items-center gap-0 rounded-2xl border-2 p-4 ${className}`}
+      style={noBackground ? undefined : { backgroundColor: railBg, borderColor: railBorder }}
+    >
+      {(businessPhotoUrl || businessName) && (
+        <div className="flex-shrink-0 w-full flex flex-col items-center gap-1.5 mb-3">
+          {businessPhotoUrl && (
+            <div className="relative w-full max-w-64 h-36 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={businessPhotoUrl}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+          {businessName && (
+            <span className={`text-center text-[min(1rem,2.5vh)] font-medium line-clamp-2 px-1 ${textClass}`}>
+              {businessName}
+            </span>
+          )}
+        </div>
+      )}
+      <div
+        className="relative flex-shrink-0"
+        style={{ width: 'min(10rem, 22vh)', height: 'min(10rem, 22vh)' }}
+      >
+        <svg className="transform -rotate-90 w-full h-full" viewBox="0 0 160 160" preserveAspectRatio="xMidYMid meet">
+          <circle cx="80" cy="80" r={radius} stroke={trackStroke} strokeWidth="14" fill="none" aria-hidden />
+          <circle
+            cx="80"
+            cy="80"
+            r={radius}
+            stroke={getProgressColor(overall.label)}
+            strokeWidth="14"
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            className="transition-all duration-500"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={`text-[min(2.25rem,5vh)] font-bold leading-none ${textClass}`}>{overall.score}</span>
+          <span className={`text-[min(0.875rem,2.5vh)] ${mutedClass}`}>/100</span>
+        </div>
+      </div>
+      <div className="text-center flex-shrink-0 mt-2 mb-0">
+        <div className={`text-[min(0.75rem,1.8vh)] ${mutedClass}`}>Online health grade</div>
+        <div className={`text-[min(1.5rem,4vh)] font-bold leading-tight ${getGradeColor(overall.label)}`}>
+          {overall.label}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportLeftRail({ scores, reportId, businessName, businessPhotoUrl, scanId, placeId }: ReportLeftRailProps) {
   const [paywallOpen, setPaywallOpen] = useState(false);
   const { overall, searchResults, websiteExperience, localListings } = scores;
   
   // Calculate percentage for circular gauge
   const overallPercentage = (overall.score / overall.maxScore) * 100;
-  
-  // Grade label text (light variants for dark rail)
-  const getGradeColor = (label: string) => {
-    if (label === 'Good') return 'text-green-400';
-    if (label === 'Okay') return 'text-amber-400';
-    return 'text-orange-400'; // Poor
-  };
-
-  // Progress arc colors (unchanged; visible on dark)
-  const getProgressColor = (label: string) => {
-    if (label === 'Good') return '#34d399'; // green-400
-    if (label === 'Okay') return '#fbbf24'; // amber-400
-    return '#fb923c'; // orange-400
-  };
-
-  const railBg = '#0C0824';
-  const railBorder = '#1a1535';
-  const trackStroke = 'rgba(255,255,255,0.12)';
   
   // Calculate arc for circular gauge (SVG)
   const radius = 50;
@@ -60,7 +144,7 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
             cx="16"
             cy="16"
             r={miniRadius}
-            stroke={trackStroke}
+            stroke={trackStrokeDark}
             strokeWidth="3"
             fill="none"
           />
@@ -108,59 +192,13 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
         <div className="flex flex-col flex-1 min-h-0 w-full items-center gap-0">
           {/* Spacer where logo was (logo moved to intro section) */}
           <div className="flex-shrink-0 w-full h-4 mb-2" aria-hidden />
-          {/* Business photo (first GBP image) + name above score */}
-          {(businessPhotoUrl || businessName) && (
-            <div className="flex-shrink-0 w-full flex flex-col items-center gap-1.5 mb-3">
-              {businessPhotoUrl && (
-                <div className="relative w-full max-w-64 h-36 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={businessPhotoUrl}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
-              {businessName && (
-                <span className="text-center text-[min(1rem,2.5vh)] font-medium text-white line-clamp-2 px-1">
-                  {businessName}
-                </span>
-              )}
-            </div>
-          )}
-          {/* Circular Gauge - viewport-relative so it scales on short windows */}
-          <div
-            className="relative flex-shrink-0"
-            style={{ width: 'min(10rem, 22vh)', height: 'min(10rem, 22vh)' }}
-          >
-            <svg className="transform -rotate-90 w-full h-full" viewBox="0 0 160 160" preserveAspectRatio="xMidYMid meet">
-              <circle cx="80" cy="80" r={radius} stroke={trackStroke} strokeWidth="14" fill="none" />
-              <circle
-                cx="80"
-                cy="80"
-                r={radius}
-                stroke={getProgressColor(overall.label)}
-                strokeWidth="14"
-                fill="none"
-                strokeDasharray={circumference}
-                strokeDashoffset={offset}
-                strokeLinecap="round"
-                className="transition-all duration-500"
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-[min(2.25rem,5vh)] font-bold text-white leading-none">{overall.score}</span>
-              <span className="text-[min(0.875rem,2.5vh)] text-gray-400">/100</span>
-            </div>
-          </div>
-
-          {/* Health Grade Label - compact */}
-          <div className="text-center flex-shrink-0 mt-2 mb-2">
-            <div className="text-[min(0.75rem,1.8vh)] text-gray-400">Online health grade</div>
-            <div className={`text-[min(1.5rem,4vh)] font-bold leading-tight ${getGradeColor(overall.label)}`}>
-              {overall.label}
-            </div>
-          </div>
+          {/* Business photo (first GBP image) + name + score (same as mobile block) */}
+          <ReportBusinessScoreBlock
+            businessName={businessName}
+            businessPhotoUrl={businessPhotoUrl}
+            scores={scores}
+            className="mb-2 !p-0 !border-0 !rounded-none bg-transparent"
+          />
 
           {/* Category Scores - flex-1 min-h-0 so this block shrinks when space is tight */}
           <div className="w-full flex-1 min-h-0 flex flex-col justify-center gap-[min(0.75rem,2vh)] py-2">

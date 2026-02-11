@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { ReportSnapshotV1, Prescription } from "@/lib/report/snapshotTypes";
-import ReportLeftRail from "./ReportLeftRail";
+import ReportLeftRail, { ReportBusinessScoreBlock } from "./ReportLeftRail";
 import ReportAntistaticIntro from "./ReportAntistaticIntro";
 import ReportTopCards from "./ReportTopCards";
 import ReportVisualInsights from "./ReportVisualInsights";
@@ -98,6 +98,17 @@ export default function ReportSnapshotRenderer({ snapshot, reportId }: ReportSna
             scanId={snapshot.scanId}
             placeId={place.placeId}
           />
+
+          {/* Mobile only: same business photo + name + score as desktop left rail */}
+          <div className="md:hidden w-full max-w-sm mx-auto mt-4 pb-8">
+            <ReportBusinessScoreBlock
+              businessName={report.meta.businessName}
+              businessPhotoUrl={place.businessPhotoUrl || report.summaryCards.impact.businessAvatar}
+              scores={report.scores}
+              noBackground
+              className="!border-0 !p-0"
+            />
+          </div>
 
           {/* Competitive Edge - above Top Cards */}
           <ReportVisualInsights
