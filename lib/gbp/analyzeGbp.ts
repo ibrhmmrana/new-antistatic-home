@@ -152,47 +152,9 @@ export async function analyzeGbp(placeDetails: PlaceDetails): Promise<GbpAnalysi
     });
   }
   
-  // 2. Description
-  if (placeDetails.description) {
-    checklist.push({
-      key: 'description',
-      label: 'Description',
-      status: 'good',
-      value: `${placeDetails.description.length} characters`,
-      extractedValue: placeDetails.description,
-      helper: 'A well-written description helps customers understand what your business offers.',
-    });
-  } else {
-    checklist.push({
-      key: 'description',
-      label: 'Description',
-      status: 'bad',
-      extractedValue: 'Not found',
-      helper: 'No description found. Add a description to help customers understand your business.',
-    });
-  }
-  
-  // 3. Business hours
-  if (placeDetails.openingHours && placeDetails.openingHours.weekday_text) {
-    const hoursCount = placeDetails.openingHours.weekday_text.length;
-    const hoursText = placeDetails.openingHours.weekday_text.join('\n');
-    checklist.push({
-      key: 'hours',
-      label: 'Business hours',
-      status: 'good',
-      value: `${hoursCount} days configured`,
-      extractedValue: hoursText,
-      helper: 'Displaying business hours helps customers plan their visits and reduces inquiries.',
-    });
-  } else {
-    checklist.push({
-      key: 'hours',
-      label: 'Business hours',
-      status: 'bad',
-      extractedValue: 'Not found',
-      helper: 'Displaying business hours helps customers plan their visits and reduces inquiries.',
-    });
-  }
+  // 2. Description — skipped (editorialSummary removed to eliminate Atmosphere Data SKU)
+
+  // 3. Business hours — skipped (regularOpeningHours removed to reduce Contact Data SKU)
   
   // 4. Phone number
   if (placeDetails.phone) {
@@ -267,62 +229,8 @@ export async function analyzeGbp(placeDetails: PlaceDetails): Promise<GbpAnalysi
     });
   }
   
-  // 8. Description includes relevant keywords
+  // 8. Description keywords — skipped (editorialSummary removed to eliminate Atmosphere Data SKU)
   const extractedKeywords = extractKeywords(placeDetails);
-  
-  if (placeDetails.description) {
-    // Check if description contains relevant keywords from types/address
-    const descriptionLower = placeDetails.description.toLowerCase();
-    const keywordMatches = extractedKeywords.filter(kw => 
-      descriptionLower.includes(kw.toLowerCase())
-    );
-    const matchPct = extractedKeywords.length > 0 
-      ? Math.round((keywordMatches.length / extractedKeywords.length) * 100)
-      : 0;
-    
-    const keywordsFound = keywordMatches.length > 0 
-      ? `Keywords found: ${keywordMatches.join(', ')}`
-      : 'No matching keywords found';
-    const allKeywords = extractedKeywords.length > 0
-      ? `Extracted keywords: ${extractedKeywords.join(', ')}`
-      : 'No keywords extracted';
-    
-    if (matchPct >= 50) {
-      checklist.push({
-        key: 'description_keywords',
-        label: 'Description includes relevant keywords',
-        status: 'good',
-        value: `${matchPct}% match`,
-        extractedValue: `${keywordsFound}\n${allKeywords}`,
-        helper: 'Relevant keywords in your description improve search engine visibility.',
-      });
-    } else if (matchPct > 0) {
-      checklist.push({
-        key: 'description_keywords',
-        label: 'Description includes relevant keywords',
-        status: 'warn',
-        value: `${matchPct}% match`,
-        extractedValue: `${keywordsFound}\n${allKeywords}`,
-        helper: 'Relevant keywords in your description improve search engine visibility. Consider adding more location and service keywords.',
-      });
-    } else {
-      checklist.push({
-        key: 'description_keywords',
-        label: 'Description includes relevant keywords',
-        status: 'warn',
-        extractedValue: `${keywordsFound}\n${allKeywords}`,
-        helper: 'Relevant keywords in your description improve search engine visibility. Consider adding location and service keywords.',
-      });
-    }
-  } else {
-    checklist.push({
-      key: 'description_keywords',
-      label: 'Description includes relevant keywords',
-      status: 'warn',
-      extractedValue: 'Cannot analyze (no description found)',
-      helper: 'Relevant keywords in your description improve search engine visibility. Add a description first.',
-    });
-  }
   
   // 9. Categories match keywords
   const genericTypes = new Set([

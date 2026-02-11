@@ -6,6 +6,7 @@
 import { fetchWithTimeout } from "@/lib/net/fetchWithTimeout";
 import { consumeBody } from "@/lib/net/consumeBody";
 import { apiBudget } from "@/lib/net/apiBudget";
+// enrichPlaceDetails import removed — Text Search data is sufficient
 
 export interface MapPackResult {
   place_id: string;
@@ -32,47 +33,9 @@ function getCacheKey(query: string, lat: number, lng: number): string {
   return `${query.toLowerCase()}|${lat.toFixed(4)}|${lng.toFixed(4)}`;
 }
 
-/**
- * Fetch place details for enrichment
- */
-async function enrichPlaceDetails(placeId: string): Promise<Partial<MapPackResult>> {
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-  if (!apiKey) return {};
-  
-  try {
-    // Budget guard: prevent runaway Google Places API costs
-    apiBudget.spend("google-places");
-
-    const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
-    url.searchParams.set('place_id', placeId);
-    url.searchParams.set('fields', 'name,rating,user_ratings_total,formatted_address,website');
-    url.searchParams.set('key', apiKey);
-
-    const response = await fetchWithTimeout(url.toString(), {
-      timeoutMs: 10000,
-      retries: 2,
-    });
-    if (!response.ok) {
-      await consumeBody(response);
-      return {};
-    }
-    const data = await response.json();
-
-    if (data.status === 'OK' && data.result) {
-      return {
-        website: data.result.website || null,
-        rating: data.result.rating || undefined,
-        user_ratings_total: data.result.user_ratings_total || undefined,
-        address: data.result.formatted_address || undefined,
-      };
-    }
-
-    return {};
-  } catch (error) {
-    console.error(`[MAP-PACK] Error enriching place ${placeId}:`, error);
-    return {};
-  }
-}
+// enrichPlaceDetails removed — Text Search already returns name, rating,
+// user_ratings_total, and address. Eliminated 3 Place Details calls per query
+// (was 21+ calls total across all queries).
 
 /**
  * Fetch map pack results for a specific query
@@ -145,38 +108,25 @@ export async function fetchMapPackForQuery(params: {
       }
     }
     
-    // Enrich top 3 with Place Details (website, rating, etc.)
-    const enrichedResults: MapPackResult[] = [];
-    
-    for (const place of top3) {
-      const base: MapPackResult = {
-        place_id: place.place_id,
-        name: place.name || '',
-        rating: place.rating || undefined,
-        user_ratings_total: place.user_ratings_total || undefined,
-        address: place.formatted_address || place.vicinity || undefined,
-      };
-      
-      // Enrich with Place Details (website)
-      const details = await enrichPlaceDetails(place.place_id);
-      enrichedResults.push({
-        ...base,
-        ...details,
-      });
-      
-      // Small delay to avoid rate limits
-      await new Promise(r => setTimeout(r, 100));
-    }
+    // Use Text Search data directly (no Place Details enrichment needed)
+    const results: MapPackResult[] = top3.map((place: any) => ({
+      place_id: place.place_id,
+      name: place.name || '',
+      rating: place.rating || undefined,
+      user_ratings_total: place.user_ratings_total || undefined,
+      address: place.formatted_address || place.vicinity || undefined,
+      website: null, // Not available from Text Search; not displayed in report UI
+    }));
     
     const result: MapPackResponse = {
       rank: userRank,
-      results: enrichedResults,
+      results,
     };
     
     // Cache the result
     cache.set(cacheKey, { data: result, timestamp: Date.now() });
     
-    console.log(`[MAP-PACK] Found ${enrichedResults.length} results, user rank: ${userRank || 'unranked'}`);
+    console.log(`[MAP-PACK] Found ${results.length} results, user rank: ${userRank || 'unranked'}`);
     
     return result;
   } catch (error) {

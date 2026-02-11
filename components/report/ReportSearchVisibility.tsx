@@ -80,10 +80,10 @@ export default function ReportSearchVisibility({
           lng = cached.lng;
         }
       } else {
-        // Normal mode: fetch from API
+        // Normal mode: fetch from API with minimal mask (location only — Essentials tier)
         try {
           const response = await fetchWithTimeoutClient(
-            `/api/places/details?placeId=${encodeURIComponent(result.placeId)}`,
+            `/api/places/details?placeId=${encodeURIComponent(result.placeId)}&minimal=true`,
             undefined,
             20000
           );

@@ -617,7 +617,7 @@ export default function AnalysisPage() {
             try {
               const controller = new AbortController();
               const timeoutId = setTimeout(() => controller.abort(), 5000);
-              const res = await fetch(`/api/places/details?placeId=${encodeURIComponent(pid)}`, {
+              const res = await fetch(`/api/places/details?placeId=${encodeURIComponent(pid)}&minimal=true`, {
                 signal: controller.signal,
               });
               clearTimeout(timeoutId);

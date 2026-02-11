@@ -85,8 +85,8 @@ export default function StageGoogleBusinessProfile({
     revealStartedRef.current = true;
     const REVEAL_DELAY = 1500; // 1.5 seconds between each item
     
-    // Items to reveal: description, phone, website, openingHours
-    const totalMainItems = 4;
+    // Items to reveal: phone, website (description & openingHours removed for cost reduction)
+    const totalMainItems = 2;
     
     // Reveal main items one by one
     for (let i = 1; i <= totalMainItems; i++) {
@@ -325,26 +325,10 @@ export default function StageGoogleBusinessProfile({
               )}
             </div>
 
-            {/* Description - Item 1 */}
-            {revealedItems >= 1 && (
-              <div className="finding-reveal mb-4">
-                {data.description ? (
-                  <p className="text-sm text-gray-700 leading-relaxed">
-                    {data.description}
-                  </p>
-                ) : (
-                  <div className="flex items-center gap-2 text-red-600">
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                    <span className="text-sm">No description found</span>
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Contact Information */}
             <div className="space-y-3 mb-4">
-              {/* Phone Number - Item 2 */}
-              {revealedItems >= 2 && (
+              {/* Phone Number - Item 1 */}
+              {revealedItems >= 1 && (
                 <div className="finding-reveal">
                   {data.phoneNumber ? (
                     <div className="flex items-center gap-2">
@@ -365,8 +349,8 @@ export default function StageGoogleBusinessProfile({
                 </div>
               )}
 
-              {/* Website - Item 3 */}
-              {revealedItems >= 3 && (
+              {/* Website - Item 2 */}
+              {revealedItems >= 2 && (
                 <div className="finding-reveal">
                   {data.website ? (
                     <div className="flex items-center gap-2">
@@ -384,42 +368,6 @@ export default function StageGoogleBusinessProfile({
                     <div className="flex items-center gap-2 text-red-600">
                       <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                       <span className="text-sm">Website not found</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Opening Hours - Item 4 */}
-              {revealedItems >= 4 && (
-                <div className="finding-reveal">
-                  {data.openingHours ? (
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700">Opening Hours:</span>
-                        {data.openingHours.open_now !== undefined && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            data.openingHours.open_now 
-                              ? 'bg-green-100 text-green-700' 
-                              : 'bg-red-100 text-red-700'
-                          }`}>
-                            {data.openingHours.open_now ? 'Open now' : 'Closed now'}
-                          </span>
-                        )}
-                      </div>
-                      {data.openingHours.weekday_text && data.openingHours.weekday_text.length > 0 && (
-                        <div className="pl-0 space-y-1">
-                          {data.openingHours.weekday_text.map((day, idx) => (
-                            <div key={idx} className="text-sm text-gray-600">
-                              {day}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-red-600">
-                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                      <span className="text-sm">Opening hours not found</span>
                     </div>
                   )}
                 </div>

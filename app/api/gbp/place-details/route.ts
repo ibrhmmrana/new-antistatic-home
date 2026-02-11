@@ -14,23 +14,29 @@ import { getRequestId } from "@/lib/net/requestId";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Unified field mask – identical to /api/places/details so the in-memory
+ * cache in placeDetailsNew.ts de-duplicates the two calls.
+ *
+ * Removed (cost-reduction):
+ *   - editorialSummary  → eliminated Atmosphere Data SKU
+ *   - nationalPhoneNumber → redundant
+ *   - regularOpeningHours → eliminated from Contact Data SKU
+ */
 const GBP_FIELD_MASK = [
-  "id",
+  "businessStatus",
   "displayName",
   "formattedAddress",
-  "location",
-  "websiteUri",
-  "internationalPhoneNumber",
-  "nationalPhoneNumber",
-  "businessStatus",
-  "rating",
-  "userRatingCount",
-  "types",
-  "regularOpeningHours",
-  "priceLevel",
-  "editorialSummary",
-  "photos",
   "googleMapsUri",
+  "id",
+  "internationalPhoneNumber",
+  "location",
+  "photos",
+  "priceLevel",
+  "rating",
+  "types",
+  "userRatingCount",
+  "websiteUri",
 ] as const;
 
 export async function GET(request: NextRequest) {
@@ -72,22 +78,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const description = result.editorial_summary?.overview ?? null;
+    // editorialSummary removed to eliminate Atmosphere Data SKU billing
     const firstPhotoName = result.photos?.[0]?.name;
     const photoUri =
       firstPhotoName != null
         ? await fetchFirstPhotoUri(firstPhotoName, apiKey, 900)
         : null;
-
-    if (description) {
-      console.log(
-        `[GBP-PLACE-DETAILS] Found general description: "${description.substring(0, 80)}..."`
-      );
-    } else {
-      console.log(
-        "[GBP-PLACE-DETAILS] No editorialSummary.overview found - description may not be available for this business"
-      );
-    }
 
     const placeDetails = {
       name: result.name ?? "",
@@ -95,18 +91,15 @@ export async function GET(request: NextRequest) {
       lat: result.geometry?.location?.lat ?? null,
       lng: result.geometry?.location?.lng ?? null,
       website: result.website ?? null,
-      phone:
-        result.formatted_phone_number ??
-        result.international_phone_number ??
-        null,
+      phone: result.international_phone_number ?? null,
       rating: result.rating ?? null,
       reviews: result.user_ratings_total ?? 0,
-      openingHours: result.opening_hours ?? null,
+      openingHours: null, // regularOpeningHours removed to reduce Contact Data billing
       priceLevel:
         result.price_level != null ? Number(result.price_level) : null,
       types: result.types ?? [],
       businessStatus: result.business_status ?? null,
-      description,
+      description: null, // editorialSummary removed to eliminate Atmosphere Data SKU
       photoRef: null,
       photoUri: photoUri ?? null,
       url: result.url ?? null,

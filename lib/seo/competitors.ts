@@ -669,6 +669,11 @@ async function textSearch(query: string, locationBias?: string): Promise<any[]> 
 /**
  * Get place details
  */
+/**
+ * Fetch place details with minimal field mask.
+ * Removed: formatted_phone_number, formatted_address, opening_hours
+ * (never displayed in competitor cards — saves Contact Data billing)
+ */
 async function getPlaceDetails(placeId: string): Promise<any | null> {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return null;
@@ -683,7 +688,8 @@ async function getPlaceDetails(placeId: string): Promise<any | null> {
 
     const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
     url.searchParams.set('place_id', placeId);
-    url.searchParams.set('fields', 'name,rating,user_ratings_total,website,formatted_phone_number,formatted_address,opening_hours,types,geometry');
+    // Minimal mask: only fields needed for competitor ranking + category filtering
+    url.searchParams.set('fields', 'name,rating,user_ratings_total,website,types,geometry');
     url.searchParams.set('key', apiKey);
 
     const response = await fetchWithTimeout(url.toString(), {

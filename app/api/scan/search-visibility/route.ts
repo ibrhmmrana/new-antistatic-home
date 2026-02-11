@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       try {
         searchVisibility = await getSearchVisibility({
           identity: businessIdentity,
-          maxQueries: 10,
+          maxQueries: 7, // Capped from 10 to reduce Text Search + Place Details calls
           hasMenuPage: false,
           hasPricingPage: false,
         });

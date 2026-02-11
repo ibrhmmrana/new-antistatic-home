@@ -8,21 +8,39 @@ import { getRequestId } from "@/lib/net/requestId";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Unified field mask – shared with /api/gbp/place-details so the cache
+ * de-duplicates the two calls that used to run independently.
+ *
+ * Removed (cost-reduction):
+ *   - editorialSummary  → eliminated Atmosphere Data SKU
+ *   - nationalPhoneNumber → redundant (internationalPhoneNumber kept)
+ *   - regularOpeningHours → eliminated from Contact Data SKU
+ *
+ * Added (merged from GBP route):
+ *   - businessStatus, priceLevel
+ */
 const DETAILS_FIELD_MASK = [
-  "id",
+  "businessStatus",
   "displayName",
   "formattedAddress",
-  "location",
-  "rating",
-  "userRatingCount",
-  "types",
-  "websiteUri",
-  "internationalPhoneNumber",
-  "nationalPhoneNumber",
-  "regularOpeningHours",
-  "editorialSummary",
-  "photos",
   "googleMapsUri",
+  "id",
+  "internationalPhoneNumber",
+  "location",
+  "photos",
+  "priceLevel",
+  "rating",
+  "types",
+  "userRatingCount",
+  "websiteUri",
+] as const;
+
+/** Minimal mask for map-marker location lookups (Essentials tier only). */
+const MINIMAL_FIELD_MASK = [
+  "displayName",
+  "id",
+  "location",
 ] as const;
 
 export async function GET(request: NextRequest) {
@@ -30,8 +48,9 @@ export async function GET(request: NextRequest) {
   const rid = getRequestId(request);
   const searchParams = request.nextUrl.searchParams;
   const placeId = searchParams.get("placeId");
+  const isMinimal = searchParams.get("minimal") === "true";
 
-  console.log(`[RID ${rid}] places.details start`, { placeId });
+  console.log(`[RID ${rid}] places.details start`, { placeId, isMinimal });
 
   if (!placeId) {
     return NextResponse.json(
@@ -49,12 +68,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    console.log(`[RID ${rid}] places.details fetch google`);
-    const result = await fetchPlaceDetailsNew(
-      placeId,
-      [...DETAILS_FIELD_MASK],
-      apiKey
-    );
+    const mask = isMinimal ? [...MINIMAL_FIELD_MASK] : [...DETAILS_FIELD_MASK];
+    console.log(`[RID ${rid}] places.details fetch google (${isMinimal ? "minimal" : "full"})`);
+    const result = await fetchPlaceDetailsNew(placeId, mask, apiKey);
     console.log(`[RID ${rid}] places.details google done`, { hasResult: !!result });
 
     if (!result) {
@@ -64,6 +80,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // ── Minimal response (map markers only) ──────────────────────────
+    if (isMinimal) {
+      const location = result.geometry?.location ?? null;
+      return NextResponse.json({
+        placeId: result.place_id ?? placeId,
+        name: result.name ?? "",
+        location,
+      });
+    }
+
+    // ── Full response ────────────────────────────────────────────────
     const types = result.types ?? [];
     const genericTypes = [
       "point_of_interest",
@@ -86,7 +113,8 @@ export async function GET(request: NextRequest) {
           .join(" ")
       : "";
 
-    const description = result.editorial_summary?.overview ?? null;
+    // editorialSummary removed – always null now
+    const description: null = null;
     const firstPhotoName = result.photos?.[0]?.name;
     const photoUri =
       firstPhotoName != null
@@ -116,9 +144,12 @@ export async function GET(request: NextRequest) {
       photoUri: photoUri ?? undefined,
       website: result.website ?? null,
       url: result.url ?? null,
-      phoneNumber:
-        result.international_phone_number ?? result.formatted_phone_number ?? null,
-      openingHours: result.opening_hours ?? null,
+      phoneNumber: result.international_phone_number ?? null,
+      // openingHours removed – always null now
+      openingHours: null,
+      // New fields (merged from GBP route)
+      businessStatus: result.business_status ?? null,
+      priceLevel: result.price_level ?? null,
     });
   } catch (error) {
     const ms = Date.now() - t0;

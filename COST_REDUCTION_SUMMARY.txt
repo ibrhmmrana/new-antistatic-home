@@ -1,0 +1,124 @@
+GOOGLE API COST REDUCTION — WHAT WE CHANGED
+=============================================
+
+BEFORE: ~$316/month (at current usage)
+AFTER:  ~$60-80/month (estimated)
+SAVING: ~$230-250/month (~75% reduction)
+
+
+WHAT WAS COSTING THE MOST
+--------------------------
+
+Every time someone scans their business, we were making roughly
+150-200 Google API calls. Most of these were unnecessary.
+
+The 4 big problems were:
+
+1. We were running the same search visibility pipeline TWICE
+   (once in the search-visibility route, once in the website scraper).
+   That alone doubled ~80 calls to ~160.
+
+2. For every search query, we fetched extra Place Details for the
+   top 3 results just to get their website URL — which we never
+   even showed in the report. That was 21+ wasted calls per scan.
+
+3. We were requesting expensive data fields (description, opening
+   hours, phone in local format) that triggered premium Google
+   billing tiers — even though we barely used them.
+
+4. We fetched up to 18 photos per business when 8 is plenty.
+
+
+WHAT WE DID (PLAIN ENGLISH)
+-----------------------------
+
+1. REMOVED THE DUPLICATE PIPELINE
+   Before: Search visibility + competitors ran in TWO places.
+   After:  They only run ONCE now.
+   Saving: ~50 API calls per scan.
+
+2. STOPPED FETCHING DATA WE DON'T SHOW
+   Before: For each search query result, we called Google again
+           just to get the website URL of competitors in the map pack.
+   After:  We use the data Google already gave us from the search.
+   Saving: ~21 API calls per scan.
+
+3. REMOVED EXPENSIVE DATA FIELDS
+   Before: Every Place Details call asked for "editorialSummary"
+           (triggers $1.50/1000 Atmosphere Data billing),
+           "opening hours" and "local phone number"
+           (triggers $0.90/1000 Contact Data billing).
+   After:  We don't ask for these anymore.
+   Saving: Eliminates the $77/month Atmosphere Data charge entirely.
+           Reduces the $46/month Contact Data charge significantly.
+
+   What changed in the app:
+   - The onboarding GBP card no longer shows "Description" or
+     "Opening Hours" rows (it still shows photo, map, rating,
+     phone, and website).
+   - The AI analysis no longer scores description or hours.
+
+4. UNIFIED TWO SEPARATE API CALLS INTO ONE
+   Before: The main details page and the GBP analyzer each made
+           their own Place Details call with slightly different fields.
+   After:  They use the exact same fields, so the second call
+           hits the cache and costs nothing.
+   Saving: ~2 API calls + 1 photo call per scan.
+
+5. CAPPED PHOTOS FROM 18 TO 8
+   Before: We fetched up to 18 photos for the collage.
+   After:  We fetch up to 8. Still plenty for the visual.
+   Saving: ~10 photo API calls per scan.
+
+6. REDUCED SEARCH QUERIES FROM 10 TO 7
+   Before: We tested 10 different search queries per business.
+   After:  We test 7. Still covers branded + non-branded well.
+   Saving: ~12 API calls per scan (3 searches + their enrichments).
+
+7. TRIMMED COMPETITOR DATA FIELDS
+   Before: When looking up competitor details, we asked for phone,
+           address, and opening hours — none of which we display.
+   After:  We only ask for name, rating, review count, website,
+           types, and location.
+   Saving: Lower per-call cost (no Contact Data tier triggered).
+
+8. MADE MAP MARKERS USE A TINY API CALL
+   Before: To place a pin on the map, we fetched the FULL business
+           profile (with all expensive fields) just to get lat/lng.
+   After:  We only ask for name + location (cheapest tier).
+   Saving: 15-30 calls per scan drop from ~$0.017 each to ~$0.003.
+
+
+WHAT STAYED THE SAME
+---------------------
+
+- Competitor rankings: still calculated the same way (sorted by
+  rating then review count). No change to what users see.
+- Search visibility scores: same algorithm, just 7 queries not 10.
+- Review sentiment: untouched.
+- Photo collage: still works, just 8 photos instead of 18.
+- All report sections: still present and functional.
+- Phone number: still shown (using international format only now,
+  which was already the preferred format).
+
+
+CALLS PER SCAN (APPROXIMATE)
+------------------------------
+
+                              BEFORE    AFTER
+Main business details           2         1  (cache hit)
+Business first photo            2         1  (cache hit)
+GBP analysis                    1         0  (cache hit)
+Reviews fetch                   1         1
+Competitor target lookup        1         1
+Photo collage                  19         9  (1 list + 8 media)
+Search visibility pipeline     80        28  (7 queries, once)
+  - Text searches              20         7
+  - Map pack enrichment        60         0  (removed)
+  - CSE organic searches       20         7  (not Places API)
+Competitor enrichment          20        10  (trimmed fields)
+Map marker locations           30        30  (but minimal tier)
+                             ----      ----
+TOTAL PLACES API CALLS:      ~156       ~81
+ATMOSPHERE DATA CALLS:         ~6         0
+CONTACT DATA CALLS:            ~6         0

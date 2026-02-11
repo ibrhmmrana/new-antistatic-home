@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { limit4 } from "@/lib/net/pLimit";
 import { apiBudget } from "@/lib/net/apiBudget";
 
-const MAX_PHOTOS = 18;
+const MAX_PHOTOS = 8; // Capped from 18 to reduce Places Photo API costs
 const MEDIA_MAX_WIDTH_PX = 1600;
 const PLACE_FETCH_TIMEOUT_MS = 12000;
 const MEDIA_FETCH_TIMEOUT_MS = 10000;

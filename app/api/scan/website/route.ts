@@ -5,8 +5,7 @@ import chromium from '@sparticuz/chromium';
 
 // Import the new SEO modules
 import { resolveBusinessIdentity, BusinessIdentity, WebsiteExtractedData } from '@/lib/business/resolveBusinessIdentity';
-import { getSearchVisibility, SearchVisibilityResult } from '@/lib/seo/searchVisibility';
-import { getCompetitorSnapshot, CompetitorsSnapshot } from '@/lib/seo/competitors';
+// Search visibility + competitors now handled exclusively by /api/scan/search-visibility
 import { getRequestId } from '@/lib/net/requestId';
 import { fetchWithTimeout } from '@/lib/net/fetchWithTimeout';
 import { consumeBody } from '@/lib/net/consumeBody';
@@ -414,10 +413,8 @@ interface ScrapeResult {
   };
   // Owner-level site summary
   site_report_summary: SiteReportSummary;
-  // NEW: Business identity, Search visibility, and competitors
+  // Business identity (search visibility + competitors now via /api/scan/search-visibility)
   business_identity?: BusinessIdentity;
-  search_visibility?: SearchVisibilityResult;
-  competitors_snapshot?: CompetitorsSnapshot;
 }
 
 // Helper functions
@@ -2333,75 +2330,10 @@ export async function POST(request: NextRequest) {
       }
       
       // =====================================================
-      // SEARCH VISIBILITY MODULE (using resolved identity)
+      // SEARCH VISIBILITY + COMPETITORS — removed from website route
+      // These now run exclusively via /api/scan/search-visibility
+      // to eliminate the double-pipeline (was ~80 calls, now ~28).
       // =====================================================
-      
-      console.log(`[WEBSITE-SCRAPE] Running search visibility analysis...`);
-      
-      let searchVisibility: SearchVisibilityResult | undefined;
-      try {
-        searchVisibility = await getSearchVisibility({
-          identity: businessIdentity,
-          maxQueries: 10,
-          hasMenuPage: websiteExtractedData.hasMenuPage,
-          hasPricingPage: websiteExtractedData.hasPricingPage,
-        });
-        console.log(`[WEBSITE-SCRAPE] Search visibility complete: score ${searchVisibility.visibility_score}%`);
-      } catch (svError) {
-        console.error('[WEBSITE-SCRAPE] Search visibility error:', svError);
-        searchVisibility = {
-          queries: [],
-          visibility_score: 0,
-          share_of_voice: 0,
-          branded_visibility: 0,
-          non_branded_visibility: 0,
-          top_competitor_domains: [],
-          directory_domains: [],
-          business_domains: [],
-          identity_used: {
-            business_name: businessIdentity.business_name,
-            location_label: businessIdentity.location_label,
-            service_keywords: businessIdentity.service_keywords,
-          },
-          error: svError instanceof Error ? svError.message : 'Unknown error',
-        };
-      }
-      
-      // =====================================================
-      // COMPETITORS MODULE (using resolved identity)
-      // =====================================================
-      
-      console.log(`[WEBSITE-SCRAPE] Running competitor analysis...`);
-      console.log(`[WEBSITE-SCRAPE] Stage 1 competitors provided: ${stage1Competitors?.length || 0}`);
-      
-      let competitorsSnapshot: CompetitorsSnapshot | undefined;
-      try {
-        competitorsSnapshot = await getCompetitorSnapshot({
-          identity: businessIdentity,
-          radiusMeters: 3000, // 3km radius for local competitors (fallback only)
-          maxCompetitors: 8,
-          stage1Competitors: stage1Competitors || [], // Use Stage 1 competitors if provided
-        });
-        console.log(`[WEBSITE-SCRAPE] Competitors complete: found ${competitorsSnapshot.competitors_places.length} competitors (${competitorsSnapshot.search_method})`);
-        if (competitorsSnapshot.competitor_source) {
-          console.log(`[WEBSITE-SCRAPE] Competitor source: ${competitorsSnapshot.competitor_source}`);
-        }
-      } catch (compError) {
-        console.error('[WEBSITE-SCRAPE] Competitor snapshot error:', compError);
-        competitorsSnapshot = {
-          competitors_places: [],
-          reputation_gap: null,
-          competitors_with_website: 0,
-          competitors_without_website: 0,
-          search_method: 'none',
-          search_radius_meters: null,
-          search_queries_used: [],
-          location_used: null,
-          your_place_id: businessIdentity.place_id,
-          error: compError instanceof Error ? compError.message : 'Unknown error',
-          debug_info: [],
-        };
-      }
       
       const result: ScrapeResult = {
         scrape_metadata: {
@@ -2434,8 +2366,7 @@ export async function POST(request: NextRequest) {
         },
         site_report_summary: siteReportSummary,
         business_identity: businessIdentity,
-        search_visibility: searchVisibility,
-        competitors_snapshot: competitorsSnapshot,
+        // search_visibility & competitors_snapshot now provided by /api/scan/search-visibility only
       };
       
       console.log(`[WEBSITE-SCRAPE] Completed in ${crawlDuration}s, scraped ${pageResults.length} pages`);
