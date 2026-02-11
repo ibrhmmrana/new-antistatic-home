@@ -188,7 +188,10 @@ async function sendEmailViaSES(email: string, code: string): Promise<void> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, placeId, placeName, utm } = body;
+    const { email, placeId, placeName, businessName, utm } = body;
+    const raw = placeName ?? businessName;
+    const businessNameValue =
+      raw != null && String(raw).trim() !== "" ? String(raw).trim() : null;
 
     if (!email || !email.includes("@")) {
       return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
@@ -226,7 +229,7 @@ export async function POST(request: NextRequest) {
         attempts: 0,
         purpose: "unlock_report",
         place_id: placeId || null,
-        business_name: placeName && String(placeName).trim() ? String(placeName).trim() : null,
+        business_name: businessNameValue,
         ip,
         user_agent: userAgent,
       })

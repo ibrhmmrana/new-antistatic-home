@@ -21,13 +21,15 @@ interface ReportPaywallModalProps {
   scanId?: string;
   placeId?: string;
   reportId?: string;
+  /** Business name for email verification challenge (stored with OTP request) */
+  businessName?: string | null;
 }
 
 /**
  * Paywall modal: pricing plans; Get started creates Stripe Checkout and redirects to payment page.
  * If user is not email-verified (401), shows inline email + OTP verification so they can proceed.
  */
-export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId, reportId }: ReportPaywallModalProps) {
+export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId, reportId, businessName }: ReportPaywallModalProps) {
   const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [countryCode, setCountryCode] = useState<string>("XX");
@@ -130,7 +132,11 @@ export default function ReportPaywallModal({ open, onOpenChange, scanId, placeId
       const res = await fetch("/api/public/verify-email/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, placeId }),
+        body: JSON.stringify({
+          email,
+          placeId,
+          placeName: (businessName && String(businessName).trim()) || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

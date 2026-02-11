@@ -217,6 +217,7 @@ export default function ReportLeftRail({ scores, reportId, businessName, busines
         scanId={scanId ?? undefined}
         placeId={placeId ?? undefined}
         reportId={reportId ?? undefined}
+        businessName={businessName ?? undefined}
       />
     </>
   );

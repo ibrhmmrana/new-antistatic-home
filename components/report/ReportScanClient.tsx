@@ -930,7 +930,7 @@ export default function ReportScanClient({
     
     if (currentStep === 5 && allAnalyzersComplete && stage5AppearedTimeRef.current) {
       const elapsed = Date.now() - stage5AppearedTimeRef.current;
-      const minDelay = 4500; // Minimum 4.5 seconds to show Stage 5
+      const minDelay = 2000; // Minimum 2 seconds on Stage 5 before auto-navigating
       const remainingDelay = Math.max(0, minDelay - elapsed);
       
       navigationTimeoutRef.current = setTimeout(() => {
@@ -1429,7 +1429,7 @@ export default function ReportScanClient({
                   />
                 </div>
               ) : displayStep === 5 ? (
-                // Step 4: Online presence analysis
+                // Step 5: Online presence analysis
                 <div className="absolute inset-0">
                   <AIAgentModal stage={4} stageName="Online presence analysis" />
                   <StageOnlinePresence 
@@ -1439,10 +1439,24 @@ export default function ReportScanClient({
                     initialData={onlinePresenceData}
                     allAnalyzersComplete={allAnalyzersComplete}
                     onComplete={() => {
-                      // Don't navigate yet - wait for AI analysis
-                      console.log('[NAVIGATION] Stage 4 complete, waiting for AI analysis...');
+                      // Don't navigate yet - navigation is handled by useEffect when allAnalyzersComplete
+                      console.log('[NAVIGATION] Stage 5 complete, waiting for analyzers...');
                     }}
                   />
+                  {/* When analyzers are complete, show a clear CTA so users aren't stuck on spinner */}
+                  {allAnalyzersComplete && (
+                    <div className="absolute bottom-24 left-0 right-0 flex justify-center px-4 z-10 pointer-events-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          router.push(`/report/${scanId}/analysis?placeId=${encodeURIComponent(placeId)}&name=${encodeURIComponent(name)}&addr=${encodeURIComponent(addr)}`);
+                        }}
+                        className="px-6 py-3 rounded-xl bg-blue-600 text-white font-medium text-sm shadow-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View your report
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-6 h-full">

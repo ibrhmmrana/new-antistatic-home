@@ -88,7 +88,7 @@ export default function EmailVerificationModal({
         body: JSON.stringify({
           email,
           placeId,
-          placeName,
+          placeName: (placeName && String(placeName).trim()) || "Business",
         }),
       });
 
