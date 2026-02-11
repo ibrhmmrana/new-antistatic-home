@@ -226,6 +226,7 @@ export async function POST(request: NextRequest) {
         attempts: 0,
         purpose: "unlock_report",
         place_id: placeId || null,
+        business_name: placeName && String(placeName).trim() ? String(placeName).trim() : null,
         ip,
         user_agent: userAgent,
       })
