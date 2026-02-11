@@ -137,22 +137,19 @@ export default function ReportScanClient({
     }
   }, [currentStep, allAgentsDeployed, showEmailVerification]);
 
-  // Force advance to next stage after MAX_STAGE_SECONDS if stage doesn't complete naturally
+  // Force advance to next stage after MAX_STAGE_SECONDS if stage doesn't complete naturally.
+  // Only applied to stages 1–4 (after OTP). Stage 0 has no timeout so user can verify via OTP.
   useEffect(() => {
     if (stageTimeoutRef.current) {
       clearTimeout(stageTimeoutRef.current);
       stageTimeoutRef.current = null;
     }
-    if (currentStep >= 5) return; // Last stage: no timeout (navigate to analysis when done)
+    if (currentStep === 0 || currentStep >= 5) return; // No timeout on "Deploying agents" (OTP) or last stage
     const stepWhenScheduled = currentStep;
     const ms = MAX_STAGE_SECONDS * 1000;
     stageTimeoutRef.current = setTimeout(() => {
       stageTimeoutRef.current = null;
       console.log(`[ONBOARDING] Stage ${stepWhenScheduled} timed out after ${MAX_STAGE_SECONDS}s, advancing to next`);
-      if (stepWhenScheduled === 0) {
-        setAllAgentsDeployed(true);
-        setShowEmailVerification(true);
-      }
       setCurrentStep((prev) => (prev < 5 ? prev + 1 : prev));
     }, ms);
     return () => {
@@ -1255,8 +1252,13 @@ export default function ReportScanClient({
   };
 
   const handleStepClick = (stepId: number) => {
+    // Block navigation to any stage beyond 0 until user has verified via OTP
+    if (!emailVerified && stepId !== 0) return;
     setCurrentStep(stepId);
   };
+
+  // Until OTP is done, we only show stage 0; analysis/stages 1+ run only after verification
+  const displayStep = emailVerified ? currentStep : 0;
 
 
   // Build step list
@@ -1270,10 +1272,10 @@ export default function ReportScanClient({
   ];
 
   const getStepIcon = (stepId: number) => {
-    if (stepId < currentStep) {
+    if (stepId < displayStep) {
       // Completed
       return <Check className="w-5 h-5 text-green-600" />;
-    } else if (stepId === currentStep) {
+    } else if (stepId === displayStep) {
       // Current - spinner
       return <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />;
     } else {
@@ -1297,7 +1299,7 @@ export default function ReportScanClient({
                 key={step.id}
                 onClick={() => handleStepClick(step.id)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors cursor-pointer ${
-                  step.id === currentStep
+                  step.id === displayStep
                     ? "bg-blue-50"
                     : "hover:bg-gray-50"
                 }`}
@@ -1305,9 +1307,9 @@ export default function ReportScanClient({
                 <div className="flex-shrink-0">{getStepIcon(step.id)}</div>
                 <span
                   className={`text-sm ${
-                    step.id === currentStep
+                    step.id === displayStep
                       ? "text-gray-900 font-medium"
-                      : step.id < currentStep
+                      : step.id < displayStep
                       ? "text-gray-700"
                       : "text-gray-600"
                   }`}
@@ -1356,13 +1358,13 @@ export default function ReportScanClient({
       <div className="flex-1 flex flex-col relative overflow-hidden">
             {/* Preview Area */}
             <div className="flex-1 relative overflow-hidden min-h-[600px]">
-              {/* Stage 0: Deploying agents */}
-              {currentStep === 0 ? (
+              {/* Stage 0: Deploying agents — only show stages 1+ after OTP (displayStep) */}
+              {displayStep === 0 ? (
                 <AIAgentLoadingScreen 
                   businessName={name}
                   onAllAgentsDeployed={() => setAllAgentsDeployed(true)}
                 />
-              ) : currentStep === 1 ? (
+              ) : displayStep === 1 ? (
                 // Google Business Profile step
                 <div className="absolute inset-0">
                   <AIAgentModal stage={0} stageName="Your online profile review" />
@@ -1378,7 +1380,7 @@ export default function ReportScanClient({
                     }}
                   />
                 </div>
-              ) : currentStep === 2 ? (
+              ) : displayStep === 2 ? (
                 // Competitors - Real Google Map (Owner.com style - no card wrapper)
                 <div className="absolute inset-0">
                   <AIAgentModal stage={1} stageName={`${name} competitors`} moveDownOnMobile />
@@ -1394,7 +1396,7 @@ export default function ReportScanClient({
                     }}
                   />
                 </div>
-              ) : currentStep === 3 ? (
+              ) : displayStep === 3 ? (
                 // Google Review Sentiment step
                 <div className="absolute inset-0">
                   <AIAgentModal stage={2} stageName="Review sentiment scoring" />
@@ -1410,7 +1412,7 @@ export default function ReportScanClient({
                     }}
                   />
                 </div>
-              ) : currentStep === 4 ? (
+              ) : displayStep === 4 ? (
                 // Photo quality and quantity step
                 <div className="absolute inset-0">
                   <AIAgentModal stage={3} stageName="Image quality and quantity" />
@@ -1426,7 +1428,7 @@ export default function ReportScanClient({
                     }}
                   />
                 </div>
-              ) : currentStep === 5 ? (
+              ) : displayStep === 5 ? (
                 // Step 4: Online presence analysis
                 <div className="absolute inset-0">
                   <AIAgentModal stage={4} stageName="Online presence analysis" />
@@ -1448,7 +1450,7 @@ export default function ReportScanClient({
                     <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 h-full flex items-center justify-center">
                       <div className="text-center">
                         <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
-                        <p className="text-gray-600 text-sm">{steps[currentStep]?.label}</p>
+                        <p className="text-gray-600 text-sm">{steps[displayStep]?.label}</p>
                       </div>
                     </div>
                   </div>
@@ -1462,10 +1464,10 @@ export default function ReportScanClient({
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/80 px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex-1 min-w-0 text-left">
             <p className="text-sm font-medium text-gray-900 truncate">
-              {steps[currentStep]?.label}
+              {steps[displayStep]?.label}
             </p>
             <p className="text-xs text-gray-500 mt-0.5">
-              Step {currentStep + 1} of 6
+              Step {displayStep + 1} of 6
             </p>
             {!emailVerified ? (
               <p className="text-xs text-gray-500 mt-1">
