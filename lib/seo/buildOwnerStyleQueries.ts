@@ -141,6 +141,22 @@ export function buildOwnerStyleQueries(params: {
   const uniqueAllowedServices = Array.from(new Set(finalAllowedServices.map(s => s.toLowerCase())))
     .map(s => finalAllowedServices.find(orig => orig.toLowerCase() === s)!)
     .slice(0, 8); // Max 8 service keywords
+
+  // ─── KEY FIX: inject actual category label as a keyword ──────────────
+  // When the family is generic or retail (broad families), the category label
+  // itself (e.g. "Shoe Store", "Gift Shop") is the most relevant search term.
+  // We inject it as the first keyword so queries become
+  // "shoe store in Modderfontein" instead of "business in Modderfontein".
+  const GENERIC_CATEGORY_LABELS = new Set(['business', 'local business', 'store']);
+  if (
+    category_label &&
+    !GENERIC_CATEGORY_LABELS.has(category_label.toLowerCase())
+  ) {
+    const catLower = category_label.toLowerCase();
+    if (!uniqueAllowedServices.some(s => s.toLowerCase() === catLower)) {
+      uniqueAllowedServices.unshift(catLower);
+    }
+  }
   
   // Determine location to use (prefer suburb, fallback to city)
   const location = location_suburb || location_city;
@@ -191,25 +207,18 @@ export function buildOwnerStyleQueries(params: {
     }
   }
   
-  // Fallback: if no allowed services, use category phrase (but still validate)
-  // Only use if category phrase is in allowed services for the family
+  // Fallback: if no non-branded queries were generated, use category label directly.
+  // The category label was already injected into uniqueAllowedServices above, so this
+  // only triggers when the main loop above produced zero queries (e.g. very short label).
   if (queries.length === 0 && category_label) {
     const categoryPhrase = CATEGORY_PHRASES[category_label] || category_label.toLowerCase();
     
-    // Check if category phrase is in allowed services for this family
-    const categoryInAllowed = uniqueAllowedServices.some(s => 
-      s.toLowerCase() === categoryPhrase.toLowerCase() || 
-      categoryPhrase.toLowerCase().includes(s.toLowerCase())
-    );
-    
-    if (categoryPhrase && categoryPhrase !== 'business' && !isBlockedKeyword(categoryPhrase) && categoryInAllowed) {
+    if (categoryPhrase && categoryPhrase !== 'business' && !isBlockedKeyword(categoryPhrase)) {
       const addQuery = (q: string, rationale: string) => {
         const normalized = q.toLowerCase().trim();
-        if (!seen.has(normalized) && isValidQuery(q, uniqueAllowedServices)) {
+        if (!seen.has(normalized)) {
           seen.add(normalized);
           queries.push({ query: q.trim(), intent: 'non_branded', rationale });
-        } else if (!seen.has(normalized)) {
-          rejected.push(`Query rejected: "${q}" (contains blocked terms or invalid)`);
         }
       };
       

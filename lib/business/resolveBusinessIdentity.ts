@@ -89,6 +89,7 @@ const GENERIC_WORDS = new Set([
 
 // Category mappings from Places types
 const CATEGORY_MAP: Record<string, string> = {
+  // Food & Drink
   restaurant: 'Restaurant',
   bar: 'Bar',
   cafe: 'Cafe',
@@ -96,34 +97,129 @@ const CATEGORY_MAP: Record<string, string> = {
   meal_delivery: 'Restaurant',
   meal_takeaway: 'Restaurant',
   night_club: 'Nightclub',
+
+  // Lodging
   lodging: 'Hotel',
   hotel: 'Hotel',
+  bed_and_breakfast: 'Bed & Breakfast',
+  campground: 'Campground',
+  rv_park: 'RV Park',
+
+  // Professional Services
   real_estate_agency: 'Real Estate Agency',
   lawyer: 'Law Firm',
   accounting: 'Accounting Firm',
+  insurance_agency: 'Insurance Agency',
+  marketing_agency: 'Marketing Agency',
+  travel_agency: 'Travel Agency',
+  employment_agency: 'Employment Agency',
+  financial_planner: 'Financial Planner',
+
+  // Health & Medical
   dentist: 'Dentist',
   doctor: 'Medical Practice',
   hospital: 'Hospital',
   pharmacy: 'Pharmacy',
+  physiotherapist: 'Physiotherapist',
+  veterinary_care: 'Veterinary Clinic',
+  chiropractor: 'Chiropractor',
+  optician: 'Optician',
+
+  // Fitness & Beauty
   gym: 'Gym',
   spa: 'Spa',
   beauty_salon: 'Beauty Salon',
   hair_care: 'Hair Salon',
+
+  // Automotive
   car_dealer: 'Car Dealership',
   car_repair: 'Auto Repair',
+  car_wash: 'Car Wash',
+  car_rental: 'Car Rental',
+  gas_station: 'Gas Station',
+
+  // Trades
   electrician: 'Electrician',
   plumber: 'Plumber',
   roofing_contractor: 'Roofing Contractor',
   general_contractor: 'Contractor',
-  store: 'Retail Store',
+  locksmith: 'Locksmith',
+  painter: 'Painter',
+  moving_company: 'Moving Company',
+  pest_control: 'Pest Control',
+
+  // Retail — specific types BEFORE generic 'store' so the most specific label wins
+  shoe_store: 'Shoe Store',
   clothing_store: 'Clothing Store',
+  jewelry_store: 'Jewelry Store',
   furniture_store: 'Furniture Store',
-  home_goods_store: 'Home Store',
+  home_goods_store: 'Home Goods Store',
+  hardware_store: 'Hardware Store',
+  electronics_store: 'Electronics Store',
+  pet_store: 'Pet Store',
+  book_store: 'Book Store',
+  bicycle_store: 'Bicycle Store',
+  convenience_store: 'Convenience Store',
+  department_store: 'Department Store',
+  liquor_store: 'Liquor Store',
+  sporting_goods_store: 'Sporting Goods Store',
+  gift_shop: 'Gift Shop',
+  florist: 'Florist',
+  supermarket: 'Supermarket',
+  grocery_or_supermarket: 'Supermarket',
   shopping_mall: 'Shopping Mall',
-  travel_agency: 'Travel Agency',
-  insurance_agency: 'Insurance Agency',
-  marketing_agency: 'Marketing Agency',
+  store: 'Store',  // generic — keep last so specific types match first
+
+  // Services
+  laundry: 'Laundry',
+  dry_cleaner: 'Dry Cleaner',
+  storage: 'Storage Facility',
+
+  // Education
+  school: 'School',
+  university: 'University',
+  library: 'Library',
+
+  // Entertainment
+  movie_theater: 'Movie Theater',
+  bowling_alley: 'Bowling Alley',
+  amusement_park: 'Amusement Park',
+  art_gallery: 'Art Gallery',
+  museum: 'Museum',
+  zoo: 'Zoo',
+  aquarium: 'Aquarium',
+
+  // Worship
+  church: 'Church',
+  mosque: 'Mosque',
+  synagogue: 'Synagogue',
+  hindu_temple: 'Hindu Temple',
 };
+
+// Types that are structural / non-customer-facing and should be skipped when
+// picking a searchable category label (e.g. "corporate_office" is not how
+// customers search for a business).
+const NON_SEARCHABLE_TYPES = new Set([
+  'corporate_office',
+  'establishment',
+  'point_of_interest',
+  'political',
+  'premise',
+  'subpremise',
+  'locality',
+  'route',
+  'street_address',
+  'geocode',
+  'postal_code',
+  'administrative_area_level_1',
+  'administrative_area_level_2',
+  'country',
+  'floor',
+  'room',
+  'post_box',
+  'parking',
+  'general_contractor',  // often a secondary type, prefer the specific trade
+]);
 
 /**
  * Extract host from URL
@@ -227,20 +323,40 @@ function parseAddress(address: string): { suburb: string | null; city: string | 
 }
 
 /**
- * Get category label from Places types
+ * Convert a snake_case Places type to a human-readable Title Case label.
+ * e.g. "shoe_store" → "Shoe Store", "pet_store" → "Pet Store"
+ */
+function typeToLabel(type: string): string {
+  return type
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/**
+ * Get category label from Places types.
+ * Skips non-customer-facing types (corporate_office, establishment, etc.)
+ * and auto-converts unknown types to Title Case as a fallback.
  */
 function getCategoryFromTypes(types: string[]): string {
+  // 1) Try mapped types first (skipping non-searchable ones)
   for (const type of types) {
+    if (NON_SEARCHABLE_TYPES.has(type)) continue;
     if (CATEGORY_MAP[type]) {
       return CATEGORY_MAP[type];
     }
   }
+
+  // 2) Auto-convert the first searchable type to Title Case
+  //    so unmapped types like "flower_shop" still produce "Flower Shop"
+  for (const type of types) {
+    if (NON_SEARCHABLE_TYPES.has(type)) continue;
+    // Skip extremely generic Google meta-types
+    if (type === 'food') return 'Restaurant';
+    return typeToLabel(type);
+  }
   
-  // Fallback categorization
-  if (types.includes('food')) return 'Restaurant';
-  if (types.includes('establishment')) return 'Business';
-  if (types.includes('point_of_interest')) return 'Local Business';
-  
+  // 3) Last resort
   return 'Business';
 }
 

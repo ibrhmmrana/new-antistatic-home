@@ -14,6 +14,11 @@ export type CategoryFamily =
   | 'real_estate'
   | 'gym'
   | 'salon'
+  | 'retail'
+  | 'automotive'
+  | 'healthcare'
+  | 'hospitality'
+  | 'professional_services'
   | 'generic_local_business';
 
 // Category to family mapping
@@ -25,24 +30,77 @@ const CATEGORY_TO_FAMILY: Record<string, CategoryFamily> = {
   // Food & Drink
   'Restaurant': 'restaurant',
   'Bar': 'restaurant',
+  'Nightclub': 'restaurant',
   'Cafe': 'cafe',
   'Bakery': 'cafe',
   
   // Professional Services
   'Law Firm': 'law_firm',
+  'Accounting Firm': 'professional_services',
+  'Financial Planner': 'professional_services',
+  'Insurance Agency': 'professional_services',
+  'Marketing Agency': 'professional_services',
+  'Employment Agency': 'professional_services',
   'Real Estate Agency': 'real_estate',
+  'Travel Agency': 'professional_services',
   
   // Trades
   'Plumber': 'plumber',
   'Electrician': 'plumber', // Same family for trades
   'Contractor': 'plumber',
   'Roofing Contractor': 'plumber',
+  'Locksmith': 'plumber',
+  'Painter': 'plumber',
+  'Moving Company': 'plumber',
+  'Pest Control': 'plumber',
   
   // Fitness & Beauty
   'Gym': 'gym',
   'Beauty Salon': 'salon',
   'Hair Salon': 'salon',
   'Spa': 'salon',
+
+  // Retail — all store/shop types
+  'Store': 'retail',
+  'Clothing Store': 'retail',
+  'Shoe Store': 'retail',
+  'Jewelry Store': 'retail',
+  'Furniture Store': 'retail',
+  'Home Goods Store': 'retail',
+  'Hardware Store': 'retail',
+  'Electronics Store': 'retail',
+  'Pet Store': 'retail',
+  'Book Store': 'retail',
+  'Bicycle Store': 'retail',
+  'Convenience Store': 'retail',
+  'Department Store': 'retail',
+  'Liquor Store': 'retail',
+  'Sporting Goods Store': 'retail',
+  'Gift Shop': 'retail',
+  'Florist': 'retail',
+  'Supermarket': 'retail',
+  'Shopping Mall': 'retail',
+
+  // Automotive
+  'Car Dealership': 'automotive',
+  'Auto Repair': 'automotive',
+  'Car Wash': 'automotive',
+  'Car Rental': 'automotive',
+  'Gas Station': 'automotive',
+
+  // Healthcare (non-dental)
+  'Medical Practice': 'healthcare',
+  'Hospital': 'healthcare',
+  'Pharmacy': 'healthcare',
+  'Physiotherapist': 'healthcare',
+  'Veterinary Clinic': 'healthcare',
+  'Chiropractor': 'healthcare',
+  'Optician': 'healthcare',
+
+  // Hospitality
+  'Hotel': 'hospitality',
+  'Bed & Breakfast': 'hospitality',
+  'Campground': 'hospitality',
 };
 
 // Place types to family mapping (from Google Places API types)
@@ -54,23 +112,74 @@ const PLACE_TYPE_TO_FAMILY: Record<string, CategoryFamily> = {
   // Food & Drink
   'restaurant': 'restaurant',
   'bar': 'restaurant',
+  'night_club': 'restaurant',
   'cafe': 'cafe',
   'bakery': 'cafe',
+  'meal_delivery': 'restaurant',
+  'meal_takeaway': 'restaurant',
   
   // Professional Services
   'lawyer': 'law_firm',
+  'accounting': 'professional_services',
+  'insurance_agency': 'professional_services',
   'real_estate_agency': 'real_estate',
+  'travel_agency': 'professional_services',
   
   // Trades
   'plumber': 'plumber',
   'electrician': 'plumber',
   'general_contractor': 'plumber',
+  'roofing_contractor': 'plumber',
+  'locksmith': 'plumber',
+  'painter': 'plumber',
+  'moving_company': 'plumber',
   
   // Fitness & Beauty
   'gym': 'gym',
   'beauty_salon': 'salon',
   'hair_care': 'salon',
   'spa': 'salon',
+
+  // Retail
+  'store': 'retail',
+  'clothing_store': 'retail',
+  'shoe_store': 'retail',
+  'jewelry_store': 'retail',
+  'furniture_store': 'retail',
+  'home_goods_store': 'retail',
+  'hardware_store': 'retail',
+  'electronics_store': 'retail',
+  'pet_store': 'retail',
+  'book_store': 'retail',
+  'bicycle_store': 'retail',
+  'convenience_store': 'retail',
+  'department_store': 'retail',
+  'liquor_store': 'retail',
+  'sporting_goods_store': 'retail',
+  'gift_shop': 'retail',
+  'florist': 'retail',
+  'supermarket': 'retail',
+  'grocery_or_supermarket': 'retail',
+  'shopping_mall': 'retail',
+
+  // Automotive
+  'car_dealer': 'automotive',
+  'car_repair': 'automotive',
+  'car_wash': 'automotive',
+  'car_rental': 'automotive',
+  'gas_station': 'automotive',
+
+  // Healthcare
+  'doctor': 'healthcare',
+  'hospital': 'healthcare',
+  'pharmacy': 'healthcare',
+  'physiotherapist': 'healthcare',
+  'veterinary_care': 'healthcare',
+  'chiropractor': 'healthcare',
+
+  // Hospitality
+  'lodging': 'hospitality',
+  'hotel': 'hospitality',
 };
 
 // Service keywords by family
@@ -169,6 +278,37 @@ export const SERVICE_KEYWORDS_BY_FAMILY: Record<CategoryFamily, string[]> = {
     'manicure',
     'pedicure',
     'facial',
+  ],
+  retail: [
+    'store',
+    'shop',
+    'shopping',
+  ],
+  automotive: [
+    'auto',
+    'car',
+    'vehicle',
+    'automotive',
+    'mechanic',
+  ],
+  healthcare: [
+    'doctor',
+    'medical',
+    'health',
+    'clinic',
+    'healthcare',
+  ],
+  hospitality: [
+    'hotel',
+    'accommodation',
+    'lodging',
+    'stay',
+    'guest house',
+  ],
+  professional_services: [
+    'consulting',
+    'advisory',
+    'professional',
   ],
   generic_local_business: [
     'business',

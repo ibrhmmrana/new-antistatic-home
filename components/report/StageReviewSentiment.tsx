@@ -133,7 +133,10 @@ export default function StageReviewSentiment({
     return () => window.removeEventListener('resize', calculateScale);
   }, [data]);
 
-  // Auto-advance to next stage after all reviews have appeared + 2 seconds
+  // Minimum time this stage must be visible before auto-advancing
+  const MIN_STAGE_DISPLAY_MS = 5000;
+
+  // Auto-advance to next stage after all reviews have appeared + delay (min 5s on screen)
   useEffect(() => {
     if (loading || error || !data || !data.reviews || data.reviews.length === 0) return;
 
@@ -141,10 +144,11 @@ export default function StageReviewSentiment({
     const lastReviewIndex = reviews.length - 1;
     // Last review animation starts at: lastReviewIndex * 3000ms
     // Animation duration is 0.5s (500ms), so review is fully visible at: (lastReviewIndex * 3000) + 500
-    // Wait 0.5 seconds after last review is fully visible (reduced from 2 seconds)
+    // Wait 0.5 seconds after last review is fully visible
     const animationDuration = 500; // fadeInUp animation duration
-    const delayAfterLastReview = 500; // Reduced from 2000ms to 500ms
-    const totalDelay = (lastReviewIndex * 3000) + animationDuration + delayAfterLastReview;
+    const delayAfterLastReview = 500;
+    const computedDelay = (lastReviewIndex * 3000) + animationDuration + delayAfterLastReview;
+    const totalDelay = Math.max(MIN_STAGE_DISPLAY_MS, computedDelay);
 
     const timeout = setTimeout(() => {
       onComplete?.();
