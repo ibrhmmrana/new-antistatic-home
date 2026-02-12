@@ -1,11 +1,6 @@
 GOOGLE API COST REDUCTION — WHAT WE CHANGED
 =============================================
 
-BEFORE: ~$316/month (at current usage)
-AFTER:  ~$60-80/month (estimated)
-SAVING: ~$230-250/month (~75% reduction)
-
-
 WHAT WAS COSTING THE MOST
 --------------------------
 

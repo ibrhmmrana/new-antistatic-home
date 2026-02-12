@@ -5,9 +5,8 @@ import { apiBudget } from "@/lib/net/apiBudget";
 /**
  * Places Autocomplete API Route
  *
- * Uses Places API (New) v1 places:autocomplete so we can include service-area
- * businesses (no physical address). When pureServiceAreaBusiness = true, place
- * details may have no lat/lng; consumers must handle missing location fields.
+ * Uses Places API (New) v1 places:autocomplete.
+ * For now we do not include service-area businesses (includePureServiceAreaBusinesses).
  *
  * Country-preferred: if country detected, fetches local then global and merges.
  */
@@ -41,8 +40,8 @@ interface NormalizedPrediction {
 }
 
 /**
- * Calls Places API (New) v1 places:autocomplete with includePureServiceAreaBusinesses
- * so businesses without a physical address (e.g. plumbers, cleaners) appear in results.
+ * Calls Places API (New) v1 places:autocomplete.
+ * Service-area-only businesses are not included for now.
  */
 async function fetchPlacesAutocompleteNew(
   input: string,
@@ -56,11 +55,9 @@ async function fetchPlacesAutocompleteNew(
 
   const body: {
     input: string;
-    includePureServiceAreaBusinesses: boolean;
     includedRegionCodes?: string[];
   } = {
     input: input.trim(),
-    includePureServiceAreaBusinesses: true,
   };
   if (country && country !== "XX") {
     body.includedRegionCodes = [country];
