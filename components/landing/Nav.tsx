@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { GlitchLogo } from "@/components/GlitchLogo";
+import { scrollToHeroInputAndShowTooltip } from "@/components/landing/Hero";
 
 const SCROLL_ENTER_PX = 24;
 const SCROLL_LEAVE_PX = 10;
@@ -104,12 +105,12 @@ export default function Nav() {
                 <span>Sign In</span>
               </Link>
               <Link
-                href="#pricing"
+                href="#hero-search"
                 className="text-sm bg-blue-500 text-white px-4 py-2 rounded-full hover:bg-blue-600 transition-colors button-roll-text text-center min-w-[7.5rem]"
                 data-text="Get Started"
                 onClick={(e) => {
                   e.preventDefault();
-                  document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
+                  scrollToHeroInputAndShowTooltip();
                 }}
               >
                 <span>Get Started</span>
@@ -163,12 +164,12 @@ export default function Nav() {
                 Sign In
               </Link>
               <Link
-                href="#pricing"
+                href="#hero-search"
                 className="text-center text-sm bg-blue-500 text-white px-4 py-3 rounded-full hover:bg-blue-600 transition-colors"
                 onClick={(e) => {
                   e.preventDefault();
                   closeMenu();
-                  document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
+                  scrollToHeroInputAndShowTooltip();
                 }}
               >
                 Get Started

@@ -4,6 +4,21 @@ import { useRef, useEffect, useState } from "react";
 import Image from "next/image";
 import BusinessSearch from "./BusinessSearch";
 
+const HERO_SEARCH_ID = "hero-search";
+const TOOLTIP_DURATION_MS = 6000;
+
+function scrollToHeroSearch() {
+  const el = document.getElementById(HERO_SEARCH_ID);
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
+export function scrollToHeroInputAndShowTooltip() {
+  scrollToHeroSearch();
+  window.dispatchEvent(new CustomEvent("hero-search-cta-click"));
+}
+
 // At this hero image width (px), content scale = 1. Higher = smaller left content vs image.
 const REF_IMAGE_WIDTH = 620;
 const SCALE_MIN = 0.78;
@@ -14,6 +29,8 @@ export default function Hero() {
   const imageColumnRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Desktop-only: detect viewport >= lg
   useEffect(() => {
@@ -40,6 +57,36 @@ export default function Hero() {
   }, [isDesktop]);
 
   const applyScale = isDesktop && scale !== 1;
+
+  // When a CTA leads to the hero search, show tooltip
+  useEffect(() => {
+    const handleCtaClick = () => {
+      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+      setShowTooltip(true);
+      tooltipTimeoutRef.current = setTimeout(() => {
+        setShowTooltip(false);
+        tooltipTimeoutRef.current = null;
+      }, TOOLTIP_DURATION_MS);
+    };
+
+    const handleHashChange = () => {
+      if (typeof window !== "undefined" && window.location.hash === `#${HERO_SEARCH_ID}`) {
+        scrollToHeroSearch();
+        handleCtaClick();
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+    };
+
+    window.addEventListener("hero-search-cta-click", handleCtaClick);
+    window.addEventListener("hashchange", handleHashChange);
+    if (window.location.hash === `#${HERO_SEARCH_ID}`) handleHashChange();
+
+    return () => {
+      window.removeEventListener("hero-search-cta-click", handleCtaClick);
+      window.removeEventListener("hashchange", handleHashChange);
+      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+    };
+  }, []);
 
   return (
     <div className="relative min-h-[calc(100vh-80px)] flex items-center">
@@ -98,9 +145,21 @@ export default function Hero() {
                 response.
               </p>
 
-              {/* Business Search */}
-              <div className="pt-4 w-full">
+              {/* Business Search — scroll target for CTAs */}
+              <div
+                id={HERO_SEARCH_ID}
+                className="pt-4 w-full scroll-mt-24 md:scroll-mt-28"
+              >
                 <BusinessSearch />
+                {showTooltip && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="mt-3 px-4 py-3 rounded-xl bg-gray-100 border border-gray-200 text-sm text-gray-700 shadow-sm"
+                  >
+                    We need to analyse your business first. Search for your business above to get started.
+                  </div>
+                )}
               </div>
             </div>
           </div>

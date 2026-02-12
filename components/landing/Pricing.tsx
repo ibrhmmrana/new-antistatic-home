@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import ScrollReveal from "@/components/landing/ScrollReveal";
+import { scrollToHeroInputAndShowTooltip } from "@/components/landing/Hero";
 
 /** ZA = South Africa (R499/R999); rest of world = $29/$99. Compare = before discount. */
 const isZA = (countryCode: string) => countryCode === "ZA";
@@ -133,6 +134,8 @@ export default function Pricing({ countryCode = "XX" }: { countryCode?: string }
 
             {/* CTA Button */}
             <button
+              type="button"
+              onClick={scrollToHeroInputAndShowTooltip}
               className="relative w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 font-medium hover:from-blue-600 hover:to-blue-700 transition-all flex items-center justify-center button-roll-text"
               style={{ borderRadius: "50px" }}
               data-text="Start free 14-day trial"
@@ -208,6 +211,8 @@ export default function Pricing({ countryCode = "XX" }: { countryCode?: string }
 
             {/* CTA Button */}
             <button
+              type="button"
+              onClick={scrollToHeroInputAndShowTooltip}
               className="relative w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 font-medium hover:from-blue-600 hover:to-blue-700 transition-all flex items-center justify-center button-roll-text"
               style={{ borderRadius: "50px" }}
               data-text="Start free 14-day trial"
