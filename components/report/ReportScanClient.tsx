@@ -1455,7 +1455,7 @@ export default function ReportScanClient({
         </div>
       </div>
 
-      {/* Mobile: floating footer with current stage and "Start fixing" (only after email verified) */}
+      {/* Mobile: floating footer with current stage only; "Start fixing" hidden on all analysis stages */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-20 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200/80 px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex-1 min-w-0 text-left">
@@ -1482,26 +1482,6 @@ export default function ReportScanClient({
               </>
             )}
           </div>
-          {emailVerified && (
-            <button
-              onClick={handleStartFixing}
-              disabled={appInviteLoading}
-              className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
-                appInviteLoading
-                  ? "bg-gray-100 text-gray-400 cursor-wait"
-                  : "bg-blue-600 text-white hover:bg-blue-700"
-              }`}
-            >
-              {appInviteLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Sending…
-                </>
-              ) : (
-                "Start fixing"
-              )}
-            </button>
-          )}
         </div>
       </div>
 
