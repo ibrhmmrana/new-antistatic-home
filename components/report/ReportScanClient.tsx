@@ -1321,7 +1321,7 @@ export default function ReportScanClient({
           </ul>
         </div>
 
-        {/* "Start fixing" only after email verified; hide footer CTA until then */}
+        {/* Footer: error/success messages only; "Start fixing" hidden on all analysis stages */}
         {emailVerified && (
           <div className="p-4 border-t border-gray-200">
             {appInviteError && (
@@ -1332,24 +1332,6 @@ export default function ReportScanClient({
                 Check your email for a sign-in link
               </p>
             )}
-            <button
-              onClick={handleStartFixing}
-              disabled={appInviteLoading}
-              className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                appInviteLoading
-                  ? "bg-gray-100 text-gray-400 cursor-wait"
-                  : "bg-blue-600 text-white hover:bg-blue-700"
-              }`}
-            >
-              {appInviteLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Sending…
-                </>
-              ) : (
-                "Start fixing"
-              )}
-            </button>
           </div>
         )}
       </div>
