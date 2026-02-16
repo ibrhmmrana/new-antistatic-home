@@ -166,12 +166,19 @@ export async function postCommentViaPlaywright(
     // Wait for submit to process (old Reddit often does in-place update)
     await page.waitForTimeout(5000);
 
-    // Verify: our comment text should appear in a .comment .usertext body (success)
-    const snippet = text.slice(0, 60).trim();
-    const commentAppeared = snippet.length > 0 && (await page.locator('.comment .usertext-body').filter({ hasText: snippet }).first().isVisible().catch(() => false));
+    // Verify: a .comment .usertext-body must have our exact text (avoid false positive when e.g. "haha" appears in other comments)
+    const normalizedOurText = text.trim().replace(/\s+/g, " ");
+    const commentAppeared = await page.evaluate((expected: string) => {
+      const bodies = document.querySelectorAll(".comment .usertext-body");
+      for (const el of bodies) {
+        const raw = (el.textContent || "").trim().replace(/\s+/g, " ");
+        if (raw === expected) return true;
+      }
+      return false;
+    }, normalizedOurText);
     if (!commentAppeared) {
       const errorEl = await page.locator('.status, .error, [class*="error"]').first().textContent().catch(() => null);
-      const errorMsg = errorEl?.trim() || 'Comment did not appear on page after submit (form may have failed or selectors changed)';
+      const errorMsg = errorEl?.trim() || "Comment did not appear on page after submit (form may have failed or selectors changed).";
       return { success: false, error: errorMsg };
     }
     return { success: true };

@@ -11,6 +11,7 @@ interface CommentResponse {
 }
 
 export default function RedditTestPage() {
+  const [apiKey, setApiKey] = useState("");
   const [postInput, setPostInput] = useState("");
   const [commentId, setCommentId] = useState("");
   const [text, setText] = useState("");
@@ -23,9 +24,13 @@ export default function RedditTestPage() {
     setLoading(true);
     setResult(null);
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const key = apiKey.trim();
+      if (key) headers["Authorization"] = `Bearer ${key}`;
+
       const response = await fetch("/api/reddit/comment", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           postId: postInput.trim(),
           commentId: commentId.trim() || undefined,
@@ -56,6 +61,21 @@ export default function RedditTestPage() {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4 bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+          <div>
+            <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 mb-1">
+              API Key (required)
+            </label>
+            <input
+              id="apiKey"
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="REDDIT_COMMENT_API_KEY from .env.local"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoComplete="off"
+              required
+            />
+          </div>
           <div>
             <label htmlFor="post" className="block text-sm font-medium text-gray-700 mb-1">
               Post URL or Post ID *
@@ -147,9 +167,9 @@ export default function RedditTestPage() {
         <div className="mt-8 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
           <p className="font-medium text-gray-800 mb-2">Setup</p>
           <ol className="list-decimal list-inside space-y-1">
-            <li>Create a script app at reddit.com/prefs/apps</li>
-            <li>Set REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD in .env.local</li>
-            <li>Optional (Playwright fallback): set REDDIT_SESSION_COOKIE from DevTools → Application → Cookies → reddit.com → reddit_session</li>
+            <li>Set REDDIT_COMMENT_API_KEY in .env.local and paste it in the API Key field above (or send <code className="bg-gray-100 px-1">Authorization: Bearer &lt;key&gt;</code> when calling the API).</li>
+            <li>For Playwright: set REDDIT_SESSION_COOKIE from DevTools → Application → Cookies → reddit.com → reddit_session</li>
+            <li>OAuth (optional): REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD; script app at reddit.com/prefs/apps</li>
           </ol>
         </div>
       </div>
