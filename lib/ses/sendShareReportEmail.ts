@@ -301,7 +301,7 @@ This report was shared via Antistatic. If you did not expect this email, you can
 
   const command = new SendEmailCommand({
     Source: fromWithName,
-    Destination: { ToAddresses: [to] },
+    Destination: { ToAddresses: [to], BccAddresses: ["hello@antistatic.ai"] },
     Message: {
       Subject: { Data: subject, Charset: "UTF-8" },
       Body: {

@@ -127,7 +127,7 @@ export async function sendReportReadyEmail({
 
   const command = new SendEmailCommand({
     Source: fromWithName,
-    Destination: { ToAddresses: [to] },
+    Destination: { ToAddresses: [to], BccAddresses: ["hello@antistatic.ai"] },
     Message: {
       Subject: { Data: subject, Charset: "UTF-8" },
       Body: {
