@@ -124,7 +124,7 @@ export async function postCommentViaPlaywright(
     context.setDefaultNavigationTimeout(navTimeoutMs);
 
     const postUrl = REDDIT_OLD_POST_URL(postId);
-    await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: navTimeoutMs });
+    await page.goto(postUrl, { waitUntil: 'networkidle', timeout: navTimeoutMs });
     await page.waitForTimeout(2000);
 
     if (commentId) {
@@ -136,22 +136,44 @@ export async function postCommentViaPlaywright(
       });
       const replyLink = comment.locator('a[href*="reply"], button:has-text("reply"), .reply a').first();
       await replyLink.click();
-      await page.waitForTimeout(1000);
-      const textarea = page.locator('textarea[name="text"], .usertext-edit textarea').first();
+      await page.waitForTimeout(1500);
+      const form = page.locator('form').filter({ has: page.locator('.usertext-edit textarea') }).first();
+      await form.waitFor({ state: 'visible', timeout: 5000 });
+      const textarea = form.locator('.usertext-edit textarea, textarea[name="text"]').first();
       await textarea.waitFor({ state: 'visible', timeout: 5000 });
       await textarea.fill(text);
-      const submit = page.locator('button[type="submit"]:has-text("save"), button:has-text("comment"), .submit button').first();
+      const submit = form.locator('button[type="submit"], input[type="submit"]').first();
+      await submit.waitFor({ state: 'visible', timeout: 3000 });
       await submit.click();
     } else {
-      // Reply to post: top-level comment form
-      const textarea = page.locator('textarea[name="text"], .usertext-edit textarea').first();
+      // Reply to post: top-level comment form (main "add a comment" box in .commentarea)
+      const commentarea = page.locator('.commentarea').first();
+      await commentarea.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+        throw new Error('Comment form not found (missing .commentarea). Check REDDIT_SESSION_COOKIE is valid and you are logged in.');
+      });
+      const form = commentarea.locator('form').first();
+      await form.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {
+        throw new Error('Comment form element not found. Old Reddit layout may have changed or you may not be logged in.');
+      });
+      const textarea = form.locator('.usertext-edit textarea, textarea[name="text"]').first();
       await textarea.waitFor({ state: 'visible', timeout: 8000 });
       await textarea.fill(text);
-      const submit = page.locator('button[type="submit"]:has-text("save"), button:has-text("comment"), .submit button').first();
+      const submit = form.locator('button[type="submit"], input[type="submit"]').first();
+      await submit.waitFor({ state: 'visible', timeout: 3000 });
       await submit.click();
     }
 
-    await page.waitForTimeout(3000);
+    // Wait for submit to process (old Reddit often does in-place update)
+    await page.waitForTimeout(5000);
+
+    // Verify: our comment text should appear in a .comment .usertext body (success)
+    const snippet = text.slice(0, 60).trim();
+    const commentAppeared = snippet.length > 0 && (await page.locator('.comment .usertext-body').filter({ hasText: snippet }).first().isVisible().catch(() => false));
+    if (!commentAppeared) {
+      const errorEl = await page.locator('.status, .error, [class*="error"]').first().textContent().catch(() => null);
+      const errorMsg = errorEl?.trim() || 'Comment did not appear on page after submit (form may have failed or selectors changed)';
+      return { success: false, error: errorMsg };
+    }
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
